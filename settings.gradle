@@ -1,0 +1,76 @@
+pluginManagement {
+
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+    }
+    plugins {
+        id 'androidx.navigation.safeargs.kotlin' version '2.9.6'
+    }
+}
+
+dependencyResolutionManagement {
+    /**
+     * Create github.properties in root project folder file
+     * with gpr.usr=GITHUB_USER_ID  & gpr.key=PERSONAL_ACCESS_TOKEN
+     */
+    def githubProperties = new Properties()
+    def githubPropertiesFile = file("$rootDir${File.separator}github.properties")
+    githubProperties.load(new FileInputStream(githubPropertiesFile))
+
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/anyproto/anytype-heart")
+            credentials {
+                username = githubProperties['gpr.usr']
+                password = githubProperties['gpr.key']
+            }
+        }
+    }
+}
+
+include ':app',
+        ':core-utils',
+        ':middleware',
+        ':persistence',
+        ':domain',
+        ':data',
+        ':device',
+        ':presentation',
+        ':core-ui',
+        ':library-page-icon-picker-widget',
+        ':library-emojifier',
+        ':sample',
+        ':clipboard',
+        ':analytics',
+        ':protocol',
+        ':core-models',
+        ':test:android-utils',
+        ':test:utils',
+        ':test:core-models-stub',
+        ':libs'
+
+include ':feature-ui-settings'
+include ':crash-reporting'
+include ':localization'
+include ':payments'
+include ':gallery-experience'
+include ':feature-chats'
+include ':feature-discussions'
+include ':feature-all-content'
+include ':feature-date'
+include ':feature-object-type'
+include ':feature-properties'
+include ':feature-vault'
+include ':feature-create-object'
+include ':feature-os-widgets'
+include ':feature-search'
+include ':core-ai'

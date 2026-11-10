@@ -1,0 +1,116 @@
+plugins {
+    alias(libs.plugins.application) apply false
+    alias(libs.plugins.library) apply false
+    alias(libs.plugins.kotlinAndroid) apply false
+    alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.kserialization) apply false
+    alias(libs.plugins.wire) apply false
+    alias(libs.plugins.dokka) apply false
+    alias(libs.plugins.firebaseDistribution) apply false
+    alias(libs.plugins.gms) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.licensee) apply false
+}
+
+import com.android.build.gradle.LibraryPlugin
+import org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper
+
+// SDK and application configuration from gradle.properties
+ext.compile_sdk = Integer.parseInt(project.findProperty("sdk.compile") ?: "36")
+ext.target_sdk = Integer.parseInt(project.findProperty("sdk.target") ?: "36")
+ext.min_sdk = Integer.parseInt(project.findProperty("sdk.min") ?: "26")
+ext.application_id = project.findProperty("app.applicationId") ?: "io.anytype.app"
+ext.test_runner = project.findProperty("app.testRunner") ?: "androidx.test.runner.AndroidJUnitRunner"
+ext.onCi = project.findProperty("com.anytype.ci")?.toBoolean() ?: false
+
+// Load API keys
+def apiKeysProperties = new Properties()
+def apiKeysPropertiesFile = file("$rootDir${File.separator}apikeys.properties")
+if (apiKeysPropertiesFile.exists()) {
+    apiKeysProperties.load(new FileInputStream(apiKeysPropertiesFile))
+}
+ext.sentryApiKey = apiKeysProperties["sentry_dsn"] ?: ""
+
+def testDebugAll = tasks.create("testDebugAll")
+
+//https://www.droidcon.com/2022/03/11/reducing-gradle-boilerplate-in-multi-module-android-projects/
+subprojects { sub ->
+    project.plugins.whenPluginAdded { plugin ->
+        if (plugin instanceof LibraryPlugin) {
+
+            android {
+                def config = rootProject.extensions.getByName("ext")
+                compileSdk = config["compile_sdk"]
+
+                defaultConfig {
+                    minSdk = config["min_sdk"]
+                    targetSdk = config["target_sdk"]
+                    testInstrumentationRunner = config["test_runner"]
+                }
+
+                buildFeatures {
+                    buildConfig = true
+                }
+
+                testOptions {
+                    unitTests {
+                        includeAndroidResources = true
+                    }
+                }
+            }
+        }
+        if (plugin instanceof KotlinAndroidPluginWrapper) {
+            android {
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_17
+                    targetCompatibility = JavaVersion.VERSION_17
+                }
+
+                kotlin {
+                    jvmToolchain(17)
+                }
+            }
+        }
+
+    }
+    
+
+    plugins.withId("kotlin") {
+        testDebugAll.dependsOn(tasks.named("test"))
+    }
+    plugins.withId("com.android.library") {
+        project.apply from: "$rootDir/lint.gradle"
+        tasks.configureEach { task ->
+            if (task.name == "testDebugUnitTest") {
+                testDebugAll.dependsOn(task)
+            }
+        }
+    }
+    plugins.withId("com.android.application") {
+        project.apply from: "$rootDir/lint.gradle"
+        tasks.configureEach { task ->
+            if (task.name == "testDebugUnitTest") {
+                testDebugAll.dependsOn(task)
+            }
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete(rootProject.layout.buildDirectory)
+}
+
+tasks.register("installGitHooks", Exec) {
+    group = "Build Setup"
+    description = "Install local repository git hooks"
+    commandLine 'sh', '-c', 'git config core.hooksPath .githooks'
+}
+
+// Make preBuild tasks depend on installGitHooks for automatic git hooks setup
+gradle.projectsEvaluated {
+    subprojects { sub ->
+        sub.tasks.matching { it.name == "preBuild" }.configureEach {
+            dependsOn(rootProject.tasks.named("installGitHooks"))
+        }
+    }
+}

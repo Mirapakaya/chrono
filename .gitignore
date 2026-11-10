@@ -1,0 +1,50 @@
+.idea/*
+!.idea/codeStyles
+!.idea/vcs.xml
+!.idea/copyright
+*.iml
+/app/release
+.gradle
+/local.properties
+/configuration.properties
+/github.properties
+/apikeys.properties
+/scripts/release/app-release.jks
+/scripts/distribution/anytype-debug-service-account-key.json
+/analytics/gradle.properties
+.DS_Store
+**/build
+**/bin
+/libs/build
+/libs/lib.aar
+/captures
+.externalNativeBuild
+ktlint
+.idea/*.xml
+signing.properties
+app/release
+.kotlin/
+app/.cxx
+docs/plans/
+
+# Added by Task Master AI
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+.env
+# OS specific
+# Task files
+tasks.json
+tasks/
+.roo/
+.roomodes
+.cursor/
+.taskmaster/
+/docs/plans/
