@@ -2,6 +2,7 @@ package com.chronoio.chrono.presentation.membership.provider
 
 import com.chronoio.chrono.core_models.Command
 import com.chronoio.chrono.core_models.membership.Membership
+import com.chronoio.chrono.core_models.membership.MembershipPaymentMethod
 import com.chronoio.chrono.core_models.membership.MembershipStatus
 import com.chronoio.chrono.core_models.membership.MembershipTierData
 import com.chronoio.chrono.core_models.membership.TierId
@@ -39,30 +40,25 @@ interface MembershipProvider {
 
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun status(forceRefresh: Boolean): Flow<MembershipStatus> {
-            return awaitAccountStartManager.state().flatMapLatest { state ->
-                when (state) {
-                    AwaitAccountStartManager.State.Started -> buildStatusFlow(
-                        initialMembership = proceedWithGettingMembership(noCache = forceRefresh),
-                        initialTiers = proceedWithGettingTiers(noCache = forceRefresh)
-                    )
-                    AwaitAccountStartManager.State.Init -> emptyFlow()
-                    AwaitAccountStartManager.State.Stopped -> emptyFlow()
-                }
-            }.catch { e -> Timber.e(e) }
-                .flowOn(dispatchers.io)
+            // Chrono: all features are free for everyone. Return active unlimited status.
+            return kotlinx.coroutines.flow.flowOf(
+                MembershipStatus(
+                    activeTier = TierId(ULTRA_TIER_ID),
+                    status = Membership.Status.STATUS_ACTIVE,
+                    paymentMethod = MembershipPaymentMethod.METHOD_NONE,
+                    anyName = "",
+                    tiers = emptyList(),
+                    dateEnds = Long.MAX_VALUE,
+                    formattedDateEnds = "",
+                    userEmail = ""
+                )
+            ).flowOn(dispatchers.io)
         }
 
         @OptIn(ExperimentalCoroutinesApi::class)
         override fun activeTier(): Flow<TierId> {
-            return awaitAccountStartManager.state().flatMapLatest { state ->
-                when (state) {
-                    AwaitAccountStartManager.State.Started -> buildActiveTierFlow(
-                        initial = proceedWithGettingMembership()
-                    )
-                    AwaitAccountStartManager.State.Init -> emptyFlow()
-                    AwaitAccountStartManager.State.Stopped -> emptyFlow()
-                }
-            }.catch { e -> Timber.e(e) }
+            // Chrono: all features are free for everyone. Return top tier.
+            return kotlinx.coroutines.flow.flowOf(TierId(ULTRA_TIER_ID))
                 .flowOn(dispatchers.io)
         }
 
@@ -168,6 +164,7 @@ interface MembershipProvider {
 
         companion object {
             const val DATE_FORMAT = "d MMM yyyy"
+            const val ULTRA_TIER_ID = 45
         }
     }
 }

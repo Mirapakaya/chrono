@@ -12,6 +12,11 @@ class GetMembershipFeatures @Inject constructor(
 ) : ResultInteractor<Unit, MembershipFeatures>(dispatchers.io) {
 
     override suspend fun doWork(params: Unit): MembershipFeatures {
-        return repo.membershipV2GetFeatures()
+        // Chrono: all features are free for everyone. Return unlimited limits.
+        return MembershipFeatures(
+            spaceWriters = Int.MAX_VALUE,
+            spaceReaders = Int.MAX_VALUE,
+            sharedSpaces = Int.MAX_VALUE
+        )
     }
 }
