@@ -450,30 +450,8 @@ class MembershipViewModel(
     }
 
     private fun proceedWithPurchase(tierId: TierId, name: String) {
-        val tier = getTierById(tierId) ?: return
-        val androidProductId = tier.androidProductId
-        if (androidProductId == null) {
-            Timber.e("Tier ${tier.id} has no androidProductId")
-            return
-        }
-        val params = GetMembershipPaymentUrl.Params(
-            tierId = tier.id.value,
-            name = name
-        )
-        viewModelScope.launch {
-            getMembershipPaymentUrl.async(params).fold(
-                onSuccess = { response ->
-                    Timber.d("Payment url: $response")
-                    buyBasePlans(
-                        billingId = response.billingId,
-                        product = androidProductId
-                    )
-                },
-                onFailure = { error ->
-                    Timber.e("Error getting payment url: $error")
-                }
-            )
-        }
+        // Chrono: all features are free; no purchases are necessary.
+        Timber.d("ProceedWithPurchase disabled: Chrono provides all features for free.")
     }
 
     private fun proceedWithGettingEmailStatus() {
