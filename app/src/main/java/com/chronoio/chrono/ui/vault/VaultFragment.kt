@@ -1,0 +1,623 @@
+package com.chronoio.chrono.ui.vault
+
+import android.app.Activity
+import android.content.Intent
+import android.os.Build.VERSION.SDK_INT
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.LaunchedEffect
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.fragment.compose.content
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavOptions.Builder
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.chats.NotificationState
+import com.chronoio.chrono.core_ui.views.BaseAlertDialog
+import com.chronoio.chrono.core_utils.ext.argOrNull
+import com.chronoio.chrono.core_utils.ext.safeNavigate
+import com.chronoio.chrono.core_utils.ext.openAppSettings
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.insets.EDGE_TO_EDGE_MIN_SDK
+import com.chronoio.chrono.core_utils.intents.ActivityCustomTabsHelper
+import com.chronoio.chrono.core_utils.ui.BaseComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.ext.FragmentResultContract
+import com.chronoio.chrono.other.DefaultDeepLinkResolver
+import com.chronoio.chrono.feature_vault.presentation.VaultCommand
+import com.chronoio.chrono.feature_vault.presentation.VaultErrors
+import com.chronoio.chrono.feature_vault.presentation.VaultNavigation
+import com.chronoio.chrono.feature_vault.presentation.VaultViewModel
+import com.chronoio.chrono.feature_vault.presentation.VaultViewModelFactory
+import com.chronoio.chrono.feature_vault.ui.AlertScreenModals
+import com.chronoio.chrono.feature_vault.ui.SelectMembersContent
+import com.chronoio.chrono.feature_vault.ui.SharedSpaceLimitModal
+import com.chronoio.chrono.feature_vault.ui.VaultScreen
+import com.chronoio.chrono.ui.base.navigation
+import com.chronoio.chrono.ui.chats.ChatFragment
+import com.chronoio.chrono.ui.gallery.GalleryInstallationFragment
+import com.chronoio.chrono.ui.home.WidgetsScreenFragment
+import com.chronoio.chrono.ui.multiplayer.LeaveSpaceWarning
+import com.chronoio.chrono.ui.multiplayer.RequestJoinSpaceFragment
+import com.chronoio.chrono.ui.payments.MembershipFragment
+import com.chronoio.chrono.ui.qrcode.QrScannerActivity
+import com.chronoio.chrono.ui.quickcapture.QuickCaptureFragment
+import com.chronoio.chrono.ui.search.v2.SearchV2Fragment
+import com.chronoio.chrono.ui.settings.space.SpaceSettingsFragment
+import com.chronoio.chrono.ui.settings.typography
+import com.chronoio.chrono.ui.spaces.DeleteSpaceWarning
+import javax.inject.Inject
+import timber.log.Timber
+
+class VaultFragment : BaseComposeFragment() {
+
+    private val deepLink: String? get() = argOrNull(DEEP_LINK_KEY)
+
+    @Inject
+    lateinit var factory: VaultViewModelFactory
+
+    private val vm by viewModels<VaultViewModel> { factory }
+
+    private val qrCodeLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getStringExtra(QrScannerActivity.SCAN_RESULT)?.let { qrCode ->
+                vm.onQrCodeScanned(qrCode = qrCode)
+            } ?: run {
+                Timber.w("QR code scan failed: no contents found")
+                vm.onQrScannerError()
+            }
+        } else {
+            Timber.w("QR code scan cancelled by user")
+            vm.onQrScannerError()
+        }
+    }
+    
+
+    val onMuteSpace: (String) -> Unit = { spaceTargetId ->
+        vm.setSpaceNotificationState(spaceTargetId, NotificationState.MENTIONS)
+    }
+    val onUnmuteSpace: (String) -> Unit = { spaceTargetId ->
+        vm.setSpaceNotificationState(spaceTargetId, NotificationState.ALL)
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ) = content {
+        MaterialTheme(typography = typography) {
+
+            VaultScreen(
+                uiState = vm.uiState.collectAsStateWithLifecycle().value,
+                isEnrichingPreviews = vm.isEnrichingPreviews.collectAsStateWithLifecycle().value,
+                showNotificationBadge = vm.isNotificationDisabled.collectAsStateWithLifecycle().value,
+                showCreateSpaceBadge = vm.showCreateSpaceBadge.collectAsStateWithLifecycle().value,
+                isCompactMode = vm.isCompactMode.collectAsStateWithLifecycle().value,
+                showCreateChannelMenu = vm.showCreateChannelMenu.collectAsStateWithLifecycle().value,
+                isLocalOnly = vm.isLocalOnly,
+                onSpaceClicked = vm::onSpaceClicked,
+                onCreateChannelMenuClicked = vm::onCreateChannelMenuClicked,
+                onPersonalClicked = vm::onPersonalChannelClicked,
+                onGroupClicked = vm::onGroupChannelClicked,
+                onJoinViaQrClicked = vm::onJoinViaQrClicked,
+                onCreateChannelMenuDismissed = vm::onCreateChannelMenuDismissed,
+                onSettingsClicked = vm::onSettingsClicked,
+                profile = vm.profileView.collectAsStateWithLifecycle().value,
+                onMuteSpace = onMuteSpace,
+                onUnmuteSpace = onUnmuteSpace,
+                onSetSpaceNotificationMode = { spaceId, state ->
+                    vm.setSpaceNotificationState(spaceId, state)
+                },
+                onPinSpace = vm::onPinSpaceClicked,
+                onUnpinSpace = vm::onUnpinSpaceClicked,
+                onOrderChanged = vm::onOrderChanged,
+                onDragEnd = vm::onDragEnd,
+                onSpaceSettings = vm::onSpaceSettingsClicked,
+                onDeleteOrLeaveSpace = vm::onDeleteSpaceClicked,
+                onSearchBarClicked = {
+                    vm.onSearchBarClicked()
+                    // safeNavigate: a double tap must not push the screen twice.
+                    runCatching {
+                        findNavController().safeNavigate(
+                            R.id.vaultScreen,
+                            R.id.searchV2Screen,
+                            SearchV2Fragment.args(space = null)
+                        )
+                    }.onFailure {
+                        Timber.e(it, "Error opening search from vault")
+                    }
+                },
+                showSearchHighlight = vm.showSearchHighlight.collectAsStateWithLifecycle().value,
+                showQuickCaptureFab = vm.showQuickCapture.collectAsStateWithLifecycle().value,
+                onQuickCaptureClicked = vm::onQuickCaptureClicked,
+                quickCaptureSuccess = vm.quickCaptureSuccess.collectAsStateWithLifecycle().value,
+                onQuickCaptureBannerClicked = vm::onQuickCaptureBannerClicked
+            )
+
+            val notificationError = vm.notificationError.collectAsStateWithLifecycle().value
+            if (notificationError != null) {
+                BaseAlertDialog(
+                    dialogText = notificationError,
+                    buttonText = getString(R.string.button_ok),
+                    onButtonClick = { vm.clearNotificationError() },
+                    onDismissRequest = { vm.clearNotificationError() }
+                )
+            }
+
+            val vaultErrors = vm.vaultErrors.collectAsStateWithLifecycle().value
+            when (vaultErrors) {
+                VaultErrors.Hidden -> {
+                    //do nothing
+                }
+
+                VaultErrors.QrCodeIsNotValid -> {
+                    AlertScreenModals(
+                        title = getString(R.string.vault_qr_invalid_title),
+                        description = getString(R.string.vault_qr_invalid_description),
+                        firstButtonText = getString(R.string.vault_qr_try_again),
+                        onAction = vm::onModalTryAgainClicked,
+                        onDismiss = vm::onModalCancelClicked
+                    )
+                }
+
+                VaultErrors.QrScannerError -> {
+                    AlertScreenModals(
+                        title = getString(R.string.vault_qr_scan_error_title),
+                        description = getString(R.string.vault_qr_scan_error_description),
+                        firstButtonText = getString(R.string.vault_qr_try_again),
+                        onAction = vm::onModalTryAgainClicked,
+                        onDismiss = vm::onModalCancelClicked
+                    )
+                }
+
+                VaultErrors.CameraPermissionDenied -> {
+                    AlertScreenModals(
+                        title = getString(R.string.camera_permission_required_title),
+                        description = getString(R.string.camera_permission_settings_message),
+                        firstButtonText = getString(R.string.open_settings),
+                        secondButtonText = getString(R.string.cancel),
+                        onAction = {
+                            requireContext().openAppSettings()
+                            vm.clearVaultError()
+                        },
+                        onDismiss = vm::clearVaultError
+                    )
+                }
+
+                is VaultErrors.SharedSpaceLimitReached -> {
+                    SharedSpaceLimitModal(
+                        limit = vaultErrors.limit,
+                        onUpgradeClicked = vm::onSharedSpaceLimitUpgradeClicked,
+                        onManageChannelsClicked = vm::onManageChannelsClicked,
+                        onDismiss = vm::clearVaultError
+                    )
+                }
+            }
+
+            // Dropdown menu is now hosted inside VaultScreen / VaultScreenToolbar
+
+            val showSelectMembers = vm.showSelectMembersSheet.collectAsStateWithLifecycle().value
+            if (showSelectMembers) {
+                SelectMembersContent(
+                    uiState = vm.selectMembersUiState.collectAsStateWithLifecycle().value,
+                    onMemberToggled = vm::onMemberToggled,
+                    onSearchQueryChanged = vm::onSelectMembersSearchQueryChanged,
+                    onNext = vm::onSelectMembersNext,
+                    onDismissRequest = vm::onSelectMembersDismissed
+                )
+            }
+        }
+        LaunchedEffect(Unit) {
+            vm.commands.collect { command -> proceed(command) }
+        }
+        LaunchedEffect(Unit) {
+            vm.inviteCommands.collect { command -> proceed(command) }
+        }
+        LaunchedEffect(Unit) {
+            vm.navigations.collect { command -> proceed(command) }
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        parentFragmentManager.setFragmentResultListener(
+            FragmentResultContract.CREATE_SPACE_BACK_TO_SELECT_MEMBERS_KEY,
+            viewLifecycleOwner
+        ) { _, _ ->
+            vm.onCreateSpaceBackPressed()
+        }
+        parentFragmentManager.setFragmentResultListener(
+            FragmentResultContract.OPEN_CREATE_CHANNEL_KEY,
+            viewLifecycleOwner
+        ) { _, _ ->
+            vm.onCreateChannelMenuClicked()
+        }
+        parentFragmentManager.setFragmentResultListener(
+            QuickCaptureFragment.RESULT_KEY,
+            viewLifecycleOwner
+        ) { _, bundle ->
+            val objectId = bundle.getString(QuickCaptureFragment.RESULT_OBJECT_ID)
+            val spaceId = bundle.getString(QuickCaptureFragment.RESULT_SPACE_ID)
+            if (objectId != null && spaceId != null) {
+                vm.onQuickCaptureObjectPublished(
+                    objectId = objectId,
+                    spaceId = spaceId,
+                    typeName = bundle.getString(QuickCaptureFragment.RESULT_TYPE_NAME).orEmpty(),
+                    spaceName = bundle.getString(QuickCaptureFragment.RESULT_SPACE_NAME).orEmpty()
+                )
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.onStart()
+    }
+
+    private fun proceed(command: VaultCommand) {
+        when (command) {
+            is VaultCommand.EnterSpaceHomeScreen -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.actionOpenSpaceFromVault,
+                        WidgetsScreenFragment.args(
+                            space = command.space.id,
+                            deeplink = null
+                        )
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while opening space from vault")
+                }
+            }
+
+            is VaultCommand.EnterSpaceLevelChat -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.actionOpenChatFromVault,
+                        ChatFragment.args(
+                            space = command.space.id,
+                            ctx = command.chat
+                        )
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while opening space-level chat from vault")
+                }
+            }
+
+            is VaultCommand.CreateNewSpace -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.createSpaceScreen,
+                        bundleOf(
+                            "channelType" to command.channelType,
+                            "selectedMemberIdentities" to command.selectedMembers
+                                .map { it.identity }.toTypedArray(),
+                            "writersLimit" to command.writersLimit
+                        )
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while opening create space screen from vault")
+                }
+            }
+
+            is VaultCommand.OpenProfileSettings -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.profileSettingsScreen,
+                        null
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while opening profile settings from vault")
+                }
+            }
+
+            is VaultCommand.OpenQuickCapture -> {
+                runCatching {
+                    val nav = findNavController()
+                    // A double-tap on the FAB must not stack two sheets sharing one editor
+                    // component for the same draft.
+                    if (nav.currentDestination?.id != R.id.quickCaptureScreen) {
+                        nav.navigate(R.id.nav_quick_capture)
+                    }
+                }.onFailure {
+                    Timber.e(it, "Error while opening quick capture from vault")
+                }
+            }
+
+            is VaultCommand.Deeplink.Invite -> {
+                findNavController().navigate(
+                    R.id.requestJoinSpaceScreen,
+                    RequestJoinSpaceFragment.args(link = command.link)
+                )
+            }
+
+            is VaultCommand.Deeplink.GalleryInstallation -> {
+                findNavController().navigate(
+                    R.id.galleryInstallationScreen,
+                    GalleryInstallationFragment.args(
+                        deepLinkType = command.deepLinkType,
+                        deepLinkSource = command.deepLinkSource
+                    )
+                )
+            }
+
+            is VaultCommand.Deeplink.MembershipScreen -> {
+                findNavController().navigate(
+                    R.id.paymentsScreen,
+                    MembershipFragment.args(command.tierId, command.code),
+                    Builder().setLaunchSingleTop(true).build()
+                )
+            }
+
+            is VaultCommand.Deeplink.DeepLinkToObjectNotWorking -> {
+                toast(
+                    getString(R.string.multiplayer_deeplink_to_your_object_error)
+                )
+            }
+
+            is VaultCommand.ShowDeleteSpaceWarning -> {
+                val fragment = DeleteSpaceWarning().apply {
+                    arguments = DeleteSpaceWarning.args(command.space)
+                }
+                fragment.onDeletionAccepted = {
+                    fragment.dismiss()
+                    vm.onDeleteSpaceAcceptedClicked(it)
+                }
+                fragment.onDeletionCancelled = {
+                    fragment.dismiss()
+                    vm.onDeleteSpaceWarningCancelled()
+                }
+                fragment.show(childFragmentManager, null)
+            }
+
+            is VaultCommand.ShowLeaveSpaceWarning -> {
+                val fragment = LeaveSpaceWarning().apply {
+                    arguments = LeaveSpaceWarning.args(command.space)
+                }
+                fragment.onLeaveSpaceAccepted = {
+                    fragment.dismiss()
+                    vm.onLeaveSpaceAcceptedClicked(it)
+                }
+                fragment.onLeaveSpaceCancelled = {
+                    fragment.dismiss()
+                    vm.onLeaveSpaceWarningCancelled()
+                }
+                fragment.show(childFragmentManager, null)
+            }
+
+            is VaultCommand.OpenSpaceSettings -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.action_open_space_settings,
+                        SpaceSettingsFragment.args(space = command.space)
+                    )
+                }.onFailure { e ->
+                    Timber.e(e, "Error while opening space settings")
+                }
+            }
+            
+            VaultCommand.ScanQrCode -> {
+                handleCameraPermissionAndScan()
+            }
+
+            VaultCommand.OpenSpaceListScreen -> {
+                runCatching {
+                    findNavController().navigate(R.id.spaceListScreen)
+                }.onFailure {
+                    Timber.e(it, "Error while navigating to space list")
+                }
+            }
+            
+            is VaultCommand.NavigateToRequestJoinSpace -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.requestJoinSpaceScreen,
+                        RequestJoinSpaceFragment.args(link = command.link)
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while navigating to request join space")
+                }
+            }
+
+            is VaultCommand.Deeplink.InitiateOneToOneChat -> {
+                // This is handled internally by VaultViewModel - no UI action needed
+                // VaultViewModel.proceedWithOneToOneChatInitiation() will emit EnterSpaceLevelChat
+                Timber.d("InitiateOneToOneChat deeplink: ${command.identity}")
+            }
+        }
+    }
+
+    private fun proceed(destination: VaultNavigation) {
+        when (destination) {
+            is VaultNavigation.OpenObject -> runCatching {
+                if (!destination.openTargetDirectly) {
+                    findNavController().navigate(
+                        R.id.actionOpenSpaceFromVault,
+                        WidgetsScreenFragment.args(
+                            space = destination.space,
+                            deeplink = null
+                        )
+                    )
+                }
+                navigation().openDocument(
+                    target = destination.ctx,
+                    space = destination.space
+                )
+            }.onFailure {
+                Timber.e(it, "Error while opening object from vault")
+            }
+
+            is VaultNavigation.OpenSet -> runCatching {
+                if (!destination.openTargetDirectly) {
+                    findNavController().navigate(
+                        R.id.actionOpenSpaceFromVault,
+                        WidgetsScreenFragment.args(
+                            space = destination.space,
+                            deeplink = null
+                        )
+                    )
+                }
+                navigation().openObjectSet(
+                    target = destination.ctx,
+                    space = destination.space,
+                    view = destination.view
+                )
+            }.onFailure {
+                Timber.e(it, "Error while opening set or collection from vault")
+            }
+
+            is VaultNavigation.OpenChat -> {
+                if (!destination.openTargetDirectly) {
+                    findNavController().navigate(
+                        R.id.actionOpenSpaceFromVault,
+                        WidgetsScreenFragment.args(
+                            space = destination.space,
+                            deeplink = null
+                        )
+                    )
+                }
+                navigation().openChat(
+                    target = destination.ctx,
+                    space = destination.space
+                )
+            }
+
+            is VaultNavigation.OpenDateObject -> {
+                runCatching {
+                    if (!destination.openTargetDirectly) {
+                        findNavController().navigate(
+                            R.id.actionOpenSpaceFromVault,
+                            WidgetsScreenFragment.args(
+                                space = destination.space,
+                                deeplink = null
+                            )
+                        )
+                    }
+                    navigation().openDateObject(
+                        objectId = destination.ctx,
+                        space = destination.space
+                    )
+                }.onFailure { e ->
+                    Timber.e(e, "Error while opening date object from widgets")
+                }
+            }
+
+            is VaultNavigation.OpenParticipant -> {
+                runCatching {
+                    if (!destination.openTargetDirectly) {
+                        findNavController().navigate(
+                            R.id.actionOpenSpaceFromVault,
+                            WidgetsScreenFragment.args(
+                                space = destination.space,
+                                deeplink = null
+                            )
+                        )
+                    }
+                    navigation().openParticipantObject(
+                        objectId = destination.ctx,
+                        space = destination.space
+                    )
+                }.onFailure { e ->
+                    Timber.e(e, "Error while opening participant object from widgets")
+                }
+            }
+
+            is VaultNavigation.OpenType -> {
+                runCatching {
+                    if (!destination.openTargetDirectly) {
+                        findNavController().navigate(
+                            R.id.actionOpenSpaceFromVault,
+                            WidgetsScreenFragment.args(
+                                space = destination.space,
+                                deeplink = null
+                            )
+                        )
+                    }
+                    navigation().openObjectType(
+                        objectId = destination.target,
+                        space = destination.space
+                    )
+                }.onFailure { e ->
+                    Timber.e(e, "Error while opening type object from vault")
+                }
+            }
+
+            is VaultNavigation.OpenUrl -> {
+                try {
+                    ActivityCustomTabsHelper.openUrl(
+                        activity = requireActivity(),
+                        url = destination.url
+                    )
+                } catch (e: Throwable) {
+                    Timber.e(e, "Error opening bookmark URL: ${destination.url}")
+                    toast("Failed to open URL")
+                }
+            }
+
+            is VaultNavigation.ShowError -> {
+                toast(destination.message)
+            }
+        }
+    }
+
+    override fun onApplyWindowRootInsets(view: View) {
+        if (SDK_INT >= EDGE_TO_EDGE_MIN_SDK) {
+            // Do nothing.
+        } else {
+            super.onApplyWindowRootInsets(view)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        proceedWithDeepLinks()
+        vm.processPendingDeeplink()
+    }
+
+    private fun proceedWithDeepLinks() {
+        val deepLinkFromFragmentArgs = deepLink
+        if (deepLinkFromFragmentArgs != null) {
+            Timber.d("Deeplink  from fragment args")
+            vm.onResume(DefaultDeepLinkResolver.resolve(deepLinkFromFragmentArgs))
+            arguments?.putString(DEEP_LINK_KEY, null)
+        } else {
+            vm.onResume(null)
+        }
+    }
+
+    override fun injectDependencies() {
+        componentManager().vaultComponent.get().inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().vaultComponent.release()
+    }
+
+    private fun handleCameraPermissionAndScan() {
+        // Google Code Scanner doesn't require camera permission
+        launchQrScanner()
+    }
+    
+    private fun launchQrScanner() {
+        qrCodeLauncher.launch(
+            Intent(requireContext(), QrScannerActivity::class.java)
+        )
+    }
+
+    companion object {
+        private const val SHOW_MNEMONIC_KEY = "arg.vault-screen.show-mnemonic"
+        private const val DEEP_LINK_KEY = "arg.vault-screen.deep-link"
+        fun args(deeplink: String?): Bundle = bundleOf(
+            DEEP_LINK_KEY to deeplink
+        )
+    }
+}

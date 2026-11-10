@@ -1,0 +1,165 @@
+package com.chronoio.chrono.core_ui.extensions
+
+import android.content.Context
+import android.content.res.ColorStateList
+import android.text.InputType
+import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_models.RelationFormat
+import com.chronoio.chrono.core_ui.BuildConfig
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.widgets.text.TextInputWidget
+import com.chronoio.chrono.core_utils.ext.PopupExtensions.calculateRectInWindow
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.presentation.editor.editor.BlockDimensions
+import com.google.android.material.imageview.ShapeableImageView
+import com.google.android.material.shape.ShapeAppearanceModel
+
+fun Context.toast(
+    msg: CharSequence,
+    gravity: Int? = null,
+    duration: Int = Toast.LENGTH_LONG
+) = Toast
+    .makeText(this, msg, duration)
+    .apply {
+        if (gravity != null) setGravity(
+            gravity,
+            0,
+            resources.getDimension(R.dimen.default_toast_top_gravity_offset).toInt()
+        )
+    }
+    .show()
+
+fun View.tint(color: Int) {
+    backgroundTintList = ColorStateList.valueOf(color)
+}
+
+fun LinearLayout.addVerticalDivider(
+    alpha: Float,
+    height: Int,
+    color: Int
+) = addView(
+    View(context).apply {
+        setBackgroundColor(color)
+        setAlpha(alpha)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            height
+        )
+    }
+)
+
+fun EditText.cursorYBottomCoordinate(): Int {
+    val layout = this.layout ?: return 0
+    with(layout) {
+        val pos = selectionStart
+        val line = getLineForOffset(pos)
+        val baseLine = getLineBaseline(line)
+        val descent = getLineDescent(line)
+        val rect = calculateRectInWindow(this@cursorYBottomCoordinate)
+        return rect.top + baseLine + descent - this.topPadding
+    }
+}
+
+fun TextView.range(): IntRange {
+    return if (isAttachedToWindow && layout != null) {
+        selectionStart..selectionEnd
+    } else {
+        0..0
+    }
+}
+
+fun View.dimensions(): BlockDimensions {
+    val rect = calculateRectInWindow(this)
+    return BlockDimensions(
+        left = rect.left,
+        top = rect.top,
+        bottom = rect.bottom,
+        right = rect.right,
+        height = this.height,
+        width = this.width
+    )
+}
+
+fun EditText.setInputTypeBaseOnFormat(format: RelationFormat) = when (format) {
+    RelationFormat.SHORT_TEXT -> {
+        inputType = InputType.TYPE_CLASS_TEXT
+        isSingleLine = true
+    }
+    RelationFormat.LONG_TEXT -> {
+        inputType = InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        isSingleLine = false
+    }
+    RelationFormat.NUMBER -> {
+        inputType =
+            InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+    }
+    RelationFormat.URL -> {
+        inputType = InputType.TYPE_TEXT_VARIATION_URI
+    }
+    RelationFormat.EMAIL -> {
+        inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+    }
+    RelationFormat.PHONE -> {
+        inputType = InputType.TYPE_CLASS_PHONE
+    }
+    else -> {
+    }
+}
+
+fun RecyclerView.addTextFromSelectedStart(text: String) {
+    this.findFocus()?.let { child: View? ->
+        if (child is TextInputWidget) {
+            val selectionStart = child.selectionStart
+            val length = child.text?.length
+            if (length != null && selectionStart in 0..length) {
+                try {
+                    child.text?.insert(child.selectionStart, text)
+                } catch (e: Exception) {
+                    this.context.toast("Error, can't set $text")
+                }
+            } else {
+                if (BuildConfig.DEBUG) {
+                    this.context.toast("Selection position error, can't set $text")
+                }
+            }
+        }
+    }
+}
+
+fun ShapeableImageView.setCircularShape() {
+    val shapeModel = ShapeAppearanceModel.builder(
+        context,
+        R.style.ShapeAppearance_MaterialComponents_Circle,
+        0
+    ).build()
+    shapeAppearanceModel = shapeModel
+}
+
+fun ShapeableImageView.setCorneredShape(cornerRadius: Float) {
+    val shapeModel = shapeAppearanceModel
+        .toBuilder()
+        .setAllCornerSizes(cornerRadius)
+        .build()
+    shapeAppearanceModel = shapeModel
+}
+
+fun throttledClick(
+    onClick: () -> Unit,
+    duration: Int = THROTTLE_DURATION
+): () -> Unit {
+    var latest: Long = 0
+    return {
+        val now = System.currentTimeMillis()
+        if (now - latest >= duration) {
+            onClick()
+            latest = now
+        }
+    }
+}
+
+const val THROTTLE_DURATION = 300

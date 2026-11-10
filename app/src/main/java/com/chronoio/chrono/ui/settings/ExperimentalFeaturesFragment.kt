@@ -1,0 +1,53 @@
+package com.chronoio.chrono.ui.settings
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.viewModels
+import androidx.fragment.compose.content
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.presentation.settings.ExperimentalFeaturesViewModel
+import javax.inject.Inject
+import kotlin.getValue
+
+class ExperimentalFeaturesFragment : BaseBottomSheetComposeFragment() {
+
+    @Inject
+    lateinit var factory: ExperimentalFeaturesViewModel.Factory
+
+    private val vm by viewModels<ExperimentalFeaturesViewModel> { factory }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = content {
+        ExperimentalFeaturesScreen(
+            isCompactModeEnabled = vm.isCompactModeEnabled.collectAsStateWithLifecycle().value,
+            onCompactModeToggled = vm::onCompactModeToggled,
+            isKanbanEnabled = vm.isKanbanEnabled.collectAsStateWithLifecycle().value,
+            onKanbanToggled = vm::onKanbanToggled,
+            isQuickCaptureEnabled = vm.isQuickCaptureEnabled.collectAsStateWithLifecycle().value,
+            onQuickCaptureToggled = vm::onQuickCaptureToggled,
+            isQuickCaptureAiEnabled = vm.isQuickCaptureAiEnabled.collectAsStateWithLifecycle().value,
+            onQuickCaptureAiToggled = vm::onQuickCaptureAiToggled
+        )
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        skipCollapsed()
+        expand()
+    }
+
+    override fun injectDependencies() {
+        componentManager().experimentalFeaturesComponent.get().inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().experimentalFeaturesComponent.release()
+    }
+}

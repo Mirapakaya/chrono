@@ -1,0 +1,140 @@
+package com.chronoio.chrono.domain.search
+
+import com.chronoio.chrono.core_models.Config
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.subscriptions.GlobalSubscription
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.domain.workspace.spaceIdOrNull
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+
+class ObjectTypesSubscriptionManager (
+    private val scope: CoroutineScope = GlobalScope,
+    private val container: ObjectTypesSubscriptionContainer,
+    private val spaceManager: SpaceManager
+): GlobalSubscription {
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val pipeline get() = spaceManager.state()
+        .distinctUntilChangedBy { state -> state.spaceIdOrNull() }
+        .flatMapLatest { state ->
+        when(state) {
+            is SpaceManager.State.Space.Active -> {
+                val params = buildParams(SpaceId(state.config.space))
+                container.observe(params)
+            }
+            is SpaceManager.State.Space.Idle -> {
+                // A space activated without Workspace.Open (quick capture). The params below
+                // are built from the space id alone, so there is nothing a config would add.
+                container.observe(buildParams(state.space))
+            }
+            is SpaceManager.State.NoSpace -> {
+                flow {
+                    container.unsubscribe()
+                    emit(ObjectTypesSubscriptionContainer.Index.empty())
+                }
+            }
+            is SpaceManager.State.Init -> {
+                emptyFlow()
+            }
+        }
+    }
+
+    private var job: Job? = null
+
+    fun onStart() {
+        job?.cancel()
+        job = scope.launch {
+            pipeline.collect()
+        }
+    }
+
+    fun onStop() {
+        scope.launch {
+            container.unsubscribe()
+            job?.cancel()
+            job = null
+        }
+    }
+
+    companion object {
+        fun buildParams(config: Config) = buildParams(SpaceId(config.space))
+
+        fun buildParams(space: SpaceId) =
+            ObjectTypesSubscriptionContainer.Params(
+                space = space,
+                subscription = ObjectTypesSubscriptionContainer.SUBSCRIPTION_ID,
+                filters = listOf(
+                    DVFilter(
+                        relation = Relations.LAYOUT,
+                        condition = DVFilterCondition.EQUAL,
+                        value = ObjectType.Layout.OBJECT_TYPE.code.toDouble()
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_DELETED,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_ARCHIVED,
+                        condition = DVFilterCondition.NONE
+                    ),
+                    DVFilter(
+                        relation = Relations.UNIQUE_KEY,
+                        condition = DVFilterCondition.NOT_EMPTY
+                    ),
+                ),
+                limit = 0,
+                offset = 0L,
+                sorts = emptyList(),
+                sources = emptyList(),
+                keys = listOf(
+                    Relations.ID,
+                    Relations.NAME,
+                    Relations.PLURAL_NAME,
+                    Relations.IS_HIDDEN,
+                    Relations.IS_DELETED,
+                    Relations.IS_ARCHIVED,
+                    Relations.SMARTBLOCKTYPES,
+                    Relations.LAYOUT,
+                    Relations.DESCRIPTION,
+                    Relations.ICON_EMOJI,
+                    Relations.ICON_NAME,
+                    Relations.ICON_OPTION,
+                    Relations.SOURCE_OBJECT,
+                    Relations.IS_READ_ONLY,
+                    Relations.RECOMMENDED_LAYOUT,
+                    Relations.DEFAULT_TEMPLATE_ID,
+                    Relations.SPACE_ID,
+                    Relations.UNIQUE_KEY,
+                    Relations.RESTRICTIONS,
+                    Relations.TARGET_SPACE_ID,
+                    Relations.TYPE,
+                    Relations.RECOMMENDED_RELATIONS,
+                    Relations.RECOMMENDED_FEATURED_RELATIONS,
+                    Relations.RECOMMENDED_HIDDEN_RELATIONS,
+                    Relations.RECOMMENDED_FILE_RELATIONS,
+                    Relations.IS_ARCHIVED,
+                    Relations.WIDGET_LAYOUT,
+                    Relations.WIDGET_LIMIT,
+                    Relations.WIDGET_VIEW_ID,
+                    Relations.ORDER_ID,
+                    Relations.FEATURED_RELATIONS,
+                    Relations.LAST_USED_DATE
+                    ),
+                ignoreWorkspace = true
+            )
+    }
+}

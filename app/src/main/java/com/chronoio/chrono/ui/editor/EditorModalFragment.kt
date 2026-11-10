@@ -1,0 +1,67 @@
+package com.chronoio.chrono.ui.editor
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.argInt
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetFragment
+import com.chronoio.chrono.databinding.MyFragmentContainerBinding
+import com.chronoio.chrono.ui.templates.EditorTemplateFragment
+
+class EditorModalFragment : BaseBottomSheetFragment<MyFragmentContainerBinding>() {
+
+    private val space get() = arg<Id>(ARG_SPACE_ID)
+    private val template get() = arg<Id>(ARG_TEMPLATE_ID)
+    private val templateTypeId get() = arg<Id>(ARG_TEMPLATE_TYPE_ID)
+    private val templateTypeKey get() = arg<Id>(ARG_TEMPLATE_TYPE_KEY)
+    private val screenType get() = argInt(ARG_SCREEN_TYPE)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setStyle(STYLE_NORMAL, R.style.AppBottomSecondarySheetDialogTheme)
+        val editorFragment = EditorTemplateFragment.newInstance(
+            targetTemplateId = template,
+            space = space,
+            targetTypeId = templateTypeId,
+            targetTypeKey = templateTypeKey,
+            screenType = screenType
+        )
+        childFragmentManager.beginTransaction()
+            .add(R.id.fragment_container_view, editorFragment)
+            .commit()
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        skipCollapsed()
+        setFullHeightSheet()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        expand()
+    }
+
+    override fun injectDependencies() {}
+
+    override fun releaseDependencies() {}
+
+    override fun inflateBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?
+    ): MyFragmentContainerBinding = MyFragmentContainerBinding.inflate(
+        inflater, container, false
+    )
+
+    companion object {
+        const val ARG_TEMPLATE_ID = "arg_template_id"
+        const val ARG_SPACE_ID = "arg_space_id"
+        const val ARG_TEMPLATE_TYPE_ID = "arg_template_object_type"
+        const val ARG_TEMPLATE_TYPE_KEY = "arg_template_object_type_key"
+        const val ARG_SCREEN_TYPE = "arg_screen_type"
+    }
+}

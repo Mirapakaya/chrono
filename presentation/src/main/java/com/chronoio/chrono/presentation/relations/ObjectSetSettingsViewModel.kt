@@ -1,0 +1,428 @@
+package com.chronoio.chrono.presentation.relations
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.core_models.DVViewerRelation
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Payload
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.dataview.interactor.UpdateDataViewViewer
+import com.chronoio.chrono.domain.objects.StoreOfRelations
+import com.chronoio.chrono.domain.relations.DeleteRelationFromDataView
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.common.BaseListViewModel
+import com.chronoio.chrono.presentation.extension.sendAnalyticsRelationEvent
+import com.chronoio.chrono.presentation.extension.sendAnalyticsShowObjectTypeScreen
+import com.chronoio.chrono.presentation.mapper.mapToSimpleRelationView
+import com.chronoio.chrono.presentation.mapper.toSimpleRelationView
+import com.chronoio.chrono.presentation.sets.dataViewState
+import com.chronoio.chrono.presentation.sets.filterVisible
+import com.chronoio.chrono.presentation.sets.model.SimpleRelationView
+import com.chronoio.chrono.presentation.sets.model.ViewerRelationListView
+import com.chronoio.chrono.presentation.sets.state.ObjectState
+import com.chronoio.chrono.presentation.sets.viewerById
+import com.chronoio.chrono.presentation.util.Dispatcher
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class ObjectSetSettingsViewModel(
+    private val objectState: StateFlow<ObjectState>,
+    private val dispatcher: Dispatcher<Payload>,
+    private val updateDataViewViewer: UpdateDataViewViewer,
+    private val storeOfRelations: StoreOfRelations,
+    private val analytics: Analytics,
+    private val deleteRelationFromDataView: DeleteRelationFromDataView,
+    private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+    private val spaceManager: SpaceManager
+) : BaseListViewModel<ViewerRelationListView>(), AnalyticSpaceHelperDelegate by analyticSpaceHelperDelegate {
+
+    val screenState = MutableStateFlow(ScreenState.LIST)
+    val commands = MutableSharedFlow<Command>()
+
+    /**
+     * Complete list of all relations (including hidden) in viewerRelations order.
+     * Used to preserve hidden properties during drag-drop reordering.
+     */
+    private val allViewerRelations = MutableStateFlow<List<SimpleRelationView>>(emptyList())
+
+    init {
+        Timber.i("ObjectSetSettingsViewModel, init")
+    }
+
+    fun onStart(viewerId: Id) {
+        viewModelScope.launch {
+            objectState.collect { state ->
+                Timber.d("New update, viewerId: $viewerId, state: $state")
+
+                if (state !is ObjectState.DataView) return@collect
+
+                val result = mutableListOf<ViewerRelationListView>()
+                val viewer = state.viewerById(viewerId) ?: return@collect
+
+                Timber.d("Relation index: ${state.dataViewContent.relationLinks}")
+
+                val inStore = state.dataViewContent.relationLinks.mapNotNull {
+                    storeOfRelations.getByKey(it.key)
+                }
+
+                Timber.d("Found in store: ${inStore.size}, available in index: ${state.dataViewContent.relationLinks.size}")
+
+                // Pure viewerRelations-derived list — used by drag-drop reorder, which must not
+                // reference relations that are not yet part of the viewer.
+                val completeRelations = viewer.viewerRelations.toSimpleRelationView(inStore)
+                allViewerRelations.value = completeRelations
+
+                // Display list: viewerRelations + relationLinks-only relations (e.g. a TypeSet's
+                // recommended properties) surfaced as OFF toggles. Ports iOS sortedRelations.
+                // Reuses the already-computed completeRelations to avoid recomputing it.
+                val relations = buildDisplayRelations(
+                    completeRelations = completeRelations,
+                    inStore = inStore
+                )
+                    .filterVisible()
+                    .map { view -> ViewerRelationListView.Relation(view) }
+
+                result.addAll(relations)
+
+                _views.value = result
+            }
+        }
+    }
+
+    /**
+     * Builds the display list of relations for the Properties screen — ports iOS
+     * SetContentViewDataBuilder.sortedRelations. Union of:
+     *  1) relations already present in [completeRelations] (the viewerRelations-derived list, in
+     *     view order with real visibility), and
+     *  2) relations in [inStore] (from dataview.relationLinks) but NOT in [completeRelations] —
+     *     appended as OFF toggles (isVisible = false), in relationLinks order.
+     *
+     * (2) fixes DROID-4543: a TypeSet's recommended properties land in relationLinks but are not
+     * mirrored into the viewer's viewerRelations, so they were dropped. The appended group is
+     * filtered like iOS (isValidToUse => not hidden/deleted/archived/invalid) AND, because Android
+     * reports links.isHidden = false, also by [Relations.systemRelationKeys] so internal system
+     * relations (e.g. "links") never leak in.
+     *
+     * [completeRelations] is passed in already computed (see onStart) so the viewerRelations →
+     * SimpleRelationView mapping is done once. Relations in the appended group are, by construction,
+     * absent from viewerRelations, so their visibility is always false — hence the empty
+     * viewerRelations argument to [mapToSimpleRelationView].
+     *
+     * Made internal for testing purposes.
+     */
+    internal fun buildDisplayRelations(
+        completeRelations: List<SimpleRelationView>,
+        inStore: List<ObjectWrapper.Relation>
+    ): List<SimpleRelationView> {
+        val presentKeys = completeRelations.mapTo(HashSet()) { it.key }
+        val notPresent = inStore
+            .filter { relation ->
+                relation.key !in presentKeys &&
+                    relation.isValidToUse &&
+                    !Relations.systemRelationKeys.contains(relation.key)
+            }
+            .mapToSimpleRelationView(emptyList())
+        return completeRelations + notPresent
+    }
+
+    fun onEditButtonClicked() {
+        val state = objectState.value.dataViewState() ?: return
+        when (state) {
+            is ObjectState.DataView.Collection -> screenState.value = ScreenState.EDIT
+            is ObjectState.DataView.Set -> screenState.value = ScreenState.EDIT
+            is ObjectState.DataView.TypeSet -> {
+                viewModelScope.launch {
+                    commands.emit(Command.OpenTypePropertiesScreen)
+                }
+                viewModelScope.launch {
+                    sendAnalyticsShowObjectTypeScreen(
+                        route = EventsDictionary.Routes.objectRoute,
+                        analytics = analytics,
+                        spaceParams = provideParams(spaceManager.get())
+                    )
+                }
+            }
+        }
+    }
+
+    fun onAddButtonClicked() {
+        val state = objectState.value.dataViewState() ?: return
+        when (state) {
+            is ObjectState.DataView.Collection, is ObjectState.DataView.Set -> {
+                viewModelScope.launch {
+                    commands.emit(Command.OpenRelationAddToDataView)
+                }
+            }
+
+            is ObjectState.DataView.TypeSet -> {
+                viewModelScope.launch {
+                    commands.emit(Command.OpenTypePropertiesScreen)
+                }
+                viewModelScope.launch {
+                    sendAnalyticsShowObjectTypeScreen(
+                        route = EventsDictionary.Routes.objectRoute,
+                        analytics = analytics,
+                        spaceParams = provideParams(spaceManager.get())
+                    )
+                }
+            }
+        }
+    }
+
+    fun onDoneButtonClicked() {
+        screenState.value = ScreenState.LIST
+    }
+
+    fun onSwitchClicked(ctx: Id, viewerId: Id, item: SimpleRelationView) {
+        proceedWithVisibilityUpdate(ctx = ctx, viewerId = viewerId, item)
+    }
+
+    fun onDeleteClicked(ctx: Id, viewerId: Id, item: SimpleRelationView) {
+        proceedWithDeletingRelationFromViewer(ctx = ctx, viewerId = viewerId, relationKey = item.key)
+    }
+
+    private fun proceedWithDeletingRelationFromViewer(ctx: Id, viewerId: Id, relationKey: Key) {
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        viewModelScope.launch {
+            val params = UpdateDataViewViewer.Params.ViewerRelation.Remove(
+                ctx = ctx,
+                dv = state.dataViewBlock.id,
+                view = viewer.id,
+                keys = listOf(relationKey)
+            )
+            updateDataViewViewer.async(params).fold(
+                onFailure = { e -> Timber.e(e, "Error while deleting relation from dv") },
+                onSuccess = { payload ->
+                    dispatcher.send(payload)
+                    proceedWithUpdatingCurrentViewAfterRelationDeletion(
+                        ctx = ctx,
+                        relation = relationKey,
+                        viewerId = viewerId
+                    )
+                    proceedWithDeletingRelationFromDataView(ctx = ctx, relation = relationKey)
+                    analytics.sendAnalyticsRelationEvent(
+                        eventName = EventsDictionary.relationDelete,
+                        storeOfRelations = storeOfRelations,
+                        relationKey = relationKey,
+                        spaceParams = provideParams(spaceManager.get())
+                    )
+                }
+            )
+        }
+    }
+
+    private fun proceedWithDeletingRelationFromDataView(ctx: Id, relation: Id) {
+        val state = objectState.value.dataViewState() ?: return
+        viewModelScope.launch {
+            val params = DeleteRelationFromDataView.Params(
+                ctx = ctx,
+                dv = state.dataViewBlock.id,
+                relation = relation
+            )
+            deleteRelationFromDataView(params).process(
+                failure = { e -> Timber.e(e, "Error while deleting relation from dv") },
+                success = { payload -> dispatcher.send(payload) }
+            )
+        }
+    }
+
+    private fun proceedWithUpdatingCurrentViewAfterRelationDeletion(ctx: Id, viewerId: Id, relation: Id) {
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        viewModelScope.launch {
+            val updated = viewer.copy(
+                viewerRelations = viewer.viewerRelations.filter { it.key != relation },
+                filters = viewer.filters.filter { it.relation != relation },
+                sorts = viewer.sorts.filter { it.relationKey != relation }
+            )
+            val params = UpdateDataViewViewer.Params.UpdateView(
+                context = ctx,
+                target = state.dataViewBlock.id,
+                viewer = updated
+            )
+            updateDataViewViewer.async(params).fold(
+                onSuccess = { dispatcher.send(it) },
+                onFailure = { Timber.e("Error while updating") }
+            )
+        }
+    }
+
+    /**
+     * Called when user reorders properties via drag-and-drop.
+     * Preserves hidden properties by merging the new visible order with hidden ones.
+     * This matches iOS behavior where view.options (complete array) is reordered.
+     *
+     * @param [order] new order of visible relation views from the UI
+     */
+    fun onOrderChanged(ctx: Id, viewerId: Id, order: List<ViewerRelationListView>) {
+        val newVisibleKeys = order.filterIsInstance<ViewerRelationListView.Relation>()
+            .map { it.view.key }
+
+        // Get the complete list including hidden properties
+        val complete = allViewerRelations.value
+
+        // Build the complete order: merge new visible order with hidden properties
+        // Hidden properties maintain their relative positions
+        val completeOrder = buildCompleteOrderPreservingHidden(
+            completeRelations = complete,
+            newVisibleOrder = newVisibleKeys
+        )
+
+        proceedWithChangeOrderUpdate(
+            ctx = ctx,
+            viewerId = viewerId,
+            order = completeOrder
+        )
+    }
+
+    /**
+     * Merges the new visible order with hidden properties, preserving hidden positions.
+     * Algorithm: Insert hidden properties at their original relative positions.
+     * Made internal for testing purposes.
+     */
+    internal fun buildCompleteOrderPreservingHidden(
+        completeRelations: List<SimpleRelationView>,
+        newVisibleOrder: List<Key>
+    ): List<Key> {
+        // Get hidden keys in their original order
+        val hiddenKeys = completeRelations
+            .filter { it.isHidden && it.key !in newVisibleOrder }
+            .map { it.key }
+
+        if (hiddenKeys.isEmpty()) {
+            // No hidden properties, just return the visible order
+            return newVisibleOrder
+        }
+
+        // Build a map of original positions for all keys (O(1) lookups instead of O(n) indexOf)
+        val originalOrder = completeRelations.map { it.key }
+        val originalIndices = originalOrder.withIndex().associate { it.value to it.index }
+        val hiddenOriginalIndices = hiddenKeys.associateWith { key ->
+            originalIndices[key] ?: -1
+        }
+
+        // Start with visible keys
+        val result = newVisibleOrder.toMutableList()
+
+        // Insert hidden keys at appropriate positions
+        // We insert them relative to their original position among visible items
+        for (hiddenKey in hiddenKeys) {
+            val originalIndex = hiddenOriginalIndices[hiddenKey] ?: continue
+
+            // Find the best position: after the last visible item that was originally before this hidden item
+            var insertPosition = 0
+            for (i in result.indices) {
+                val visibleKey = result[i]
+                val visibleOriginalIndex = originalIndices[visibleKey] ?: continue
+                if (visibleOriginalIndex < originalIndex) {
+                    insertPosition = i + 1
+                }
+            }
+
+            result.add(insertPosition, hiddenKey)
+        }
+
+        return result
+    }
+
+    private fun proceedWithChangeOrderUpdate(ctx: Id, viewerId: Id, order: List<String>) {
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        viewModelScope.launch {
+            val params = UpdateDataViewViewer.Params.ViewerRelation.Sort(
+                ctx = ctx,
+                dv = state.dataViewBlock.id,
+                view = viewer.id,
+                keys = order
+            )
+            updateDataViewViewer.async(params).fold(
+                onSuccess = { dispatcher.send(it) },
+                onFailure = {
+                    Timber.e(it, DND_ERROR_MSG)
+                    _toasts.emit("$DND_ERROR_MSG : ${it.localizedMessage ?: UNKNOWN_ERROR}")
+                }
+            )
+        }
+    }
+
+    private fun proceedWithVisibilityUpdate(ctx: Id, viewerId: Id, item: SimpleRelationView) {
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+
+        val viewerRelation = viewer.viewerRelations.find { it.key == item.key }
+        val params = if (viewerRelation == null) {
+            UpdateDataViewViewer.Params.ViewerRelation.Add(
+                ctx = ctx,
+                dv = state.dataViewBlock.id,
+                view = viewer.id,
+                relation = DVViewerRelation(
+                    key = item.key,
+                    isVisible = true
+                )
+            )
+        } else {
+            UpdateDataViewViewer.Params.ViewerRelation.Replace(
+                ctx = ctx,
+                dv = state.dataViewBlock.id,
+                view = viewer.id,
+                key = item.key,
+                relation = viewerRelation.copy(isVisible = item.isVisible)
+            )
+        }
+
+        viewModelScope.launch {
+            updateDataViewViewer.async(params).fold(
+                onSuccess = { dispatcher.send(it) },
+                onFailure = { Timber.e("Error while updating") }
+            )
+        }
+    }
+
+    sealed class Command {
+        data object OpenTypePropertiesScreen : Command()
+        data object OpenRelationAddToDataView : Command()
+    }
+
+    class Factory(
+        private val objectState: StateFlow<ObjectState>,
+        private val dispatcher: Dispatcher<Payload>,
+        private val updateDataViewViewer: UpdateDataViewViewer,
+        private val store: StoreOfRelations,
+        private val analytics: Analytics,
+        private val deleteRelationFromDataView: DeleteRelationFromDataView,
+        private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+        private val spaceManager: SpaceManager
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return ObjectSetSettingsViewModel(
+                objectState = objectState,
+                dispatcher = dispatcher,
+                updateDataViewViewer = updateDataViewViewer,
+                storeOfRelations = store,
+                analytics = analytics,
+                deleteRelationFromDataView = deleteRelationFromDataView,
+                analyticSpaceHelperDelegate = analyticSpaceHelperDelegate,
+                spaceManager = spaceManager
+            ) as T
+        }
+    }
+
+    companion object {
+        private const val DND_ERROR_MSG = "Error while changing relation order"
+        private const val UNKNOWN_ERROR = "Error unknown"
+    }
+
+    enum class ScreenState { LIST, EDIT }
+}

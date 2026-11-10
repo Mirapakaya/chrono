@@ -1,0 +1,574 @@
+package com.chronoio.chrono.feature_chats.ui
+
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.datasource.LoremIpsum
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.chronoio.chrono.core_models.ui.SpaceIconView
+import com.chronoio.chrono.core_ui.common.DefaultPreviews
+import com.chronoio.chrono.core_ui.foundation.noRippleClickable
+import com.chronoio.chrono.core_ui.foundation.noRippleCombinedClickable
+import com.chronoio.chrono.core_ui.foundation.noRippleThrottledClickable
+import com.chronoio.chrono.core_ui.menu.BackHistoryMenu
+import com.chronoio.chrono.core_ui.views.Caption1Medium
+import com.chronoio.chrono.core_ui.views.PreviewTitle2Regular
+import com.chronoio.chrono.core_ui.views.Relations1
+import com.chronoio.chrono.core_ui.views.Title2
+import com.chronoio.chrono.core_ui.widgets.ListWidgetObjectIcon
+import com.chronoio.chrono.core_ui.widgets.objectIcon.SpaceIconView
+import com.chronoio.chrono.feature_chats.R
+import com.chronoio.chrono.feature_chats.presentation.ChatViewModel
+import com.chronoio.chrono.presentation.navigation.backstack.BackHistoryMenuItem
+import com.chronoio.chrono.presentation.navigation.backstack.BackHistoryMenuState
+
+
+internal val ChatToolbarHeight = 44.dp
+private val ChatToolbarPillSize = 44.dp
+private val ChatToolbarHorizontalPadding = 16.dp
+private val ChatToolbarPillGap = 4.dp
+private val ChatToolbarTitleSidePadding: Dp =
+    ChatToolbarHorizontalPadding + ChatToolbarPillSize + ChatToolbarPillGap
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatTopToolbar(
+    modifier: Modifier,
+    header: ChatViewModel.HeaderView,
+    onSpaceIconClicked: () -> Unit,
+    onBackButtonClicked: () -> Unit,
+    onTitleClick: () -> Unit = {},
+    onInviteMembersClicked: () -> Unit,
+    onEditInfo: () -> Unit,
+    onPin: () -> Unit,
+    onCopyLink: () -> Unit = {},
+    onMoveToBin: () -> Unit,
+    onProperties: () -> Unit = {},
+    onNotificationSettingChanged: (NotificationSetting) -> Unit,
+    onSearchClick: () -> Unit = {},
+    onSpaceSettingsClicked: () -> Unit = {},
+    backHistoryMenu: BackHistoryMenuState = BackHistoryMenuState.Hidden,
+    onBackButtonLongClicked: () -> Unit = {},
+    onBackHistoryItemClicked: (BackHistoryMenuItem) -> Unit = {},
+    onBackHistoryChannelsClicked: () -> Unit = {},
+    onBackHistoryHomeClicked: () -> Unit = {},
+    onBackHistoryMenuDismissed: () -> Unit = {}
+) {
+    val haptic = LocalHapticFeedback.current
+    var showDropdownMenu by remember { mutableStateOf(false) }
+
+    val showMenuButton = when (header) {
+        is ChatViewModel.HeaderView.ChatObject -> header.showDropDownMenu
+        is ChatViewModel.HeaderView.Default -> header.showDropDownMenu
+        ChatViewModel.HeaderView.Init -> false
+    }
+    val titleEndPadding: Dp =
+        if (showMenuButton) ChatToolbarTitleSidePadding else ChatToolbarHorizontalPadding
+
+    val isMuted = when (header) {
+        is ChatViewModel.HeaderView.Default -> header.isMuted
+        is ChatViewModel.HeaderView.ChatObject -> header.isMuted
+        else -> false
+    }
+    val titleText = when (header) {
+        is ChatViewModel.HeaderView.Default -> header.title.ifEmpty {
+            stringResource(R.string.untitled)
+        }
+        is ChatViewModel.HeaderView.ChatObject -> header.title.ifEmpty {
+            stringResource(R.string.untitled)
+        }
+        is ChatViewModel.HeaderView.Init -> ""
+    }
+    val displayIdentity = (header as? ChatViewModel.HeaderView.Default)
+        ?.displayIdentity
+        ?.takeIf { it.isNotEmpty() }
+
+    Box(
+        modifier = modifier.height(ChatToolbarHeight)
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = ChatToolbarHorizontalPadding)
+                .size(ChatToolbarPillSize)
+                .shadow(
+                    elevation = 20.dp,
+                    shape = CircleShape,
+                    clip = false
+                )
+                .background(
+                    color = colorResource(id = R.color.navigation_panel),
+                    shape = CircleShape
+                )
+                .noRippleCombinedClickable(
+                    onClick = { onBackButtonClicked() },
+                    onLongClicked = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onBackButtonLongClicked()
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_default_top_back),
+                contentDescription = stringResource(R.string.content_desc_back_button)
+            )
+            BackHistoryMenu(
+                state = backHistoryMenu,
+                onChannelsClicked = onBackHistoryChannelsClicked,
+                onHomeClicked = onBackHistoryHomeClicked,
+                onItemClicked = onBackHistoryItemClicked,
+                onDismiss = onBackHistoryMenuDismissed
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .padding(start = ChatToolbarTitleSidePadding, end = titleEndPadding)
+                .fillMaxHeight()
+                .shadow(
+                    elevation = 20.dp,
+                    shape = RoundedCornerShape(22.dp),
+                    clip = false
+                )
+                .background(
+                    color = colorResource(id = R.color.navigation_panel),
+                    shape = RoundedCornerShape(22.dp)
+                )
+                .noRippleThrottledClickable { onTitleClick() }
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            when (header) {
+                is ChatViewModel.HeaderView.ChatObject -> {
+                    ListWidgetObjectIcon(
+                        modifier = Modifier,
+                        iconSize = 24.dp,
+                        icon = header.icon
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                is ChatViewModel.HeaderView.Default -> {
+                    SpaceIconView(
+                        modifier = Modifier,
+                        mainSize = 32.dp,
+                        icon = header.icon,
+                        onSpaceIconClick = { onTitleClick() }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                ChatViewModel.HeaderView.Init -> Unit
+            }
+            Column(
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                Text(
+                    text = titleText,
+                    color = colorResource(R.color.text_primary),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = Title2
+                )
+                if (displayIdentity != null) {
+                    Text(
+                        text = displayIdentity,
+                        color = colorResource(R.color.text_transparent_secondary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = Relations1
+                    )
+                }
+            }
+            if (isMuted) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Image(
+                    modifier = Modifier.size(18.dp),
+                    painter = painterResource(id = R.drawable.ci_notifications_off),
+                    contentDescription = stringResource(id = R.string.content_desc_muted),
+                    colorFilter = ColorFilter.tint(colorResource(R.color.text_primary))
+                )
+            }
+        }
+
+        if (showMenuButton) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = ChatToolbarHorizontalPadding)
+                    .size(ChatToolbarPillSize)
+                    .shadow(
+                        elevation = 20.dp,
+                        shape = CircleShape,
+                        clip = false
+                    )
+                    .background(
+                        color = colorResource(id = R.color.navigation_panel),
+                        shape = CircleShape
+                    )
+                    .noRippleThrottledClickable { showDropdownMenu = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    modifier = Modifier.size(24.dp),
+                    painter = painterResource(id = R.drawable.ic_space_list_dots),
+                    contentDescription = stringResource(R.string.more)
+                )
+            }
+        }
+
+        if (header is ChatViewModel.HeaderView.ChatObject && header.showDropDownMenu) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = ChatToolbarHeight)
+                    .align(Alignment.TopEnd)
+            ) {
+                ChatMenu(
+                    expanded = showDropdownMenu,
+                    currentNotificationSetting = header.notificationSetting,
+                    isPinned = header.isPinned,
+                    canEdit = header.canEdit,
+                    canPin = header.canPin,
+                    onDismissRequest = {
+                        showDropdownMenu = false
+                    },
+                    onPropertiesClick = {
+                        onProperties()
+                        showDropdownMenu = false
+                    },
+                    onEditInfoClick = {
+                        onEditInfo()
+                        showDropdownMenu = false
+                    },
+                    onNotificationSettingChanged = { setting ->
+                        onNotificationSettingChanged(setting)
+                        showDropdownMenu = false
+                    },
+                    onPinClick = {
+                        onPin()
+                        showDropdownMenu = false
+                    },
+                    onMoveToBinClick = {
+                        onMoveToBin()
+                        showDropdownMenu = false
+                    },
+                    onSearchClick = {
+                        onSearchClick()
+                        showDropdownMenu = false
+                    }
+                )
+            }
+        }
+
+        if (header is ChatViewModel.HeaderView.Default && header.showDropDownMenu) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = ChatToolbarHeight)
+                    .align(Alignment.TopEnd)
+            ) {
+                SpaceChatMenu(
+                    expanded = showDropdownMenu,
+                    currentNotificationSetting = header.notificationSetting,
+                    spaceType = header.spaceType,
+                    showInviteMembers = header.showAddMembers,
+                    showCopyLink = header.showAddMembers,
+                    onDismissRequest = {
+                        showDropdownMenu = false
+                    },
+                    onSearchClick = {
+                        onSearchClick()
+                        showDropdownMenu = false
+                    },
+                    onNotificationSettingChanged = { setting ->
+                        onNotificationSettingChanged(setting)
+                        showDropdownMenu = false
+                    },
+                    onInviteMembersClick = {
+                        onInviteMembersClicked()
+                        showDropdownMenu = false
+                    },
+                    onCopyLinkClick = {
+                        onCopyLink()
+                        showDropdownMenu = false
+                    },
+                    onChannelSettingsClick = {
+                        onSpaceSettingsClicked()
+                        showDropdownMenu = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@DefaultPreviews
+@Composable
+fun ChatTopToolbarPreview() {
+    ChatTopToolbar(
+        modifier = Modifier.fillMaxWidth(),
+        header = ChatViewModel.HeaderView.Default(
+            title = LoremIpsum(words = 10).values.joinToString(),
+            icon = SpaceIconView.ChatSpace.Placeholder(name = "Us"),
+            isMuted = true,
+            displayIdentity = "My Identity",
+        ),
+        onSpaceIconClicked = {},
+        onBackButtonClicked = {},
+        onInviteMembersClicked = {},
+        onEditInfo = {},
+        onPin = {},
+        onCopyLink = {},
+        onMoveToBin = {},
+        onProperties = {},
+        onNotificationSettingChanged = {},
+        onSearchClick = {}
+    )
+}
+
+@DefaultPreviews
+@Composable
+fun ChatTopToolbarMutedPreview() {
+    ChatTopToolbar(
+        modifier = Modifier.fillMaxWidth(),
+        header = ChatViewModel.HeaderView.Default(
+            title = "My Chat Space",
+            icon = SpaceIconView.ChatSpace.Placeholder(name = "MCS"),
+            isMuted = true
+        ),
+        onSpaceIconClicked = {},
+        onBackButtonClicked = {},
+        onInviteMembersClicked = {},
+        onEditInfo = {},
+        onPin = {},
+        onCopyLink = {},
+        onMoveToBin = {},
+        onProperties = {},
+        onNotificationSettingChanged = {},
+        onSearchClick = {}
+    )
+}
+
+@DefaultPreviews
+@Composable
+fun ChatTopToolbarNoMenuPreview() {
+    ChatTopToolbar(
+        modifier = Modifier.fillMaxWidth(),
+        header = ChatViewModel.HeaderView.Default(
+            title = "Read-only Space",
+            icon = SpaceIconView.ChatSpace.Placeholder(name = "RO"),
+            isMuted = false,
+            showDropDownMenu = false
+        ),
+        onSpaceIconClicked = {},
+        onBackButtonClicked = {},
+        onInviteMembersClicked = {},
+        onEditInfo = {},
+        onPin = {},
+        onCopyLink = {},
+        onMoveToBin = {},
+        onProperties = {},
+        onNotificationSettingChanged = {},
+        onSearchClick = {}
+    )
+}
+
+@Composable
+fun EditMessageToolbar(
+    onExitClicked: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .height(40.dp)
+            .fillMaxWidth()
+            .background(
+                color = colorResource(id = R.color.background_highlighted_light),
+                shape = RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp
+                )
+            )
+    ) {
+        Text(
+            modifier = Modifier
+                .padding(
+                    start = 12.dp
+                )
+                .align(
+                    Alignment.CenterStart
+                ),
+            text = stringResource(R.string.chats_edit_message),
+            style = Caption1Medium,
+            color = colorResource(id = R.color.text_primary)
+        )
+        Image(
+            modifier = Modifier
+                .padding(
+                    end = 12.dp
+                )
+                .align(
+                    Alignment.CenterEnd
+                )
+                .noRippleClickable {
+                    onExitClicked()
+                },
+            painter = painterResource(id = R.drawable.ic_edit_message_close),
+            contentDescription = "Close edit-message mode"
+        )
+    }
+}
+
+@Composable
+fun GoToBottomButton(
+    enabled: Boolean,
+    modifier: Modifier,
+    onGoToBottomClicked: () -> Unit
+) {
+    val transition = updateTransition(
+        enabled,
+        label = "JumpToBottom visibility animation"
+    )
+    val bottomOffset by transition.animateDp(label = "JumpToBottom offset animation") {
+        if (it) {
+            (12).dp
+        } else {
+            (-12).dp
+        }
+    }
+    if (bottomOffset > 0.dp) {
+        Box(
+            modifier = modifier
+                .offset(x = 0.dp, y = -bottomOffset)
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(color = colorResource(id = R.color.navigation_panel))
+                .clickable {
+                    onGoToBottomClicked()
+                }
+
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_go_to_bottom_arrow),
+                contentDescription = "Arrow icon",
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
+}
+
+@Composable
+fun GoToMentionButton(
+    enabled: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    val transition = updateTransition(
+        enabled,
+        label = "JumpToBottom visibility animation"
+    )
+    val bottomOffset by transition.animateDp(label = "JumpToBottom offset animation") {
+        if (it) {
+            (12).dp
+        } else {
+            (-12).dp
+        }
+    }
+    if (bottomOffset > 0.dp) {
+        Box(
+            modifier = modifier
+                .offset(x = 0.dp, y = -bottomOffset)
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(color = colorResource(id = R.color.navigation_panel))
+                .clickable {
+                    onClick()
+                }
+
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_go_to_mention_button),
+                contentDescription = "Arrow icon",
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
+}
+
+@DefaultPreviews
+@Composable
+fun GoToMentionButtonPreview() {
+    GoToMentionButton(
+        enabled = true,
+        modifier = Modifier,
+        onClick = {}
+    )
+}
+
+@Composable
+fun FloatingDateHeader(
+    modifier: Modifier,
+    text: String
+) {
+    Box(
+        modifier = modifier
+            .background(
+                color = colorResource(R.color.transparent_active),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            style = Caption1Medium,
+            color = colorResource(R.color.glyph_white),
+        )
+    }
+}
+
+@DefaultPreviews
+@Composable
+fun FloatingDateHeaderPreview() {
+    FloatingDateHeader(
+        modifier = Modifier,
+        text = "Today"
+    )
+}
+

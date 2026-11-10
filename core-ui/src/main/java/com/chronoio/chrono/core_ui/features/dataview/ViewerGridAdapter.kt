@@ -1,0 +1,195 @@
+package com.chronoio.chrono.core_ui.features.dataview
+
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import androidx.core.view.updateLayoutParams
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemViewerGridRowBinding
+import com.chronoio.chrono.core_ui.extensions.horizontalViewportWidth
+import com.chronoio.chrono.core_ui.extensions.drawable
+import com.chronoio.chrono.core_utils.ext.gone
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.presentation.sets.model.CellView
+import com.chronoio.chrono.presentation.sets.model.Viewer
+
+class ViewerGridAdapter(
+    private val onCellClicked: (CellView) -> Unit,
+    private val onObjectHeaderClicked: (Id) -> Unit,
+    private val onObjectHeaderLongClicked: (Id, View) -> Unit,
+    private val onTaskCheckboxClicked: (Id) -> Unit
+) : ListAdapter<Viewer.GridView.Row, ViewerGridAdapter.RecordHolder>(GridDiffUtil) {
+
+    var recordNamePositionX = 0f
+
+    // Shared across all row cell recyclers, so cell view holders scrolled out with
+    // one row can be reused by any other row instead of being re-inflated.
+    private val sharedCellViewPool = RecyclerView.RecycledViewPool()
+
+    override fun onCreateViewHolder(
+        parent: ViewGroup,
+        viewType: Int
+    ): RecordHolder {
+
+        val inflater = LayoutInflater.from(parent.context)
+
+        val binding = ItemViewerGridRowBinding.inflate(
+            inflater, parent, false
+        )
+
+        // The header is pinned to the visible area with translationX, so it must be as wide as
+        // that area. The row list sits inside a HorizontalScrollView and reports the width of the
+        // whole grid, so read the scroll container rather than the list.
+        val headerMargin = parent.resources.getDimensionPixelSize(R.dimen.dv_grid_name_margin_end)
+        binding.headerContainer.updateLayoutParams<LinearLayout.LayoutParams> {
+            width = parent.horizontalViewportWidth() - headerMargin * 2
+        }
+
+        val horizontalDivider = binding.root.context.drawable(R.drawable.divider_dv_horizontal_2)
+
+        binding.rowCellRecycler.apply {
+            itemAnimator = null // Disable animations to prevent "view is not a child" crash during recycling
+            setRecycledViewPool(sharedCellViewPool)
+            adapter = ViewerGridCellsAdapter(
+                onCellClicked = onCellClicked
+            )
+            addItemDecoration(
+                DividerItemDecoration(
+                    context,
+                    DividerItemDecoration.HORIZONTAL
+                ).apply {
+                    setDrawable(horizontalDivider)
+                }
+            )
+        }
+        return RecordHolder(binding).apply {
+            binding.headerContainer.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos != RecyclerView.NO_POSITION) {
+                    val item = getItem(pos)
+                    onObjectHeaderClicked(item.id)
+                }
+            }
+            binding.headerContainer.setOnLongClickListener { view ->
+                val pos = bindingAdapterPosition
+                if (pos != RecyclerView.NO_POSITION) {
+                    val item = getItem(pos)
+                    onObjectHeaderLongClicked(item.id, view)
+                }
+                true
+            }
+            binding.objectIcon.checkbox.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos != RecyclerView.NO_POSITION) {
+                    val item = getItem(pos)
+                    onTaskCheckboxClicked(item.id)
+                }
+            }
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecordHolder, position: Int) {
+        val item = getItem(position)
+        holder.bindObjectHeader(item)
+        holder.bindObjectCells(item)
+    }
+
+    override fun onBindViewHolder(holder: RecordHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isEmpty()) super.onBindViewHolder(holder, position, payloads)
+        val item = getItem(position)
+        payloads.forEach { payload ->
+            if (payload is List<*>) {
+                if (payload.contains(GridDiffUtil.OBJECT_HEADER_CHANGED)) {
+                    holder.bindObjectHeader(item)
+                }
+                if (payload.contains(GridDiffUtil.CELLS_CHANGED)) {
+                    holder.bindObjectCells(item)
+                }
+            }
+        }
+    }
+
+    override fun onViewAttachedToWindow(holder: RecordHolder) {
+        super.onViewAttachedToWindow(holder)
+        holder.binding.headerContainer.translationX = recordNamePositionX
+    }
+
+    fun clear() {
+        recordNamePositionX = 0f
+    }
+
+    class RecordHolder(val binding: ItemViewerGridRowBinding) :
+        RecyclerView.ViewHolder(binding.root) {
+
+        val root: LinearLayout = binding.holderRoot
+        val adapter get() = binding.rowCellRecycler.adapter as ViewerGridCellsAdapter
+
+        fun bindObjectHeader(row: Viewer.GridView.Row) {
+            if (row.showIcon) {
+                showIcon(row)
+            } else {
+                hideIcon()
+            }
+            binding.tvTitle.text = row.name
+        }
+
+        private fun hideIcon() {
+            binding.objectIcon.gone()
+            binding.objectIcon.setIcon(ObjectIcon.None)
+        }
+
+        private fun showIcon(row: Viewer.GridView.Row) {
+            binding.objectIcon.visible()
+            binding.objectIcon.setIcon(row.objectIcon)
+        }
+
+        fun bindObjectCells(row: Viewer.GridView.Row) {
+            adapter.update(row.cells)
+        }
+    }
+
+    object GridDiffUtil : DiffUtil.ItemCallback<Viewer.GridView.Row>() {
+        override fun areItemsTheSame(
+            oldItem: Viewer.GridView.Row,
+            newItem: Viewer.GridView.Row
+        ): Boolean = oldItem.id == newItem.id
+
+        override fun areContentsTheSame(
+            oldItem: Viewer.GridView.Row,
+            newItem: Viewer.GridView.Row
+        ): Boolean = oldItem == newItem
+
+        override fun getChangePayload(
+            oldItem: Viewer.GridView.Row,
+            newItem: Viewer.GridView.Row
+        ): List<Int>? {
+            val payload = mutableListOf<Int>()
+            if (isHeaderChanged(oldItem, newItem)) payload.add(OBJECT_HEADER_CHANGED)
+            if (oldItem.cells != newItem.cells) payload.add(CELLS_CHANGED)
+            return if (payload.isEmpty()) {
+                null
+            } else payload
+        }
+
+        private fun isHeaderChanged(
+            oldItem: Viewer.GridView.Row,
+            newItem: Viewer.GridView.Row
+        ) = (oldItem.emoji != newItem.emoji
+                || oldItem.image != newItem.image
+                || oldItem.name != newItem.name
+                || oldItem.isChecked != newItem.isChecked
+                || oldItem.layout != newItem.layout
+                || oldItem.showIcon != newItem.showIcon
+                || oldItem.objectIcon != newItem.objectIcon)
+
+        const val OBJECT_HEADER_CHANGED = 0
+        const val CELLS_CHANGED = 1
+    }
+}

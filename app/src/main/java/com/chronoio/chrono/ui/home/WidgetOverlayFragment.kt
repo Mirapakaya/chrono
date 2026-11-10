@@ -1,0 +1,642 @@
+package com.chronoio.chrono.ui.home
+
+import android.Manifest
+import android.app.Dialog
+import android.content.res.Configuration
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
+import androidx.compose.ui.unit.dp
+import androidx.core.os.bundleOf
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
+import androidx.fragment.compose.content
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeKey
+import com.chronoio.chrono.core_models.ui.WallpaperResult
+import com.chronoio.chrono.core_utils.ext.applyContentWidthCap
+import com.chronoio.chrono.core_utils.ext.isVideo
+import com.chronoio.chrono.core_models.ui.WallpaperView
+import com.chronoio.chrono.core_ui.widgets.SpaceBackground
+import com.chronoio.chrono.core_ui.widgets.toSpaceBackground
+import com.chronoio.chrono.core_utils.ext.argString
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.intents.ActivityCustomTabsHelper
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.feature_create_object.presentation.CreateObjectAction
+import com.chronoio.chrono.feature_create_object.presentation.CreateObjectViewModelFactory
+import com.chronoio.chrono.feature_create_object.presentation.NewCreateObjectViewModel
+import com.chronoio.chrono.feature_create_object.ui.CreateObjectPopup
+import com.chronoio.chrono.presentation.home.Command
+import com.chronoio.chrono.presentation.home.HomeScreenViewModel
+import com.chronoio.chrono.presentation.home.HomeScreenVmParams
+import com.chronoio.chrono.presentation.main.MainViewModel
+import com.chronoio.chrono.ui.base.navigation
+import com.chronoio.chrono.ui.objects.creation.WidgetSourceTypeFragment
+import com.chronoio.chrono.ui.objects.types.pickers.WidgetSourceTypeListener
+import com.chronoio.chrono.ui.settings.space.SpaceSettingsFragment
+import com.chronoio.chrono.ui.widgets.CreateChatObjectFragment
+import com.chronoio.chrono.ui.widgets.CreateChatObjectListener
+import com.chronoio.chrono.ui.widgets.SelectWidgetSourceFragment
+import com.chronoio.chrono.ui.widgets.SelectWidgetTypeFragment
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import javax.inject.Inject
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+private const val WIDGET_OVERLAY_FAB_SCALE = 0.85f
+
+class WidgetOverlayFragment : BottomSheetDialogFragment(),
+    WidgetSourceTypeListener,
+    CreateChatObjectListener {
+
+    @Inject
+    lateinit var factory: HomeScreenViewModel.Factory
+
+    private val vm: HomeScreenViewModel by viewModels { factory }
+
+    private lateinit var createObjectFactory: CreateObjectViewModelFactory
+
+    private val createObjectVm by viewModels<NewCreateObjectViewModel> { createObjectFactory }
+
+    private val mainVm: MainViewModel by activityViewModels()
+
+    private val space: String get() = argString(ARG_SPACE_ID)
+
+    override fun getTheme(): Int = R.style.WidgetOverlayBottomSheetTheme
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        val vmParams = HomeScreenVmParams(
+            spaceId = SpaceId(space),
+            showHomepagePicker = false
+        )
+        componentManager().widgetOverlayComponent.get(vmParams).inject(this)
+        val createObjectVmParams = NewCreateObjectViewModel.VmParams(
+            spaceId = SpaceId(space),
+            showAttachObject = false,
+            showMediaSection = true
+        )
+        createObjectFactory = componentManager()
+            .createObjectFeatureComponent
+            .get(key = createObjectComponentKey(), param = createObjectVmParams)
+            .viewModelFactory()
+        super.onCreate(savedInstanceState)
+    }
+
+    private fun createObjectComponentKey(): String = "overlay-create-object:$space"
+
+    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+        val dialog = super.onCreateDialog(savedInstanceState) as BottomSheetDialog
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        dialog.behavior.skipCollapsed = true
+        dialog.behavior.isFitToContents = false
+        dialog.behavior.isDraggable = true
+        return dialog
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ) = content {
+        WidgetOverlayContent(
+            vm = vm,
+            createObjectVm = createObjectVm,
+            wallpaperState = mainVm.wallpaperState,
+            onBackClicked = { dismiss() },
+            onSpaceSettingsClicked = {
+                vm.onSpaceSettingsClicked(space = SpaceId(space))
+            },
+            onCreateObjectAction = { action -> handleCreateObjectAction(action) }
+        )
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    vm.commands.collect { command ->
+                        // The overlay hosts the full WidgetsScreen, so it must
+                        // forward widget-edit commands to nav-graph dialog
+                        // destinations / child-fragment dialogs the same way
+                        // WidgetsScreenFragment does. Other commands
+                        // (Deeplink.*, OpenVault, HandleChatSpaceBackNavigation,
+                        // etc.) are not reachable from this surface and stay
+                        // intentionally unhandled.
+                        when (command) {
+                            is Command.OpenGlobalSearchScreen -> {
+                                runCatching {
+                                    navigation().openGlobalSearch(
+                                        space = command.space
+                                    )
+                                }.onFailure {
+                                    Timber.e(it, "Error opening global search from overlay")
+                                }
+                                dismissAfterGesture()
+                            }
+                            is Command.ChangeWidgetType -> {
+                                runCatching {
+                                    findNavController().navigate(
+                                        R.id.selectWidgetTypeScreen,
+                                        SelectWidgetTypeFragment.args(
+                                            ctx = command.ctx,
+                                            widget = command.widget,
+                                            source = command.source,
+                                            type = command.type,
+                                            layout = command.layout,
+                                            isInEditMode = command.isInEditMode
+                                        )
+                                    )
+                                }.onFailure {
+                                    Timber.e(it, "Error navigating to SelectWidgetType from overlay")
+                                }
+                            }
+                            is Command.ChangeWidgetSource -> {
+                                runCatching {
+                                    findNavController().navigate(
+                                        R.id.selectWidgetSourceScreen,
+                                        SelectWidgetSourceFragment.args(
+                                            ctx = command.ctx,
+                                            widget = command.widget,
+                                            source = command.source,
+                                            type = command.type,
+                                            isInEditMode = command.isInEditMode,
+                                            spaceId = command.space
+                                        )
+                                    )
+                                }.onFailure {
+                                    Timber.e(it, "Error navigating to ChangeWidgetSource from overlay")
+                                }
+                            }
+                            is Command.SelectWidgetSource -> {
+                                runCatching {
+                                    findNavController().navigate(
+                                        R.id.selectWidgetSourceScreen,
+                                        SelectWidgetSourceFragment.args(
+                                            ctx = command.ctx,
+                                            target = command.target,
+                                            isInEditMode = command.isInEditMode,
+                                            spaceId = command.space
+                                        )
+                                    )
+                                }.onFailure {
+                                    Timber.e(it, "Error navigating to SelectWidgetSource from overlay")
+                                }
+                            }
+                            is Command.SelectWidgetType -> {
+                                runCatching {
+                                    findNavController().navigate(
+                                        R.id.selectWidgetTypeScreen,
+                                        SelectWidgetTypeFragment.args(
+                                            ctx = command.ctx,
+                                            source = command.source,
+                                            layout = command.layout,
+                                            target = command.target,
+                                            isInEditMode = command.isInEditMode
+                                        )
+                                    )
+                                }.onFailure {
+                                    Timber.e(it, "Error navigating to SelectWidgetType (new) from overlay")
+                                }
+                            }
+                            is Command.CreateSourceForNewWidget -> {
+                                runCatching {
+                                    WidgetSourceTypeFragment.new(
+                                        space = command.space.id,
+                                        widgetId = command.widgets
+                                    ).show(childFragmentManager, null)
+                                }.onFailure {
+                                    Timber.e(it, "Error showing WidgetSourceTypeFragment from overlay")
+                                }
+                            }
+                            is Command.CreateChatObject -> {
+                                runCatching {
+                                    CreateChatObjectFragment.new(space = command.space.id)
+                                        .show(childFragmentManager, "create-chat-object-dialog")
+                                }.onFailure {
+                                    Timber.e(it, "Error showing CreateChatObjectFragment from overlay")
+                                }
+                            }
+                            else -> {
+                                Timber.d("WidgetOverlay vm command (ignored): $command")
+                            }
+                        }
+                    }
+                }
+                launch {
+                    vm.navigation.collect { destination ->
+                        proceed(destination)
+                    }
+                }
+                launch { vm.toasts.collect { toast(it) } }
+                launch {
+                    vm.uploadSnackbar.collect { variant ->
+                        // The bottom sheet's dialog window is layered above
+                        // the activity, so the app-level Snackbar (rendered
+                        // on activity's android.R.id.content) is hidden
+                        // behind it. Dismiss first so the Snackbar is
+                        // visible on the underlying screen.
+                        dismissAllowingStateLoss()
+                        if (isAdded) routeUploadSnackbar(mainVm, variant)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Posts dismiss to the next frame. Dismissing synchronously during a
+     * Compose long-press crashes the pointer-input continuation ("Already
+     * resumed" — the BottomSheetDialog tear-down dispatches ACTION_CANCEL
+     * back into a coroutine that has already resumed). Yielding to the
+     * main-thread queue lets the gesture finish cleanly first.
+     *
+     * The host can save its state before that frame arrives: the caller opens
+     * another screen first, and the user can rotate the device at any moment.
+     * A commit with the state check then throws IllegalStateException.
+     * [isAdded] does not report this, because it only tells that a manager
+     * holds the fragment. The sheet keeps no state that must survive, so the
+     * dismissal allows the loss.
+     */
+    private fun dismissAfterGesture() {
+        val v = view ?: run {
+            if (isAdded) dismissAllowingStateLoss()
+            return
+        }
+        v.post { if (isAdded) dismissAllowingStateLoss() }
+    }
+
+    private fun proceed(destination: HomeScreenViewModel.Navigation) {
+        Timber.d("WidgetOverlay destination: $destination")
+        // Always dismiss the overlay first so the back-stack does not contain the sheet.
+        // The command arrives from a flow, so the host can hold a saved state here.
+        dismissAllowingStateLoss()
+        when (destination) {
+            is HomeScreenViewModel.Navigation.OpenObject -> runCatching {
+                navigation().openDocument(
+                    target = destination.ctx,
+                    space = destination.space
+                )
+            }.onFailure { Timber.e(it, "Error opening document from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenSet -> runCatching {
+                navigation().openObjectSet(
+                    target = destination.ctx,
+                    space = destination.space,
+                    view = destination.view
+                )
+            }.onFailure { Timber.e(it, "Error opening object set from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenChat -> runCatching {
+                navigation().openChat(
+                    target = destination.ctx,
+                    space = destination.space,
+                    popUpToVault = false
+                )
+            }.onFailure { Timber.e(it, "Error opening chat from overlay") }
+
+            is HomeScreenViewModel.Navigation.ExpandWidget -> runCatching {
+                navigation().launchCollections(
+                    subscription = destination.subscription,
+                    space = destination.space
+                )
+            }.onFailure { Timber.e(it, "Error expanding widget from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenAllContent -> runCatching {
+                navigation().openAllContent(space = destination.space)
+            }.onFailure { Timber.e(it, "Error opening all content from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenDateObject -> runCatching {
+                navigation().openDateObject(
+                    objectId = destination.ctx,
+                    space = destination.space
+                )
+            }.onFailure { Timber.e(it, "Error opening date object from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenParticipant -> runCatching {
+                navigation().openParticipantObject(
+                    objectId = destination.objectId,
+                    space = destination.space
+                )
+            }.onFailure { Timber.e(it, "Error opening participant from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenType -> runCatching {
+                navigation().openObjectType(
+                    objectId = destination.target,
+                    space = destination.space,
+                    view = destination.view
+                )
+            }.onFailure { Timber.e(it, "Error opening object type from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenOwnerOrEditorSpaceSettings -> runCatching {
+                // The widgets-scoped action ids are not reachable from the overlay's
+                // host destination (chat/editor/object set), so navigate directly to
+                // the global spaceSettingsScreen destination with the space arg.
+                findNavController().navigate(
+                    R.id.spaceSettingsScreen,
+                    SpaceSettingsFragment.args(space = SpaceId(destination.space))
+                )
+            }.onFailure { Timber.e(it, "Error opening space settings from overlay") }
+
+            is HomeScreenViewModel.Navigation.OpenBookmarkUrl -> {
+                try {
+                    ActivityCustomTabsHelper.openUrl(
+                        activity = requireActivity(),
+                        url = destination.url
+                    )
+                } catch (e: Throwable) {
+                    Timber.e(e, "Error opening bookmark URL from overlay: ${destination.url}")
+                    toast("Failed to open URL")
+                }
+            }
+
+            is HomeScreenViewModel.Navigation.OpenTemplate -> runCatching {
+                navigation().openModalTemplateEdit(
+                    template = destination.template,
+                    templateTypeId = destination.templateTypeId,
+                    templateTypeKey = destination.templateTypeKey,
+                    space = destination.space
+                )
+            }.onFailure { Timber.e(it, "Error opening template from overlay") }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        applyContentWidthCap()
+        dialog?.window?.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        vm.onStart()
+    }
+
+    override fun onStop() {
+        vm.onStop()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        componentManager().createObjectFeatureComponent.release(createObjectComponentKey())
+        componentManager().widgetOverlayComponent.release()
+        super.onDestroy()
+    }
+
+    override fun onSetNewWidgetSource(objType: ObjectWrapper.Type, widgetId: Id) {
+        vm.onNewWidgetSourceTypeSelected(type = objType, widgets = widgetId)
+    }
+
+    override fun onChatObjectCreated(objectId: Id) {
+        Timber.d("Chat object created from widget overlay: $objectId")
+        // Match the proceed(Navigation) contract: dismiss the sheet first so it
+        // does not remain on the back stack beneath the newly-opened chat. The
+        // callback arrives from a child screen, so the host can hold a saved state.
+        dismissAllowingStateLoss()
+        runCatching {
+            navigation().openChat(
+                target = objectId,
+                space = space,
+                popUpToVault = false
+            )
+        }.onFailure { Timber.e(it, "Error opening chat from overlay after object creation") }
+    }
+
+    private fun handleCreateObjectAction(action: CreateObjectAction) {
+        when (action) {
+            is CreateObjectAction.CreateObjectOfType -> {
+                vm.onCreateNewObjectOfTypeKey(typeKey = TypeKey(action.typeKey))
+            }
+            is CreateObjectAction.UpdateSearch,
+            is CreateObjectAction.Retry -> {
+                createObjectVm.onAction(action)
+            }
+            CreateObjectAction.AttachExistingObject -> {
+                Timber.d("CreateObjectPopup attach action received unexpectedly")
+                vm.hideCreateObjectSheet()
+            }
+            CreateObjectAction.SelectPhotos,
+            CreateObjectAction.TakePhoto,
+            CreateObjectAction.SelectFiles -> {
+                // Media actions are handled inside WidgetOverlayContent where the
+                // Activity-result launchers live. This branch is unreachable.
+            }
+        }
+    }
+
+    companion object {
+        private const val ARG_SPACE_ID = "space_id"
+        private const val TAG = "WidgetOverlayFragment"
+
+        fun show(fm: FragmentManager, spaceId: String) {
+            WidgetOverlayFragment().apply {
+                arguments = bundleOf(ARG_SPACE_ID to spaceId)
+            }.show(fm, TAG)
+        }
+    }
+}
+
+@Composable
+private fun WidgetOverlayContent(
+    vm: HomeScreenViewModel,
+    createObjectVm: NewCreateObjectViewModel,
+    wallpaperState: StateFlow<WallpaperResult>,
+    onBackClicked: () -> Unit,
+    onSpaceSettingsClicked: () -> Unit,
+    onCreateObjectAction: (CreateObjectAction) -> Unit,
+) {
+    val wallpaper by wallpaperState.collectAsStateWithLifecycle()
+    val spaceBackground = wallpaper.toSpaceBackground()
+    val wallpaperAlpha = WallpaperView.WALLPAPER_DEFAULT_ALPHA / 255f
+    val scaledFabSize = dimensionResource(
+        com.chronoio.chrono.core_ui.R.dimen.nav_fab_button_size
+    ) * WIDGET_OVERLAY_FAB_SCALE
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(top = 8.dp, bottom = 16.dp)
+                .padding(horizontal = 8.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(colorResource(R.color.background_primary))
+                .then(
+                    when (spaceBackground) {
+                        is SpaceBackground.SolidColor -> Modifier.background(
+                            color = spaceBackground.color.copy(alpha = wallpaperAlpha)
+                        )
+                        is SpaceBackground.Gradient -> Modifier.background(
+                            brush = spaceBackground.brush,
+                            alpha = wallpaperAlpha
+                        )
+                        SpaceBackground.None -> Modifier
+                    }
+                )
+                .nestedScroll(rememberNestedScrollInteropConnection())
+        ) {
+            WidgetsScreen(
+                viewModel = vm,
+                fabSize = scaledFabSize,
+                topContentPadding = 52.dp,
+                bottomContentPadding = 16.dp,
+            )
+        }
+        HomeScreenToolbar(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = 12.dp)
+                .padding(horizontal = 8.dp),
+            onBackButtonClicked = onBackClicked,
+            onSpaceSettingsClicked = onSpaceSettingsClicked,
+            buttonSize = scaledFabSize,
+        )
+
+        val createObjectSheetVisible by vm.createObjectSheetVisible.collectAsStateWithLifecycle()
+        val createObjectState by createObjectVm.state.collectAsStateWithLifecycle()
+        LaunchedEffect(createObjectSheetVisible) {
+            if (createObjectSheetVisible) createObjectVm.onOpen()
+        }
+
+        val uploadContext = LocalContext.current
+        val uploadMediaLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.PickMultipleVisualMedia()
+        ) { uris ->
+            vm.onUploadFilesToSpace(
+                uris.map { uri ->
+                    val type = if (isVideo(uri, uploadContext))
+                        Block.Content.File.Type.VIDEO
+                    else
+                        Block.Content.File.Type.IMAGE
+                    HomeScreenViewModel.UploadToSpaceTarget(uri.toString(), type)
+                }
+            )
+        }
+        val uploadFileLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris ->
+            vm.onUploadFilesToSpace(
+                uris.map { uri ->
+                    HomeScreenViewModel.UploadToSpaceTarget(
+                        uri.toString(),
+                        Block.Content.File.Type.NONE
+                    )
+                }
+            )
+        }
+        var capturedPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
+        var capturedPhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
+        val takePhotoLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.TakePicture()
+        ) { isSuccess ->
+            val uri = capturedPhotoUri
+            val sourcePath = capturedPhotoPath
+            if (isSuccess && uri != null) {
+                vm.onUploadFilesToSpace(
+                    listOf(
+                        HomeScreenViewModel.UploadToSpaceTarget(
+                            uri = uri,
+                            type = Block.Content.File.Type.IMAGE,
+                            sourceFilePath = sourcePath
+                        )
+                    )
+                )
+            } else if (sourcePath != null) {
+                runCatching { java.io.File(sourcePath).delete() }
+            }
+            capturedPhotoUri = null
+            capturedPhotoPath = null
+        }
+        val takePhotoPermissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                launchCameraForHomeUpload(
+                    context = uploadContext,
+                    launcher = takePhotoLauncher,
+                    onPhotoReady = { uri, file ->
+                        capturedPhotoUri = uri.toString()
+                        capturedPhotoPath = file.absolutePath
+                    }
+                )
+            } else {
+                Timber.w("Camera permission denied for overlay upload")
+            }
+        }
+
+        CreateObjectPopup(
+            expanded = createObjectSheetVisible,
+            onDismissRequest = { vm.hideCreateObjectSheet() },
+            state = createObjectState,
+            onAction = { action ->
+                when (action) {
+                    CreateObjectAction.SelectPhotos -> {
+                        uploadMediaLauncher.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                            )
+                        )
+                        vm.hideCreateObjectSheet()
+                    }
+                    CreateObjectAction.TakePhoto -> {
+                        takePhotoPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        vm.hideCreateObjectSheet()
+                    }
+                    CreateObjectAction.SelectFiles -> {
+                        uploadFileLauncher.launch(arrayOf("*/*"))
+                        vm.hideCreateObjectSheet()
+                    }
+                    else -> onCreateObjectAction(action)
+                }
+            }
+        )
+    }
+}

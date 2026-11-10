@@ -37,9 +37,9 @@ idea.max.intellisense.filesize=3500
 
 ## Useful links
 
-[Our tech change log](https://github.com/anyproto/anytype-kotlin/blob/main/CHANGELOG.md)
+[Our tech change log](https://github.com/Mirapakaya/chrono/blob/main/CHANGELOG.md)
 
-[Chrono Android app dependencies](https://github.com/anyproto/anytype-kotlin/blob/main/gradle/libs.versions.toml)
+[Chrono Android app dependencies](https://github.com/Mirapakaya/chrono/blob/main/gradle/libs.versions.toml)
 
 ## Conventions
 
@@ -88,9 +88,9 @@ Thank you for your desire to develop Chrono together!
 
 🫢 For security findings, please email [security@chrono.app](mailto:security@chrono.app) and refer to our [security guide](docs/SECURITY.md) for more information.
 
-🤝 Follow us on [Github](https://github.com/anyproto) and join the [Contributors Community](https://github.com/orgs/anyproto/discussions).
+🤝 Follow us on [Github](https://github.com/Mirapakaya) and join the [Contributors Community](https://github.com/orgs/anyproto/discussions).
 
 ---
-Made by Any — a Swiss association 🇨🇭
+Made by Chrono Team
 
-Licensed under [Any Source Available License 1.0](./LICENSE.md).
+Licensed under [Chrono Source Available License 1.0](./LICENSE.md).

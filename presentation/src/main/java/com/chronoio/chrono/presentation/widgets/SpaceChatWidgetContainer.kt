@@ -1,0 +1,77 @@
+package com.chronoio.chrono.presentation.widgets
+
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_utils.notifications.NotificationPermissionManager
+import com.chronoio.chrono.domain.chats.ChatPreviewContainer
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.notifications.NotificationStateCalculator
+import javax.inject.Inject
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onStart
+
+class SpaceChatWidgetContainer @Inject constructor(
+    private val widget: Widget,
+    private val container: ChatPreviewContainer,
+    private val spaceViewSubscriptionContainer: SpaceViewSubscriptionContainer,
+    private val notificationPermissionManager: NotificationPermissionManager
+) : WidgetContainer {
+    @OptIn(FlowPreview::class)
+    override val view: Flow<WidgetView.SpaceChat> = flow {
+        emitAll(
+            combine(
+                container.observePreviewBySpaceId(SpaceId(widget.config.space)),
+                spaceViewSubscriptionContainer.observe(),
+                notificationPermissionManager.permissionState()
+            ) { preview, spaceViews, _ ->
+                val unreadMessageCount = preview?.state?.unreadMessages?.counter ?: 0
+                val unreadMentionCount = preview?.state?.unreadMentions?.counter ?: 0
+
+                // Find the space view for this widget's space
+                val spaceView = spaceViews.find { it.targetSpaceId == widget.config.space }
+                val isMuted = NotificationStateCalculator.calculateSpaceNotificationMutedState(spaceView)
+
+                WidgetView.SpaceChat(
+                    id = widget.id,
+                    source = widget.source,
+                    unreadMessageCount = unreadMessageCount,
+                    unreadMentionCount = unreadMentionCount,
+                    isMuted = isMuted,
+                    sectionType = widget.sectionType
+                )
+            }
+                .distinctUntilChanged()
+                .debounce(DEBOUNCE_DURATION)
+                .onStart {
+                    emit(
+                        WidgetView.SpaceChat(
+                            id = widget.id,
+                            source = widget.source,
+                            isMuted = false, // Default to unmuted while loading
+                            sectionType = widget.sectionType
+                        )
+                    )
+                }
+        )
+    }.catch {
+        emit(
+            WidgetView.SpaceChat(
+                id = widget.id,
+                source = widget.source,
+                isMuted = false, // Default to unmuted on error
+                sectionType = widget.sectionType
+            )
+        )
+    }
+
+
+    companion object {
+        const val DEBOUNCE_DURATION = 500L
+    }
+}

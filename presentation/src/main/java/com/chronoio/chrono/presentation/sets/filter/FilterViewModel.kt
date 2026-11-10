@@ -1,0 +1,1009 @@
+package com.chronoio.chrono.presentation.sets.filter
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.DVFilterOperator
+import com.chronoio.chrono.core_models.DVFilterQuickOption
+import com.chronoio.chrono.core_models.DVViewer
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Payload
+import com.chronoio.chrono.core_models.Relation
+import com.chronoio.chrono.core_models.RelationFormat
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_utils.ext.typeOf
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.dataview.interactor.UpdateDataViewViewer
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.objects.StoreOfRelations
+import com.chronoio.chrono.domain.objects.mapLimitObjectTypes
+import com.chronoio.chrono.domain.objects.options.GetOptions
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.search.SearchObjects
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.extension.ObjectStateAnalyticsEvent
+import com.chronoio.chrono.presentation.extension.checkboxFilterValue
+import com.chronoio.chrono.presentation.extension.hasValue
+import com.chronoio.chrono.presentation.extension.index
+import com.chronoio.chrono.presentation.extension.logEvent
+import com.chronoio.chrono.presentation.extension.toConditionView
+import com.chronoio.chrono.presentation.extension.type
+import com.chronoio.chrono.presentation.mapper.toDomain
+import com.chronoio.chrono.core_models.SupportedLayouts
+import com.chronoio.chrono.presentation.objects.toCreateFilterObjectView
+import com.chronoio.chrono.presentation.relations.FilterInputValueParser
+import com.chronoio.chrono.presentation.relations.toCreateFilterCheckboxView
+import com.chronoio.chrono.presentation.relations.toCreateFilterDateView
+import com.chronoio.chrono.presentation.relations.toCreateFilterStatusView
+import com.chronoio.chrono.presentation.relations.toCreateFilterTagView
+import com.chronoio.chrono.presentation.relations.toFilterValue
+import com.chronoio.chrono.presentation.relations.toViewRelation
+import com.chronoio.chrono.presentation.search.ObjectSearchConstants
+import com.chronoio.chrono.presentation.sets.ObjectSetDatabase
+import com.chronoio.chrono.presentation.sets.dataViewState
+import com.chronoio.chrono.presentation.sets.model.FilterValue
+import com.chronoio.chrono.presentation.sets.model.SimpleRelationView
+import com.chronoio.chrono.presentation.sets.model.Viewer
+import com.chronoio.chrono.presentation.sets.state.ObjectState
+import com.chronoio.chrono.presentation.sets.viewerById
+import com.chronoio.chrono.presentation.util.Dispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+open class FilterViewModel(
+    private val objectState: StateFlow<ObjectState>,
+    private val dispatcher: Dispatcher<Payload>,
+    private val updateDataViewViewer: UpdateDataViewViewer,
+    private val searchObjects: SearchObjects,
+    private val urlBuilder: UrlBuilder,
+    private val storeOfObjectTypes: StoreOfObjectTypes,
+    private val storeOfRelations: StoreOfRelations,
+    private val objectSetDatabase: ObjectSetDatabase,
+    private val analytics: Analytics,
+    private val getOptions: GetOptions,
+    private val spaceManager: SpaceManager,
+    private val fieldParser: FieldParser,
+    private val spaceViews: SpaceViewSubscriptionContainer,
+    private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate
+) : ViewModel(), AnalyticSpaceHelperDelegate by analyticSpaceHelperDelegate {
+
+    val commands = MutableSharedFlow<Commands>()
+    val isCompleted = MutableSharedFlow<Boolean>(0)
+
+    private var filterIndex: Int? = null
+    private var relationKey: Key? = null
+    private var relation: ObjectWrapper.Relation? = null
+    private val jobs = mutableListOf<Job>()
+
+    val conditionState = MutableStateFlow<FilterConditionView?>(null)
+    val relationState = MutableStateFlow<SimpleRelationView?>(null)
+    val filterValueState = MutableStateFlow<FilterValue?>(null)
+    val filterValueListState = MutableStateFlow<List<CreateFilterView>>(emptyList())
+    val optionCountState = MutableStateFlow(0)
+
+    private fun startObservingCondition(viewerId: Id) {
+        jobs += viewModelScope.launch {
+            conditionState.collect { condition ->
+                setValueStates(
+                    condition = condition?.condition,
+                    index = filterIndex,
+                    viewerId = viewerId,
+                    fieldParser = fieldParser,
+                    storeOfObjectTypes = storeOfObjectTypes
+                )
+            }
+        }
+    }
+
+    fun onStart(viewerId: Id, relationKey: Key, filterIndex: Int?) {
+        Timber.d("FilterViewModel, onStart, viewer:[$viewerId], relationKey:[$relationKey], filterIndex:[$filterIndex]")
+        this.filterIndex = filterIndex
+        this.relationKey = relationKey
+        startObservingCondition(viewerId = viewerId)
+        initStates(viewerId)
+    }
+
+    fun onStop() {
+        jobs.forEach { it.cancel() }
+        jobs.clear()
+    }
+
+    private fun initStates(viewerId: Id) {
+        jobs += viewModelScope.launch {
+            objectState.filterIsInstance<ObjectState.DataView>().collect { state ->
+                try {
+                    val viewer = state.viewerById(viewerId) ?: return@collect
+                    val key = relationKey
+                    if (key != null) {
+                        val relation = storeOfRelations.getByKey(key)
+                        if (relation != null) {
+                            this@FilterViewModel.relation = relation
+                            setRelationState(
+                                viewer = viewer,
+                                relation = relation
+                            )
+                            setConditionState(viewer, relation, filterIndex)
+                            setValueStates(
+                                condition = conditionState.value?.condition,
+                                index = filterIndex,
+                                viewerId = viewerId,
+                                fieldParser = fieldParser,
+                                storeOfObjectTypes = storeOfObjectTypes
+                            )
+                        } else {
+                            Timber.e("Couldn't find relation in StoreOfRelations by relationKey:[$relationKey]")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error in the filter flow").also {
+                        commands.emit(Commands.Toast("Something went wrong. Please try again"))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setRelationState(viewer: DVViewer, relation: ObjectWrapper.Relation) {
+        relationState.value = viewer.toViewRelation(relation)
+    }
+
+    private fun setConditionState(viewer: DVViewer, relation: ObjectWrapper.Relation, index: Int?) {
+        getCondition(relation, viewer, index).let { condition ->
+            conditionState.value = FilterConditionView(condition)
+            updateUi(relation.format, condition)
+        }
+    }
+
+    private fun updateUi(format: Relation.Format, condition: Viewer.Filter.Condition) {
+        when (format) {
+            Relation.Format.SHORT_TEXT,
+            Relation.Format.LONG_TEXT,
+            Relation.Format.URL,
+            Relation.Format.EMAIL,
+            Relation.Format.NUMBER,
+            Relation.Format.PHONE -> {
+                if (condition.hasValue()) {
+                    viewModelScope.launch { commands.emit(Commands.ShowInput) }
+                } else {
+                    viewModelScope.launch { commands.emit(Commands.HideInput) }
+                }
+            }
+            Relation.Format.OBJECT -> {
+                viewModelScope.launch { commands.emit(Commands.ObjectDivider) }
+                if (condition.hasValue()) {
+                    viewModelScope.launch { commands.emit(Commands.ShowSearchbar) }
+                    viewModelScope.launch { commands.emit(Commands.ShowCount) }
+                } else {
+                    viewModelScope.launch { commands.emit(Commands.HideSearchbar) }
+                    viewModelScope.launch { commands.emit(Commands.HideCount) }
+                }
+            }
+            Relation.Format.TAG,
+            Relation.Format.STATUS,
+            Relation.Format.FILE -> {
+                viewModelScope.launch { commands.emit(Commands.TagDivider) }
+                if (condition.hasValue()) {
+                    viewModelScope.launch { commands.emit(Commands.ShowSearchbar) }
+                    viewModelScope.launch { commands.emit(Commands.ShowCount) }
+                } else {
+                    viewModelScope.launch { commands.emit(Commands.HideSearchbar) }
+                    viewModelScope.launch { commands.emit(Commands.HideCount) }
+                }
+            }
+            Relation.Format.DATE -> {
+                viewModelScope.launch { commands.emit(Commands.DateDivider) }
+                viewModelScope.launch { commands.emit(Commands.HideSearchbar) }
+                viewModelScope.launch { commands.emit(Commands.HideCount) }
+            }
+            Relation.Format.CHECKBOX -> {
+                viewModelScope.launch { commands.emit(Commands.HideCount) }
+                viewModelScope.launch { commands.emit(Commands.HideSearchbar) }
+            }
+            else -> {
+            }
+        }
+    }
+
+    private fun getCondition(
+        relation: ObjectWrapper.Relation,
+        viewer: DVViewer,
+        index: Int?
+    ): Viewer.Filter.Condition {
+        return if (index == null) {
+            relation.toConditionView(condition = null)
+        } else {
+            val filter = viewer.filters.getOrNull(index)
+                ?.takeIf { it.relation == relation.key }
+                ?: viewer.filters.firstOrNull { it.relation == relation.key }
+            relation.toConditionView(condition = filter?.condition)
+        }
+    }
+
+    private suspend fun setValueStates(
+        viewerId: Id,
+        condition: Viewer.Filter.Condition?,
+        index: Int?,
+        fieldParser: FieldParser,
+        storeOfObjectTypes: StoreOfObjectTypes
+    ) {
+        if (condition == null || !condition.hasValue()) {
+            filterValueState.value = null
+            filterValueListState.value = listOf()
+            return
+        }
+
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        val key = relationKey
+        if (key != null) {
+            val relation = storeOfRelations.getByKey(key) ?: return
+            if (index == null) {
+                filterValueState.value = relation.toFilterValue(
+                    value = null,
+                    urlBuilder = urlBuilder,
+                    store = objectSetDatabase.store,
+                    fieldParser = fieldParser,
+                    storeOfObjectTypes = storeOfObjectTypes
+                )
+                proceedWithFilterValueList(
+                    relation = relation,
+                    filter = null,
+                    condition = condition,
+                    fieldParser = fieldParser
+                )
+            } else {
+                val filter = viewer.filters.getOrNull(index)
+                    ?.takeIf { it.relation == relation.key }
+                    ?: viewer.filters.firstOrNull { it.relation == relation.key }
+                    ?: run {
+                        filterValueState.value = null
+                        filterValueListState.value = emptyList()
+                        return
+                    }
+                filterValueState.value = relation.toFilterValue(
+                    value = filter.value,
+                    urlBuilder = urlBuilder,
+                    store = objectSetDatabase.store,
+                    fieldParser = fieldParser,
+                    storeOfObjectTypes = storeOfObjectTypes
+                )
+                proceedWithFilterValueList(
+                    relation = relation,
+                    filter = filter,
+                    condition = condition,
+                    fieldParser = fieldParser
+                )
+            }
+        }
+    }
+
+    private suspend fun proceedWithFilterValueList(
+        relation: ObjectWrapper.Relation,
+        filter: DVFilter?,
+        condition: Viewer.Filter.Condition,
+        fieldParser: FieldParser
+    ): Unit = when (relation.format) {
+        Relation.Format.DATE -> {
+            val value = (filter?.value as? Double)?.toLong() ?: 0L
+            filterValueListState.value = relation.toCreateFilterDateView(
+                quickOption = filter?.quickOption,
+                condition = condition.toDomain(),
+                value = value,
+                fieldParser = fieldParser
+            )
+        }
+        Relation.Format.TAG -> {
+            proceedWithParsingTagValues(filter, relation)
+        }
+        Relation.Format.STATUS -> {
+            proceedWithParsingStatusValues(filter, relation)
+        }
+        Relation.Format.OBJECT -> {
+            val ids = filter?.value as? List<*>
+            // Resolved against the type store rather than used raw: ids for types that no
+            // longer exist in this space would otherwise filter every candidate out
+            // (DROID-4554).
+            val limitObjectTypes = storeOfObjectTypes.mapLimitObjectTypes(relation)
+            proceedWithSearchObjects(
+                ids = ids,
+                objectTypes = storeOfObjectTypes.getAll(),
+                limitObjectTypes = limitObjectTypes
+            )
+        }
+        Relation.Format.FILE -> {
+            val ids = filter?.value as? List<*>
+            proceedWithSearchObjectsByLayout(
+                ids = ids,
+                objectTypes = storeOfObjectTypes.getAll(),
+                layouts = SupportedLayouts.fileLayouts
+            )
+        }
+        Relation.Format.CHECKBOX -> {
+            filterValueListState.value =
+                relation.toCreateFilterCheckboxView(filter?.value as? Boolean)
+        }
+        else -> {
+            filterValueListState.value = emptyList()
+        }
+    }
+
+    private fun proceedWithParsingTagValues(
+        filter: DVFilter?,
+        relation: ObjectWrapper.Relation
+    ) {
+        val ids: List<Id> = (filter?.value as? List<*>)?.typeOf() ?: emptyList()
+        viewModelScope.launch {
+            getOptions(
+                GetOptions.Params(
+                    relation = relation.key,
+                    space = spaceManager.get()
+                )
+            ).process(
+                success = { options ->
+                    filterValueListState.value = options.toCreateFilterTagView(
+                        selected = ids
+                    ).also {
+                        optionCountState.value = it.count { view -> view.isSelected }
+                    }
+                },
+                failure = {
+                    filterValueListState.value = emptyList<CreateFilterView.Tag>().also {
+                        optionCountState.value = it.count { view -> view.isSelected }
+                    }
+                }
+            )
+        }
+    }
+
+    private fun proceedWithParsingStatusValues(
+        filter: DVFilter?,
+        relation: ObjectWrapper.Relation
+    ) {
+        val ids: List<Id> = (filter?.value as? List<*>)?.typeOf() ?: emptyList()
+        viewModelScope.launch {
+            getOptions(
+                GetOptions.Params(
+                    relation = relation.key,
+                    space = spaceManager.get()
+                )
+            ).process(
+                success = { options ->
+                    filterValueListState.value = options.toCreateFilterStatusView(
+                        selected = ids
+                    ).also {
+                        optionCountState.value = it.count { view -> view.isSelected }
+                    }
+                },
+                failure = {
+                    filterValueListState.value = emptyList<CreateFilterView.Status>().also {
+                        optionCountState.value = it.count { view -> view.isSelected }
+                    }
+                }
+            )
+        }
+    }
+
+    private fun proceedWithSearchObjects(
+        ids: List<*>? = null,
+        objectTypes: List<ObjectWrapper.Type>,
+        limitObjectTypes: List<Key> = emptyList()
+    ) {
+        viewModelScope.launch {
+            val spaceId = SpaceId(spaceManager.get())
+            val isOneToOneSpace = spaceViews.get(spaceId)?.isOneToOneSpace == true
+            searchObjects(
+                SearchObjects.Params(
+                    // TODO DROID-2916 Provide space id to vm params
+                    space = spaceId,
+                    sorts = ObjectSearchConstants.sortAddObjectToFilter,
+                    filters = ObjectSearchConstants.filterAddObjectToFilter(
+                        limitObjectTypes = limitObjectTypes,
+                        isOneToOneSpace = isOneToOneSpace
+                    ),
+                    fulltext = SearchObjects.EMPTY_TEXT,
+                    offset = SearchObjects.INIT_OFFSET,
+                    limit = SearchObjects.LIMIT
+                )
+            ).process(
+                failure = { Timber.e(it, "Error while getting objects") },
+                success = { objects ->
+                    filterValueListState.value = objects.toCreateFilterObjectView(
+                        ids = ids,
+                        urlBuilder = urlBuilder,
+                        objectTypes = objectTypes,
+                        fieldParser = fieldParser,
+                        storeOfObjectTypes = storeOfObjectTypes
+                    ).also {
+                        optionCountState.value = it.count { view -> view.isSelected }
+                    }
+                }
+            )
+        }
+    }
+
+    private fun proceedWithSearchObjectsByLayout(
+        ids: List<*>? = null,
+        layouts: List<ObjectType.Layout>,
+        objectTypes: List<ObjectWrapper.Type>
+    ) {
+        Timber.d("proceedWithSearchObjectsByLayout, layouts:[$layouts], objectTypes:[$objectTypes]")
+        viewModelScope.launch {
+            searchObjects(
+                SearchObjects.Params(
+                    // TODO DROID-2916 Provide space id to vm params
+                    space = SpaceId(spaceManager.get()),
+                    sorts = ObjectSearchConstants.sortAddObjectToFilter,
+                    filters = ObjectSearchConstants.filterAddObjectToFilterByLayout(
+                        layouts = layouts
+                    ),
+                    fulltext = SearchObjects.EMPTY_TEXT,
+                    offset = SearchObjects.INIT_OFFSET,
+                    limit = SearchObjects.LIMIT
+                )
+            ).process(
+                failure = { Timber.e(it, "Error while getting objects") },
+                success = { objects ->
+                    filterValueListState.value = objects.toCreateFilterObjectView(
+                        ids = ids,
+                        urlBuilder = urlBuilder,
+                        objectTypes = objectTypes,
+                        fieldParser = fieldParser,
+                        storeOfObjectTypes = storeOfObjectTypes
+                    ).also {
+                        optionCountState.value = it.count { view -> view.isSelected }
+                    }
+                }
+            )
+        }
+    }
+
+    fun onConditionClicked() {
+        viewModelScope.launch {
+            val condition = conditionState.value?.condition
+            if (condition != null) {
+                proceedWithConditionPickerScreen(
+                    type = condition.type(),
+                    index = condition.index()
+                )
+            } else {
+                Timber.e("Unexpected state: condition was null in filter")
+            }
+        }
+    }
+
+    fun onConditionUpdate(condition: Viewer.Filter.Condition) {
+        conditionState.value = FilterConditionView(condition)
+        val format = relation?.format
+        if (format != null) {
+            updateUi(condition = condition, format = format)
+        }
+    }
+
+    fun onFilterItemClicked(item: CreateFilterView) {
+        when (item) {
+            is CreateFilterView.Tag -> {
+                filterValueListState.value = filterValueListState.value.map { view ->
+                    if (view is CreateFilterView.Tag && view.id == item.id) {
+                        view.copy(isSelected = !view.isSelected)
+                    } else {
+                        view
+                    }
+                }.also {
+                    optionCountState.value = it.count { view -> view.isSelected }
+                }
+            }
+            is CreateFilterView.Status -> {
+                filterValueListState.value = filterValueListState.value.map { view ->
+                    if (view is CreateFilterView.Status && view.id == item.id) {
+                        view.copy(isSelected = !view.isSelected)
+                    } else {
+                        view
+                    }
+                }.also {
+                    optionCountState.value = it.count { view -> view.isSelected }
+                }
+            }
+            is CreateFilterView.Date -> {
+                onFilterDateItemClicked(item)
+            }
+            is CreateFilterView.Object -> {
+                filterValueListState.value = filterValueListState.value.map { view ->
+                    if (view is CreateFilterView.Object && view.id == item.id) {
+                        view.copy(isSelected = !view.isSelected)
+                    } else {
+                        view
+                    }
+                }.also {
+                    optionCountState.value = it.count { view -> view.isSelected }
+                }
+            }
+            is CreateFilterView.Checkbox -> {
+                filterValueListState.value = filterValueListState.value.map { view ->
+                    if (view is CreateFilterView.Checkbox) {
+                        if (view.isChecked == item.isChecked) {
+                            view.copy(isSelected = true)
+                        } else {
+                            view.copy(isSelected = false)
+                        }
+                    } else {
+                        view
+                    }
+                }
+            }
+        }
+    }
+
+    fun onCreateInputValueFilterClicked(ctx: Id, viewerId: Id, relation: Id, input: String) {
+        val condition = conditionState.value?.condition
+        checkNotNull(condition)
+        val format = relationState.value?.format
+        checkNotNull(format)
+        val value = FilterInputValueParser.parse(
+            value = input,
+            condition = condition,
+            format = format
+        )
+
+        viewModelScope.launch {
+            proceedWithCreatingFilter(
+                ctx = ctx,
+                viewerId = viewerId,
+                relationKey = relation,
+                value = value,
+                condition = condition.toDomain(),
+                relationFormat = if (format == RelationFormat.DATE)
+                    RelationFormat.DATE
+                else
+                    null
+            )
+        }
+    }
+
+    fun onExactDayPicked(timeInSeconds: Long) {
+        setFilterState(DVFilterQuickOption.EXACT_DATE, timeInSeconds)
+    }
+
+    private fun setFilterState(quickOption: DVFilterQuickOption, value: Long) {
+        filterValueListState.value = filterValueListState.value.map { view ->
+            if (view is CreateFilterView.Date) {
+                if (view.type == quickOption) {
+                    view.copy(
+                        value = value,
+                        isSelected = true
+                    )
+                } else {
+                    view.copy(isSelected = false)
+                }
+            } else {
+                view
+            }
+        }
+    }
+
+    fun onExactNumberOfDays(quickOption: DVFilterQuickOption, numberOfDays: Long) {
+        setFilterState(quickOption, numberOfDays)
+    }
+
+    fun onCreateFilterFromSelectedValueClicked(ctx: Id, viewerId: Id, relation: Id) {
+        val condition = conditionState.value?.condition
+        checkNotNull(condition)
+        viewModelScope.launch {
+            val format = relationState.value?.format
+            if (format != null) {
+                when (format) {
+                    RelationFormat.TAG -> {
+                        val tags =
+                            filterValueListState.value.filterIsInstance<CreateFilterView.Tag>()
+                        val selected = tags.filter { it.isSelected }.map { tag -> tag.id }
+                        proceedWithCreatingFilter(
+                            ctx = ctx,
+                            viewerId = viewerId,
+                            relationKey = relation,
+                            value = selected,
+                            condition = condition.toDomain(),
+                        )
+                    }
+                    RelationFormat.STATUS -> {
+                        val statuses =
+                            filterValueListState.value.filterIsInstance<CreateFilterView.Status>()
+                        val selected = statuses.filter { it.isSelected }.map { status -> status.id }
+                        proceedWithCreatingFilter(
+                            ctx = ctx,
+                            viewerId = viewerId,
+                            relationKey = relation,
+                            value = selected,
+                            condition = condition.toDomain()
+                        )
+                    }
+                    RelationFormat.DATE -> {
+                        val dates =
+                            filterValueListState.value.filterIsInstance<CreateFilterView.Date>()
+                        val selected = dates.firstOrNull { it.isSelected }
+                        proceedWithCreatingFilter(
+                            ctx = ctx,
+                            viewerId = viewerId,
+                            relationKey = relation,
+                            value = selected?.value?.toDouble(),
+                            quickOption = selected?.type ?: DVFilterQuickOption.EXACT_DATE,
+                            condition = condition.toDomain()
+                        )
+                    }
+                    RelationFormat.OBJECT, RelationFormat.FILE -> {
+                        val objects =
+                            filterValueListState.value.filterIsInstance<CreateFilterView.Object>()
+                        val selected = objects
+                            .filter { it.isSelected }
+                            .map { obj -> obj.id }
+                        proceedWithCreatingFilter(
+                            ctx = ctx,
+                            viewerId = viewerId,
+                            relationKey = relation,
+                            value = selected,
+                            condition = condition.toDomain(),
+                        )
+                    }
+                    RelationFormat.CHECKBOX -> {
+                        val value = filterValueListState.value.checkboxFilterValue()
+                        proceedWithCreatingFilter(
+                            ctx = ctx,
+                            viewerId = viewerId,
+                            relationKey = relation,
+                            value = value,
+                            condition = condition.toDomain()
+                        )
+                    }
+                    else -> {
+                        Timber.e("Wrong filter format $format")
+                    }
+                }
+            }
+        }
+    }
+
+    fun onModifyApplyClicked(ctx: Id, input: String, viewerId: Id) {
+        val condition = conditionState.value?.condition
+        checkNotNull(condition)
+        val relation = this.relationKey
+        checkNotNull(relation)
+        val idx = filterIndex
+        checkNotNull(idx)
+        val format = relationState.value?.format
+        checkNotNull(format)
+        val value = FilterInputValueParser.parse(
+            value = input,
+            condition = condition,
+            format = format
+        )
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        viewModelScope.launch {
+            val filterId = (viewer.filters.getOrNull(idx)
+                ?.takeIf { it.relation == relation }
+                ?: viewer.filters.firstOrNull { it.relation == relation })?.id
+            if (filterId == null) {
+                commands.emit(Commands.Toast("Filter with index $idx not found"))
+                Timber.e("Filter with index $idx not found")
+                return@launch
+            }
+            proceedWithUpdatingFilter(
+                ctx = ctx,
+                target = state.dataViewBlock.id,
+                viewer = viewer,
+                updatedFilter = DVFilter(
+                    id = filterId,
+                    relation = relation,
+                    condition = condition.toDomain(),
+                    value = value
+                )
+            )
+        }
+    }
+
+    fun onModifyApplyClicked(ctx: Id, viewerId: Id) {
+        val condition = conditionState.value?.condition
+        checkNotNull(condition)
+        val relation = this.relationKey
+        checkNotNull(relation)
+        val idx = filterIndex
+        checkNotNull(idx)
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        viewModelScope.launch {
+            val dvFilter = viewer.filters.getOrNull(idx)
+                ?.takeIf { it.relation == relation }
+                ?: viewer.filters.firstOrNull { it.relation == relation }
+            val filterId = dvFilter?.id
+            if (filterId == null) {
+                commands.emit(Commands.Toast("Filter with index $idx not found"))
+                Timber.e("Filter with index $idx not found")
+                return@launch
+            }
+            val format = relationState.value?.format
+            if (format != null) {
+                when (format) {
+                    RelationFormat.TAG -> {
+                        val value = filterValueListState.value.mapNotNull { view ->
+                            if (view is CreateFilterView.Tag && view.isSelected)
+                                view.id
+                            else
+                                null
+                        }
+                        proceedWithUpdatingFilter(
+                            ctx = ctx,
+                            target = state.dataViewBlock.id,
+                            viewer = viewer,
+                            updatedFilter = DVFilter(
+                                id = filterId,
+                                relation = relation,
+                                condition = condition.toDomain(),
+                                value = value
+                            )
+                        )
+                    }
+                    RelationFormat.STATUS -> {
+                        val value = filterValueListState.value.mapNotNull { view ->
+                            if (view is CreateFilterView.Status && view.isSelected)
+                                view.id
+                            else
+                                null
+                        }
+                        proceedWithUpdatingFilter(
+                            ctx = ctx,
+                            target = state.dataViewBlock.id,
+                            viewer = viewer,
+                            updatedFilter = DVFilter(
+                                id = filterId,
+                                relation = relation,
+                                condition = condition.toDomain(),
+                                value = value
+                            )
+                        )
+                    }
+                    RelationFormat.DATE -> {
+                        val date = filterValueListState.value
+                            .filterIsInstance<CreateFilterView.Date>()
+                            .firstOrNull { it.isSelected }
+                        proceedWithUpdatingFilter(
+                            ctx = ctx,
+                            target = state.dataViewBlock.id,
+                            viewer = viewer,
+                            updatedFilter = DVFilter(
+                                id = filterId,
+                                relation = relation,
+                                condition = condition.toDomain(),
+                                quickOption = date?.type ?: DVFilterQuickOption.EXACT_DATE,
+                                value = date?.value?.toDouble()
+                            )
+                        )
+                    }
+                    RelationFormat.OBJECT,
+                    RelationFormat.FILE -> {
+                        val value = filterValueListState.value.mapNotNull { view ->
+                            if (view is CreateFilterView.Object && view.isSelected)
+                                view.id
+                            else
+                                null
+                        }
+                        proceedWithUpdatingFilter(
+                            ctx = ctx,
+                            target = state.dataViewBlock.id,
+                            viewer = viewer,
+                            updatedFilter = DVFilter(
+                                id = filterId,
+                                relation = relation,
+                                condition = condition.toDomain(),
+                                value = value
+                            )
+                        )
+                    }
+                    RelationFormat.CHECKBOX -> {
+                        val value = filterValueListState.value.checkboxFilterValue()
+                        proceedWithUpdatingFilter(
+                            ctx = ctx,
+                            target = state.dataViewBlock.id,
+                            viewer = viewer,
+                            updatedFilter = DVFilter(
+                                id = filterId,
+                                relation = relation,
+                                condition = condition.toDomain(),
+                                value = value
+                            )
+                        )
+                    }
+                    else -> {
+                        Timber.e("Wrong selected relation format : $format")
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun proceedWithUpdatingFilter(
+        ctx: Id,
+        target: Id,
+        viewer: DVViewer,
+        updatedFilter: DVFilter
+    ) {
+        val startTime = System.currentTimeMillis()
+        val params = UpdateDataViewViewer.Params.Filter.Replace(
+            ctx = ctx,
+            dv = target,
+            view = viewer.id,
+            filter = updatedFilter
+        )
+        updateDataViewViewer.async(params).fold(
+            onFailure = { Timber.e(it, "Error while creating filter") },
+            onSuccess = {
+                dispatcher.send(it).also {
+                    val spaceId = SpaceId(spaceManager.get())
+                    viewModelScope.logEvent(
+                        state = objectState.value,
+                        analytics = analytics,
+                        event = ObjectStateAnalyticsEvent.CHANGE_FILTER_VALUE,
+                        startTime = startTime,
+                        condition = updatedFilter.condition,
+                        spaceParams = provideParams(spaceId.id)
+                    )
+                    isCompleted.emit(true)
+                }
+            }
+        )
+    }
+
+    private suspend fun proceedWithCreatingFilter(
+        ctx: Id,
+        viewerId: Id,
+        relationKey: String,
+        relationFormat: RelationFormat? = null,
+        operator: DVFilterOperator = DVFilterOperator.NO,
+        condition: DVFilterCondition,
+        quickOption: DVFilterQuickOption = DVFilterQuickOption.EXACT_DATE,
+        value: Any? = null
+    ) {
+        val startTime = System.currentTimeMillis()
+        val state = objectState.value.dataViewState() ?: return
+        val viewer = state.viewerById(viewerId) ?: return
+        val params = UpdateDataViewViewer.Params.Filter.Add(
+            ctx = ctx,
+            dv = state.dataViewBlock.id,
+            view = viewer.id,
+            relationKey = relationKey,
+            relationFormat = relationFormat,
+            operator = operator,
+            condition = condition,
+            quickOption = quickOption,
+            value = value
+        )
+        updateDataViewViewer.async(params).fold(
+            onFailure = { Timber.e(it, "Error while creating filter") },
+            onSuccess = {
+                dispatcher.send(it).also {
+                    viewModelScope.logEvent(
+                        state = objectState.value,
+                        analytics = analytics,
+                        event = ObjectStateAnalyticsEvent.ADD_FILTER,
+                        startTime = startTime,
+                        condition = condition
+                    )
+                    isCompleted.emit(true)
+                }
+            }
+        )
+    }
+
+    private fun onFilterDateItemClicked(dateItem: CreateFilterView.Date) {
+        when (dateItem.type) {
+            DVFilterQuickOption.EXACT_DATE -> {
+                viewModelScope.launch { proceedWithDatePickerScreen(dateItem.value) }
+            }
+            DVFilterQuickOption.DAYS_AGO, DVFilterQuickOption.DAYS_AHEAD -> {
+                viewModelScope.launch {
+                    proceedWithNumberPickerScreen(
+                        dateItem.type,
+                        if (dateItem.isSelected) dateItem.value else null
+                    )
+                }
+            }
+            else -> {
+                filterValueListState.value = updateSelectedState(dateItem)
+            }
+        }
+    }
+
+    private suspend fun proceedWithDatePickerScreen(timeInSeconds: Long) {
+        commands.emit(Commands.OpenDatePicker(timeInSeconds))
+    }
+
+    private suspend fun proceedWithNumberPickerScreen(option: DVFilterQuickOption, value: Long?) {
+        commands.emit(Commands.OpenNumberPicker(option, value))
+    }
+
+    private suspend fun proceedWithConditionPickerScreen(type: Viewer.Filter.Type, index: Int) {
+        commands.emit(Commands.OpenConditionPicker(type, index))
+    }
+
+    private fun updateSelectedState(
+        selectedItem: CreateFilterView.Date
+    ): List<CreateFilterView> = filterValueListState.value.map { view ->
+        if (view is CreateFilterView.Date) {
+            if (view.type == DVFilterQuickOption.EXACT_DATE) {
+                view.copy(isSelected = false, value = CreateFilterView.Date.NO_VALUE)
+            } else {
+                if (view.type == selectedItem.type) {
+                    view.copy(isSelected = true)
+                } else {
+                    view.copy(isSelected = false, value = CreateFilterView.Date.NO_VALUE)
+                }
+            }
+        } else {
+            view
+        }
+    }
+
+    class Factory(
+        private val objectState: StateFlow<ObjectState>,
+        private val dispatcher: Dispatcher<Payload>,
+        private val updateDataViewViewer: UpdateDataViewViewer,
+        private val searchObjects: SearchObjects,
+        private val urlBuilder: UrlBuilder,
+        private val storeOfObjectTypes: StoreOfObjectTypes,
+        private val storeOfRelations: StoreOfRelations,
+        private val objectSetDatabase: ObjectSetDatabase,
+        private val getOptions: GetOptions,
+        private val analytics: Analytics,
+        private val spaceManager: SpaceManager,
+        private val fieldParser: FieldParser,
+        private val spaceViews: SpaceViewSubscriptionContainer,
+        private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return FilterViewModel(
+                objectState = objectState,
+                dispatcher = dispatcher,
+                updateDataViewViewer = updateDataViewViewer,
+                searchObjects = searchObjects,
+                urlBuilder = urlBuilder,
+                storeOfObjectTypes = storeOfObjectTypes,
+                storeOfRelations = storeOfRelations,
+                objectSetDatabase = objectSetDatabase,
+                getOptions = getOptions,
+                analytics = analytics,
+                spaceManager = spaceManager,
+                fieldParser = fieldParser,
+                spaceViews = spaceViews,
+                analyticSpaceHelperDelegate = analyticSpaceHelperDelegate
+            ) as T
+        }
+    }
+
+    sealed class Commands {
+        object ShowInput : Commands()
+        object HideInput : Commands()
+        object ShowSearchbar : Commands()
+        object HideSearchbar : Commands()
+        object ShowCount : Commands()
+        object HideCount : Commands()
+        data class OpenDatePicker(val timeInSeconds: Long) : Commands()
+        data class OpenNumberPicker(val option: DVFilterQuickOption, val value: Long?) : Commands()
+        data class OpenConditionPicker(val type: Viewer.Filter.Type, val index: Int) : Commands()
+        object TagDivider : Commands()
+        object ObjectDivider : Commands()
+        object DateDivider : Commands()
+        data class Toast(val message: String) : Commands()
+    }
+}

@@ -1,0 +1,222 @@
+package com.chronoio.chrono.presentation.objects.appearance
+
+import com.chronoio.chrono.core_models.Block.Content.Link
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.presentation.MockBlockContentFactory.StubLinkContent
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView.Appearance.InEditor.Description
+import kotlin.test.assertEquals
+import org.junit.Test
+
+class LinkAppearanceInEditorTest {
+
+    private val defaultLinkAppearance = StubLinkContent(
+        iconSize = Link.IconSize.NONE,
+        cardStyle = Link.CardStyle.TEXT,
+        description = Link.Description.NONE,
+        relations = emptySet()
+    )
+
+    @Test
+    fun `should create appearance params with default values`() {
+
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance,
+            layout = ObjectType.Layout.BASIC
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.NONE,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when layout is null - create appearance params with default values`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance,
+            layout = null
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.NONE,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `should create appearance params without cover`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance.copy(
+                relations = defaultLinkAppearance.relations + Relations.COVER
+            ),
+            layout = ObjectType.Layout.BASIC
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.NONE,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when layout is todo`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance,
+            layout = ObjectType.Layout.TODO
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = true,
+            description = Description.NONE,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when layout is note`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance.copy(
+                iconSize = Link.IconSize.SMALL
+            ),
+            layout = ObjectType.Layout.NOTE
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.NONE,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.SMALL
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when iconSize is none - no icon`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance.copy(
+                iconSize = Link.IconSize.NONE
+            ),
+            layout = ObjectType.Layout.BASIC
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.NONE,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when card style text - relatoin description`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance.copy(
+                cardStyle = Link.CardStyle.TEXT,
+                description = Link.Description.ADDED
+            ),
+            layout = ObjectType.Layout.BASIC
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.RELATION,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when card style text - snippet description`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance.copy(
+                cardStyle = Link.CardStyle.TEXT,
+                description = Link.Description.CONTENT
+            ),
+            layout = ObjectType.Layout.BASIC
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = false,
+            showIcon = false,
+            description = Description.SNIPPET,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `when card style card - there is description`() {
+        val factory = LinkAppearanceFactory(
+            content = defaultLinkAppearance.copy(
+                cardStyle = Link.CardStyle.CARD,
+                description = Link.Description.ADDED
+            ),
+            layout = ObjectType.Layout.BASIC
+        )
+
+        val actual = factory.createInEditorLinkAppearance()
+
+        val expected = BlockView.Appearance.InEditor(
+            isCard = true,
+            showIcon = false,
+            description = Description.RELATION,
+            showCover = false,
+            showType = false,
+            icon = BlockView.Appearance.InEditor.Icon.NONE
+        )
+
+        assertEquals(expected, actual)
+    }
+}

@@ -1,0 +1,179 @@
+package com.chronoio.chrono.presentation.relations
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.EMPTY_QUERY
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.restrictions.ObjectRestriction
+import com.chronoio.chrono.domain.search.SearchObjects
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.common.BaseViewModel
+import com.chronoio.chrono.core_models.ui.objectIcon
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.presentation.relations.model.CreateFromScratchState
+import com.chronoio.chrono.presentation.relations.model.DefaultObjectTypeView
+import com.chronoio.chrono.presentation.relations.model.SelectLimitObjectTypeView
+import com.chronoio.chrono.presentation.relations.model.StateHolder
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class LimitObjectTypeViewModel(
+    private val searchObjects: SearchObjects,
+    private val urlBuilder: UrlBuilder,
+    private val state: StateHolder<CreateFromScratchState>,
+    private val spaceManager: SpaceManager
+) : BaseViewModel() {
+
+
+    private val queryFlow = MutableStateFlow(EMPTY_QUERY)
+    private val allTypeViews = MutableStateFlow<List<SelectLimitObjectTypeView>>(emptyList())
+
+    val views = combine(allTypeViews, queryFlow) { types, query ->
+        if (query.isEmpty())
+            types
+        else
+            types.filter { type ->
+                val title = type.item.title
+                val subtitle = type.item.subtitle
+                if (subtitle.isNullOrEmpty())
+                    title.contains(query, true)
+                else
+                    title.contains(query, true) || subtitle.contains(query, true)
+            }
+    }
+
+    val count = MutableStateFlow(0)
+
+    val isDismissed = MutableStateFlow(false)
+
+    init {
+        viewModelScope.launch {
+            searchObjects(
+                SearchObjects.Params(
+                    // TODO DROID-2916 Provide space id to vm params
+                    space = SpaceId(spaceManager.get()),
+                    filters = listOf(
+                        DVFilter(
+                            relation = Relations.LAYOUT,
+                            condition = DVFilterCondition.EQUAL,
+                            value = ObjectType.Layout.OBJECT_TYPE.code.toDouble()
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_ARCHIVED,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_DELETED,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_HIDDEN,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_HIDDEN_DISCOVERY,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.RESTRICTIONS,
+                            condition = DVFilterCondition.NOT_IN,
+                            value = listOf(ObjectRestriction.CREATE_OBJECT_OF_THIS_TYPE.code.toDouble())
+                        ),
+                        DVFilter(
+                            relation = Relations.RECOMMENDED_LAYOUT,
+                            condition = DVFilterCondition.NOT_IN,
+                            value = listOf(
+                                ObjectType.Layout.CHAT_DERIVED.code.toDouble()
+                            )
+                        )
+                    ),
+                    keys = listOf(
+                        Relations.ID,
+                        Relations.NAME,
+                        Relations.PLURAL_NAME,
+                        Relations.SNIPPET,
+                        Relations.DESCRIPTION,
+                        Relations.ICON_EMOJI,
+                        Relations.ICON_NAME,
+                        Relations.ICON_OPTION,
+                        Relations.ICON_IMAGE,
+                        Relations.LAYOUT
+                    )
+                )
+            ).process(
+                success = { types ->
+                    val limitObjectTypes = state.state.value.limitObjectTypes
+                    allTypeViews.value = types.map { t ->
+                        SelectLimitObjectTypeView(
+                            item = DefaultObjectTypeView(
+                                id = t.id,
+                                title = t.name.orEmpty(),
+                                subtitle = t.description,
+                                icon = t.objectIcon(urlBuilder)
+                            ),
+                            isSelected = limitObjectTypes.map { it.id }.contains(t.id)
+                        )
+                    }.also {
+                        count.value = it.count { view -> view.isSelected }
+                    }
+                },
+                failure = {
+                    Timber.e(it, "Error while searching for types")
+                }
+            )
+        }
+    }
+
+    fun onSearchInputChanged(input: String) {
+        queryFlow.value = input
+    }
+
+    fun onObjectTypeClicked(type: SelectLimitObjectTypeView) {
+        allTypeViews.value = allTypeViews.value.map { view ->
+            if (view.item.id == type.item.id)
+                view.copy(
+                    isSelected = !view.isSelected
+                )
+            else
+                view
+        }.also {
+            count.value = it.count { view -> view.isSelected }
+        }
+    }
+
+    fun onAddClicked() {
+        state.state.value = state.state.value.copy(
+            limitObjectTypes = allTypeViews.value.filter { it.isSelected }.map { it.item }
+        )
+        isDismissed.value = true
+    }
+
+    class Factory(
+        private val searchObjects: SearchObjects,
+        private val urlBuilder: UrlBuilder,
+        private val state: StateHolder<CreateFromScratchState>,
+        private val spaceManager: SpaceManager
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return LimitObjectTypeViewModel(
+                searchObjects = searchObjects,
+                urlBuilder = urlBuilder,
+                state = state,
+                spaceManager = spaceManager
+            ) as T
+        }
+    }
+}

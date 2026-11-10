@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <TextView
+        android:id="@+id/selectAll"
+        style="@style/TextView.UXStyle.Body"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="center_vertical|start"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:text="@string/select_all"
+        android:textColor="@color/glyph_active" />
+
+    <TextView
+        android:id="@+id/tvToolbarTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        style="@style/TextView.UXStyle.Titles.1"
+        android:text="@string/select_all" />
+
+    <TextView
+        android:id="@+id/btnDone"
+        style="@style/TextView.UXStyle.Body"
+        android:textColor="@color/glyph_active"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="center_vertical|end"
+        android:gravity="center"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:text="@string/done" />
+
+</merge>

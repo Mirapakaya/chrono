@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--typography, buttons 05.04-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <ImageView
+        android:id="@+id/sheet_top"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="6dp"
+        android:src="@drawable/sheet_top" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="16dp">
+
+        <EditText
+            android:id="@+id/textInputField"
+            style="@style/TextView.UXStyle.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="20dp"
+            android:background="@null"
+            android:hint="@string/untitled"
+            android:imeOptions="actionDone"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:textColorHint="@color/text_tertiary" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/icExpand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/default_ripple"
+            android:src="@drawable/ic_open_to_edit"
+            android:stateListAnimator="@animator/scale_shrink" />
+
+    </FrameLayout>
+
+</LinearLayout>

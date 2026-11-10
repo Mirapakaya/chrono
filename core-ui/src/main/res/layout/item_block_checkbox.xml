@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <com.chronoio.chrono.core_ui.features.editor.decoration.EditorDecorationContainer
+        android:id="@+id/decorationContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/graphicPlusTextContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:addStatesFromChildren="true"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:duplicateParentState="false"
+            android:id="@+id/checkboxIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2.5dp"
+            android:contentDescription="@string/content_description_checkbox_pic"
+            android:src="@drawable/selector_block_checkbox" />
+
+        <com.chronoio.chrono.core_ui.widgets.text.TextInputWidget
+            android:id="@+id/checkboxContent"
+            style="@style/BlockCheckboxContentStyle"
+            android:layout_marginStart="@dimen/default_graphic_container_right_offset"
+            android:hint="@string/hint_checkbox"
+            tools:text="New front-end based on design" />
+
+    </LinearLayout>
+
+    <View
+        android:id="@+id/selectionView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/item_block_multi_select_mode_selector"
+        tools:background="@drawable/item_block_multi_select_selected" />
+
+</FrameLayout>

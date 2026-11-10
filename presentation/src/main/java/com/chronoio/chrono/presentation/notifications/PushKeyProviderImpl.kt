@@ -1,0 +1,95 @@
+package com.chronoio.chrono.presentation.notifications
+
+import android.content.SharedPreferences
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.chats.PushKeyChannel
+import com.chronoio.chrono.domain.notifications.PushKeyProvider
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class PushKeyProviderImpl @Inject constructor(
+    private val sharedPreferences: SharedPreferences,
+    private val channel: PushKeyChannel,
+    private val json: Json,
+    private val dispatchers: AppCoroutineDispatchers,
+    private val scope: CoroutineScope
+) : PushKeyProvider {
+
+    private var job: Job? = null
+
+    override fun start() {
+        Timber.d("PushKeyProvider start called")
+        job?.cancel()
+        job = scope.launch(dispatchers.io) {
+            channel
+                .observe()
+                .collect { event ->
+                    Timber.d("New push key updates: $event")
+                    savePushKey(
+                        id = event.encryptionKeyId,
+                        value = event.encryptionKey
+                    )
+                }
+        }
+    }
+
+    override fun stop() {
+        job?.cancel()
+        job = null
+        Timber.d("PushKeyProvider stop called")
+    }
+
+    /**
+     * Read-modify-write of [PREF_PUSH_KEYS]. Safe without synchronization because it is invoked
+     * only from the single sequential collector in [start] (which cancels any prior job before
+     * relaunching), and this class is the only writer of that pref. Calling it from another
+     * thread/coroutine concurrently could lose updates.
+     */
+    private fun savePushKey(id: String?, value: String?) {
+        if (id.isNullOrEmpty() || value.isNullOrEmpty()) return
+
+        val storedKeys = getStoredPushKeys()
+
+        // Skip redundant disk writes: the same key is re-emitted on every space-view
+        // amend during cold start. Only persist when the value actually changed.
+        if (storedKeys[id]?.value == value) return
+
+        val updated = storedKeys.toMutableMap().apply {
+            put(id, PushKey(id = id, value = value))
+        }
+
+        sharedPreferences.edit().apply {
+            putString(PREF_PUSH_KEYS, json.encodeToString(updated))
+            apply()
+        }
+    }
+
+    override fun getPushKey(): Map<String, PushKey> {
+        val storedKeysJson = sharedPreferences.getString(PREF_PUSH_KEYS, "{}") ?: "{}"
+        return try {
+            json.decodeFromString<Map<String, PushKey>>(storedKeysJson)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to decode push keys")
+            emptyMap()
+        }
+    }
+
+    private fun getStoredPushKeys(): Map<String, PushKey> {
+        val storedKeysJson = sharedPreferences.getString(PREF_PUSH_KEYS, "{}") ?: "{}"
+        return try {
+            json.decodeFromString<Map<String, PushKey>>(storedKeysJson)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to decode push keys")
+            emptyMap()
+        }
+    }
+
+    companion object {
+        const val PREF_PUSH_KEYS = "pref.push_keys"
+    }
+}

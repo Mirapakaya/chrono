@@ -1,0 +1,89 @@
+package com.chronoio.chrono.presentation.relations.providers
+
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Struct
+import com.chronoio.chrono.presentation.extension.getStruct
+import com.chronoio.chrono.presentation.sets.ObjectSetDatabase
+import com.chronoio.chrono.presentation.sets.state.ObjectState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+
+class DataViewObjectValueProvider(
+    private val db: ObjectSetDatabase,
+    private val objectState: StateFlow<ObjectState>
+) : ObjectValueProvider {
+    override suspend fun get(ctx: Id, target: Id): Struct {
+        return if (ctx == target)
+            parseIntrinsicObjectValues(
+                state = objectState.value,
+                target = target
+            )
+        else
+            db.store.get(target)?.map ?: emptyMap()
+    }
+
+    override suspend fun subscribe(ctx: Id, target: Id): Flow<Struct> {
+        return if (ctx == target)
+            objectState.map { state ->
+                parseIntrinsicObjectValues(
+                    state = state,
+                    target = target
+                )
+            }
+        else
+            db.observe(target).map { it.map }
+    }
+
+    /**
+     * Providing values for relations of a Set of objects or a Collection of objects.
+     * Set or Collection are both considered here as Objects, contrary to objects from database query.
+     * Objects corresponding to data view query should be taken from [db].
+     */
+    private fun parseIntrinsicObjectValues(
+        state: ObjectState,
+        target: Id
+    ) : Struct = when (state) {
+        is ObjectState.DataView.Collection -> state.details.getStruct(target).orEmpty()
+        is ObjectState.DataView.Set -> state.details.getStruct(target).orEmpty()
+        is ObjectState.DataView.TypeSet -> state.details.getStruct(target).orEmpty()
+        else -> emptyMap()
+    }
+}
+
+class SetOrCollectionObjectValueProvider(
+    private val db: ObjectSetDatabase,
+    private val objectState: StateFlow<ObjectState>
+) : ObjectValueProvider {
+    override suspend fun get(ctx: Id, target: Id): Struct {
+        return parseIntrinsicObjectValues(
+            state = objectState.value,
+            target = target
+        )
+    }
+
+    override suspend fun subscribe(ctx: Id, target: Id): Flow<Struct> {
+        return objectState.map { state ->
+            parseIntrinsicObjectValues(
+                state = state,
+                target = target
+            )
+        }
+    }
+
+    /**
+     * Providing values for relations of a Set of objects or a Collection of objects.
+     * Set or Collection are both considered here as Objects, contrary to objects from database query.
+     * Objects corresponding to data view query should be taken from [db].
+     */
+    private fun parseIntrinsicObjectValues(
+        state: ObjectState,
+        target: Id
+    ) : Struct = when (state) {
+        is ObjectState.DataView.Collection -> state.details.getStruct(target).orEmpty()
+        is ObjectState.DataView.Set -> state.details.getStruct(target).orEmpty()
+        is ObjectState.DataView.TypeSet -> state.details.getStruct(target).orEmpty()
+        else -> emptyMap()
+    }
+}
+

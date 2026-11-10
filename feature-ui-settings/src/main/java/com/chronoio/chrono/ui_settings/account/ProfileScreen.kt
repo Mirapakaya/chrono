@@ -1,0 +1,810 @@
+package com.chronoio.chrono.ui_settings.account
+
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Text
+import androidx.compose.material.TextFieldDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.rememberAsyncImagePainter
+import com.chronoio.chrono.core_models.membership.Membership
+import com.chronoio.chrono.core_models.membership.MembershipConstants
+import com.chronoio.chrono.core_models.membership.MembershipPaymentMethod
+import com.chronoio.chrono.core_models.membership.MembershipStatus
+import com.chronoio.chrono.core_models.membership.TierId
+import com.chronoio.chrono.core_models.ui.AccountProfile
+import com.chronoio.chrono.core_models.ui.ProfileIconView
+import com.chronoio.chrono.core_ui.common.DefaultPreviews
+import com.chronoio.chrono.core_ui.features.profile.GlobalNameOrIdentity
+import com.chronoio.chrono.core_ui.foundation.AlertConfig
+import com.chronoio.chrono.core_ui.foundation.BUTTON_SECONDARY
+import com.chronoio.chrono.core_ui.foundation.Divider
+import com.chronoio.chrono.core_ui.foundation.Dragger
+import com.chronoio.chrono.core_ui.foundation.GenericAlert
+import com.chronoio.chrono.core_ui.foundation.Option
+import com.chronoio.chrono.core_ui.foundation.OptionMembership
+import com.chronoio.chrono.core_ui.foundation.OptionWithBadge
+import com.chronoio.chrono.core_ui.foundation.noRippleClickable
+import com.chronoio.chrono.core_ui.views.AvatarTitle
+import com.chronoio.chrono.core_ui.views.BodyRegular
+import com.chronoio.chrono.core_ui.views.Caption1Regular
+import com.chronoio.chrono.core_ui.views.HeadlineHeading
+import com.chronoio.chrono.ui_settings.R
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+
+@Composable
+fun ProfileSettingsScreen(
+    onKeychainPhraseClicked: () -> Unit,
+    onLogoutClicked: () -> Unit,
+    isLogoutInProgress: Boolean,
+    isDebugEnabled: Boolean,
+    showExperimentalFeatures: Boolean,
+    onNameChange: (String) -> Unit,
+    onProfileIconClick: () -> Unit,
+    account: AccountProfile,
+    onAppearanceClicked: () -> Unit,
+    onDataManagementClicked: () -> Unit,
+    onMySitesClicked: () -> Unit,
+    onAboutClicked: () -> Unit,
+    onSpacesClicked: () -> Unit,
+    onMembershipClicked: () -> Unit,
+    membershipStatus: MembershipStatus?,
+    showMembership: ShowMembership?,
+    clearProfileImage: () -> Unit,
+    onDebugClicked: () -> Unit,
+    onExperimentalFeaturesClicked: () -> Unit,
+    onMiscSectionClicked: () -> Unit,
+    notificationsDisabled: Boolean,
+    onOpenNotificationSettings: () -> Unit,
+    onIdentityClicked: () -> Unit = onMembershipClicked,
+    onShowQrCodeClicked: () -> Unit = {}
+) {
+    LazyColumn(
+        modifier = Modifier
+            .nestedScroll(rememberNestedScrollInteropConnection())
+            .fillMaxSize()
+            .statusBarsPadding(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        item {
+            Header(
+                account = account,
+                onNameSet = onNameChange,
+                onProfileIconClick = onProfileIconClick,
+                clearProfileImage = clearProfileImage,
+                onIdentityClicked = onIdentityClicked,
+                onShowQrCodeClicked = onShowQrCodeClicked
+            )
+        }
+        item {
+            Divider()
+        }
+        item {
+            Section(stringResource(R.string.settings_application))
+        }
+        item {
+            Option(
+                image = R.drawable.ic_settings_appearance,
+                text = stringResource(R.string.appearance),
+                onClick = onAppearanceClicked
+            )
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+        item {
+            OptionWithBadge(
+                image = R.drawable.ic_settings_notifications,
+                text = stringResource(R.string.notifications_title),
+                showBadge = notificationsDisabled,
+                onClick = onOpenNotificationSettings
+            )
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+
+        item {
+            Option(
+                image = R.drawable.ic_settings_access,
+                text = stringResource(R.string.login_key),
+                onClick = onKeychainPhraseClicked
+            )
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+        if (showMembership?.isShowing == true) {
+            item {
+                OptionMembership(
+                    image = R.drawable.ic_settings_membership,
+                    text = stringResource(R.string.settings_membership),
+                    onClick = onMembershipClicked,
+                    membershipStatus = membershipStatus
+                )
+            }
+            item {
+                Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+            }
+        }
+
+        item {
+            Section(stringResource(R.string.data_management))
+        }
+
+        item {
+            Option(
+                image = R.drawable.ic_settings_spaces,
+                text = stringResource(R.string.multiplayer_spaces),
+                onClick = onSpacesClicked
+            )
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+
+        item {
+            Option(
+                image = R.drawable.ic_settings_data_management,
+                text = stringResource(R.string.local_storage),
+                onClick = onDataManagementClicked
+            )
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+        item {
+            Option(
+                image = R.drawable.ic_settings_my_sites,
+                text = stringResource(R.string.settings_my_sites),
+                onClick = onMySitesClicked
+            )
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+
+        item {
+            Section(
+                name = stringResource(R.string.vault_settings_section_misc),
+                onClick = onMiscSectionClicked
+            )
+        }
+
+        item {
+            Option(
+                image = R.drawable.ic_settings_about,
+                text = stringResource(R.string.about),
+                onClick = onAboutClicked
+            )
+        }
+        if (isDebugEnabled) {
+            item {
+                Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+            }
+            item {
+                Option(
+                    image = R.drawable.ic_settings_debug,
+                    text = stringResource(R.string.debug),
+                    onClick = onDebugClicked
+                )
+            }
+            if (showExperimentalFeatures) {
+                item {
+                    Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+                }
+                item {
+                    Option(
+                        image = R.drawable.ic_settings_debug,
+                        text = stringResource(R.string.experimental_features),
+                        onClick = onExperimentalFeaturesClicked
+                    )
+                }
+            }
+        }
+        item {
+            Divider(paddingStart = 16.dp, paddingEnd = 16.dp)
+        }
+        item {
+            LogoutButton(onLogoutClicked, isLogoutInProgress)
+        }
+        item {
+            Box(Modifier.height(54.dp))
+        }
+    }
+}
+
+@Composable
+private fun LogoutButton(
+    onLogoutClicked: () -> Unit,
+    isLogoutInProgress: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .height(52.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .noRippleClickable {
+                onLogoutClicked()
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_settings_log_out),
+            contentDescription = "Option icon",
+            modifier = Modifier.size(24.dp)
+        )
+        Box(
+            modifier = Modifier
+                .weight(1.0f)
+                .height(52.dp)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = stringResource(R.string.log_out),
+                color = colorResource(R.color.palette_system_red),
+                style = BodyRegular,
+                modifier = Modifier.padding(
+                    start = 10.dp
+                )
+            )
+            if (isLogoutInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 20.dp)
+                        .size(24.dp),
+                    color = colorResource(R.color.shape_secondary)
+                )
+            }
+        }
+        Box(
+            modifier = Modifier,
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_arrow_forward),
+                contentDescription = "Arrow forward",
+                modifier = Modifier
+            )
+        }
+    }
+}
+
+@Composable
+fun Section(
+    name: String,
+    onClick: (() -> Unit)? = null
+) {
+    Box(
+        modifier = Modifier
+            .height(52.dp)
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.noRippleClickable { onClick() }
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.BottomStart
+    ) {
+        Text(
+            text = name,
+            modifier = Modifier.padding(
+                start = 16.dp,
+                bottom = 8.dp
+            ),
+            color = colorResource(R.color.text_secondary),
+            style = Caption1Regular
+        )
+    }
+}
+
+@Composable
+fun Action(
+    name: String,
+    color: Color = Color.Unspecified,
+    onClick: () -> Unit = {}
+) {
+    Box(
+        modifier = Modifier
+            .height(52.dp)
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text = name,
+            color = color,
+            style = BodyRegular,
+            modifier = Modifier.padding(
+                start = 20.dp
+            )
+        )
+    }
+}
+
+@Composable
+fun ActionWithProgressBar(
+    name: String,
+    color: Color = Color.Unspecified,
+    onClick: () -> Unit = {},
+    isInProgress: Boolean,
+    textStartPadding: Dp = 20.dp,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(52.dp)
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text = name,
+            color = color,
+            style = BodyRegular,
+            modifier = Modifier.padding(
+                start = textStartPadding
+            )
+        )
+        if (isInProgress) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 20.dp)
+                    .size(24.dp),
+                color = colorResource(R.color.shape_secondary)
+            )
+        }
+    }
+}
+
+@Composable
+private fun Header(
+    modifier: Modifier = Modifier,
+    account: AccountProfile,
+    onProfileIconClick: () -> Unit,
+    onNameSet: (String) -> Unit,
+    clearProfileImage: () -> Unit,
+    onIdentityClicked: () -> Unit,
+    onShowQrCodeClicked: () -> Unit
+) {
+    when (account) {
+        is AccountProfile.Data -> {
+            Box(modifier = modifier.padding(vertical = 6.dp)) {
+                Dragger()
+            }
+            Box(modifier = modifier.padding(top = 12.dp, bottom = 20.dp)) {
+                ProfileTitleBlock(
+                    account = account,
+                    onIdentityClicked = onIdentityClicked,
+                    onShowQrCodeClicked = onShowQrCodeClicked
+                )
+            }
+            Box(modifier = modifier.padding(bottom = 16.dp)) {
+                ProfileImageBlock(
+                    name = account.name,
+                    icon = account.icon,
+                    onProfileIconClick = onProfileIconClick,
+                    clearProfileImage = clearProfileImage
+                )
+            }
+            ProfileNameBlock(name = account.name, onNameSet = onNameSet)
+        }
+
+        is AccountProfile.Idle -> {}
+    }
+}
+
+@OptIn(ExperimentalMaterialApi::class, FlowPreview::class)
+@Composable
+fun ProfileNameBlock(
+    modifier: Modifier = Modifier,
+    name: String,
+    onNameSet: (String) -> Unit
+) {
+
+    val nameValue = remember { mutableStateOf(name) }
+    val focusManager = LocalFocusManager.current
+
+    // Sync external name changes to local state
+    LaunchedEffect(name) {
+        nameValue.value = name
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { nameValue.value }
+            .debounce(PROFILE_NAME_CHANGE_DELAY)
+            .distinctUntilChanged()
+            .collect { query ->
+                onNameSet(query)
+            }
+    }
+
+    Column(modifier = modifier.padding(start = 16.dp)) {
+        Text(
+            text = stringResource(id = R.string.name),
+            color = colorResource(id = R.color.text_secondary),
+            style = Caption1Regular
+        )
+        BasicTextField(
+            value = nameValue.value,
+            onValueChange = {
+                nameValue.value = it
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, end = 20.dp),
+            enabled = true,
+            textStyle = HeadlineHeading.copy(
+                color = colorResource(id = R.color.text_primary)
+            ),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    focusManager.clearFocus()
+                }
+            ),
+            singleLine = true,
+            decorationBox = @Composable { innerTextField ->
+                TextFieldDefaults.OutlinedTextFieldDecorationBox(
+                    value = nameValue.value,
+                    innerTextField = innerTextField,
+                    singleLine = true,
+                    enabled = true,
+                    isError = false,
+                    placeholder = {
+                        Text(text = stringResource(R.string.account_name))
+                    },
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = colorResource(id = R.color.text_primary),
+                        backgroundColor = Color.Transparent,
+                        disabledBorderColor = Color.Transparent,
+                        errorBorderColor = Color.Transparent,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        placeholderColor = colorResource(id = R.color.text_tertiary),
+                        cursorColor = colorResource(id = R.color.orange)
+                    ),
+                    contentPadding = PaddingValues(
+                        start = 0.dp,
+                        top = 0.dp,
+                        end = 0.dp,
+                        bottom = 0.dp
+                    ),
+                    border = {},
+                    interactionSource = remember { MutableInteractionSource() },
+                    visualTransformation = VisualTransformation.None
+                )
+            }
+        )
+    }
+
+}
+
+@Composable
+fun BoxScope.ProfileTitleBlock(
+    account: AccountProfile.Data,
+    onIdentityClicked: () -> Unit,
+    onShowQrCodeClicked: () -> Unit
+) {
+    val globalName = account.globalName
+    val identity = account.identity
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 16.dp)
+                .size(44.dp)
+                .noRippleClickable { onShowQrCodeClicked() },
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_qr_code_24),
+                contentDescription = "Show QR code",
+                contentScale = ContentScale.Fit,
+            )
+        }
+        GlobalNameOrIdentity(
+            modifier = Modifier.padding(horizontal = 60.dp),
+            globalName = globalName,
+            identity = identity,
+            onIdentityClicked = onIdentityClicked
+        )
+    }
+}
+
+@Composable
+fun ProfileImageBlock(
+    name: String,
+    icon: ProfileIconView,
+    onProfileIconClick: () -> Unit,
+    clearProfileImage: () -> Unit
+) {
+    val isIconMenuExpanded = remember {
+        mutableStateOf(false)
+    }
+
+    val context = LocalContext.current
+
+    when (icon) {
+        is ProfileIconView.Image -> {
+            Image(
+                painter = rememberAsyncImagePainter(model = icon.url),
+                contentDescription = "Custom image profile",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(48.dp))
+                    .noRippleClickable {
+                        isIconMenuExpanded.value = !isIconMenuExpanded.value
+                    }
+            )
+        }
+
+        else -> {
+            val nameFirstChar = if (name.isEmpty()) {
+                stringResource(id = R.string.account_default_name)
+            } else {
+                name.first().uppercaseChar().toString()
+            }
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(48.dp))
+                    .background(colorResource(id = R.color.text_tertiary))
+                    .noRippleClickable {
+                        onProfileIconClick.invoke()
+                    }
+            ) {
+                Text(
+                    text = nameFirstChar,
+                    style = AvatarTitle.copy(
+                        color = colorResource(id = R.color.text_white),
+                        fontSize = 64.sp
+                    ),
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+        }
+    }
+    MaterialTheme(
+        shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(10.dp))
+    ) {
+        DropdownMenu(
+            modifier = Modifier
+                .background(
+                    shape = RoundedCornerShape(10.dp),
+                    color = colorResource(id = R.color.background_secondary)
+                ),
+            expanded = isIconMenuExpanded.value,
+            offset = DpOffset(x = 0.dp, y = 6.dp),
+            onDismissRequest = {
+                isIconMenuExpanded.value = false
+            }
+        ) {
+            if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                DropdownMenuItem(
+                    onClick = {
+                        onProfileIconClick.invoke()
+                        isIconMenuExpanded.value = false
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.profile_settings_apply_upload_image),
+                        style = BodyRegular,
+                        color = colorResource(id = R.color.text_primary)
+                    )
+                }
+            }
+            Divider(
+                paddingStart = 0.dp,
+                paddingEnd = 0.dp,
+            )
+            DropdownMenuItem(
+                onClick = {
+                    isIconMenuExpanded.value = false
+                    clearProfileImage.invoke()
+                },
+            ) {
+                Text(
+                    text = stringResource(R.string.remove_image),
+                    style = BodyRegular,
+                    color = colorResource(id = R.color.text_primary)
+                )
+            }
+        }
+    }
+}
+
+@DefaultPreviews
+@Composable
+private fun ProfileSettingPreview() {
+    ProfileSettingsScreen(
+        onKeychainPhraseClicked = {},
+        onLogoutClicked = {},
+        isLogoutInProgress = false,
+        onNameChange = {},
+        onProfileIconClick = {},
+        account = AccountProfile.Data(
+            "Walter",
+            icon = ProfileIconView.Placeholder("Walter"),
+            //globalName = "Konstantin.any",
+            identity = "hdjsakjflkjdshlfkdsjkhfjkasdhjkfhdskjhfjksdhakjfhsadjkhfkjlasdhjkfhjsdhfjkhsadj"
+        ),
+        onAppearanceClicked = {},
+        onDataManagementClicked = {},
+        onAboutClicked = {},
+        onSpacesClicked = {},
+        onMembershipClicked = {},
+        membershipStatus = MembershipStatus(
+            status = Membership.Status.STATUS_ACTIVE,
+            activeTier = TierId(MembershipConstants.CO_CREATOR_ID),
+            dateEnds = 1714199910,
+            paymentMethod = MembershipPaymentMethod.METHOD_CRYPTO,
+            anyName = "AnyName1983",
+            tiers = listOf(),
+            formattedDateEnds = "formattedDateEnds-fdsfadsfdsafs"
+        ),
+        showMembership = ShowMembership(true),
+        clearProfileImage = {},
+        onDebugClicked = {},
+        onExperimentalFeaturesClicked = {},
+        isDebugEnabled = true,
+        showExperimentalFeatures = true,
+        notificationsDisabled = true,
+        onOpenNotificationSettings = {},
+        onMySitesClicked = {},
+        onMiscSectionClicked = {}
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AnyIdInfoSheet(
+    onExplorePlans: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        modifier = Modifier,
+        onDismissRequest = onDismiss,
+        containerColor = Color.Transparent,
+        contentColor = Color.Transparent,
+        dragHandle = null,
+    ) {
+        GenericAlert(
+            modifier = Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = 8.dp)
+                .padding(bottom = 16.dp)
+                .fillMaxWidth()
+                .background(
+                    color = colorResource(R.color.background_secondary),
+                    shape = RoundedCornerShape(16.dp)
+                ),
+            onFirstButtonClicked = onExplorePlans,
+            config = AlertConfig.WithOneButton(
+                icon = R.drawable.ic_any_id,
+                title = stringResource(R.string.any_id_info_title),
+                description = stringResource(R.string.any_id_info_description),
+                firstButtonText = stringResource(R.string.any_id_info_button),
+                firstButtonType = BUTTON_SECONDARY
+            )
+        )
+    }
+}
+
+@DefaultPreviews
+@Composable
+private fun ProfileSettingLongGlobalNamePreview() {
+    ProfileSettingsScreen(
+        onKeychainPhraseClicked = {},
+        onLogoutClicked = {},
+        isLogoutInProgress = false,
+        onNameChange = {},
+        onProfileIconClick = {},
+        account = AccountProfile.Data(
+            "Plucky Coyote",
+            icon = ProfileIconView.Placeholder("P"),
+            globalName = "полпчмолсчмодлимччмтоаиоорпвваролпсиисмроо.any",
+            identity = "hdjsakjflkjdshlfkdsjkhfjkasdhjkfhdskjhfjksdhakjfhsadjkhfkjlasdhjkfhjsdhfjkhsadj"
+        ),
+        onAppearanceClicked = {},
+        onDataManagementClicked = {},
+        onAboutClicked = {},
+        onSpacesClicked = {},
+        onMembershipClicked = {},
+        membershipStatus = MembershipStatus(
+            status = Membership.Status.STATUS_PENDING,
+            activeTier = TierId(1),
+            dateEnds = 0,
+            paymentMethod = MembershipPaymentMethod.METHOD_NONE,
+            anyName = "",
+            tiers = listOf(),
+            formattedDateEnds = ""
+        ),
+        showMembership = ShowMembership(true),
+        clearProfileImage = {},
+        onDebugClicked = {},
+        onExperimentalFeaturesClicked = {},
+        isDebugEnabled = false,
+        showExperimentalFeatures = false,
+        notificationsDisabled = false,
+        onOpenNotificationSettings = {},
+        onMySitesClicked = {},
+        onMiscSectionClicked = {}
+    )
+}
+
+@DefaultPreviews
+@Composable
+private fun AnyIdInfoSheetPreview() {
+    AnyIdInfoSheet(
+        onExplorePlans = {},
+        onDismiss = {}
+    )
+}
+
+private const val PROFILE_NAME_CHANGE_DELAY = 300L

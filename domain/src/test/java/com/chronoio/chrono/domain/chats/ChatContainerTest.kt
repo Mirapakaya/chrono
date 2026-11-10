@@ -1,0 +1,1939 @@
+package com.chronoio.chrono.domain.chats
+
+import app.cash.turbine.test
+import app.cash.turbine.turbineScope
+import com.chronoio.chrono.core_models.Command
+import com.chronoio.chrono.core_models.Event
+import com.chronoio.chrono.core_models.StubChatMessage
+import com.chronoio.chrono.core_models.StubChatMessageContent
+import com.chronoio.chrono.core_models.chats.Chat
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.block.repo.BlockRepository
+import com.chronoio.chrono.domain.common.DefaultCoroutineTestRule
+import com.chronoio.chrono.domain.debugging.Logger
+import com.chronoio.chrono.domain.library.StorelessSubscriptionContainer
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.never
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+
+class ChatContainerTest {
+
+    @get:Rule
+    val rule = DefaultCoroutineTestRule()
+
+    val dispatchers = AppCoroutineDispatchers(
+        io = rule.dispatcher,
+        computation = rule.dispatcher,
+        main = rule.dispatcher
+    )
+
+    @Mock
+    lateinit var channel: ChatEventChannel
+
+    @Mock
+    lateinit var repo: BlockRepository
+
+    @Mock
+    lateinit var logger: Logger
+
+    @Mock
+    lateinit var storelessSubscriptionContainer: StorelessSubscriptionContainer
+
+    private val givenChatID = MockDataFactory.randomUuid()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test()
+    fun `should add one message to basic initial state`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val msg = StubChatMessage(
+            content = StubChatMessageContent(
+                text = "With seemingly endless talent and versatility, Sully puts his garage hat on to produce one super-slick plate"
+            )
+        )
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = emptyList(),
+                messageCountBefore = 0
+            )
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow {
+                delay(300)
+                emit(
+                    listOf(
+                        Event.Command.Chats.Add(
+                            context = givenChatID,
+                            message = msg,
+                            id = msg.id,
+                            order = "A",
+                            spaceId = SpaceId(MockDataFactory.randomUuid())
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val first = awaitItem()
+            assertEquals(
+                expected = emptyList(),
+                actual = first.messages
+            )
+            advanceUntilIdle()
+            val second = awaitItem()
+            assertEquals(
+                expected = listOf(
+                    msg
+                ),
+                actual = second.messages
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test()
+    fun `should update existing message`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val initialMsg = StubChatMessage(
+            id = "msg1",
+            content = StubChatMessageContent(
+                text = "Hello, Walter"
+            )
+        )
+
+        val updatedMsg = StubChatMessage(
+            id = "msg1", // Same ID as initial message
+            content = StubChatMessageContent(
+                text = "Hello, Jesse" // Updated text
+            )
+        )
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(initialMsg),
+                messageCountBefore = 0
+            )
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow {
+                delay(300)
+                emit(
+                    listOf(
+                        Event.Command.Chats.Update(
+                            context = givenChatID,
+                            message = updatedMsg,
+                            id = updatedMsg.id
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val first = awaitItem()
+            assertEquals(
+                expected = listOf(
+                    initialMsg
+                ),
+                actual = first.messages
+            )
+            advanceUntilIdle()
+            val second = awaitItem()
+            assertEquals(
+                expected = listOf(
+                    updatedMsg // Should have updated message with new text
+                ),
+                actual = second.messages
+            )
+            // Verify the text was actually updated
+            assertEquals("Hello, Jesse", second.messages.first().content?.text)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test()
+    fun `should delete existing message`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val messageToDelete = StubChatMessage(
+            id = "msg1",
+            content = StubChatMessageContent(
+                text = "This message will be deleted"
+            )
+        )
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(messageToDelete),
+                messageCountBefore = 0
+            )
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow {
+                delay(300)
+                emit(
+                    listOf(
+                        Event.Command.Chats.Delete(
+                            context = givenChatID,
+                            message = messageToDelete.id
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val first = awaitItem()
+            assertEquals(
+                expected = listOf(
+                    messageToDelete
+                ),
+                actual = first.messages
+            )
+            advanceUntilIdle()
+            val second = awaitItem()
+            assertEquals(
+                expected = emptyList(),
+                actual = second.messages
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test()
+    fun `should load next page of messages`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val initialMessage = StubChatMessage(order = "A")
+        val newerMessage = StubChatMessage(order = "B")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(initialMessage),
+                messageCountBefore = 0
+            )
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = initialMessage.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(newerMessage)
+            )
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow { }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(
+                expected = listOf(initialMessage),
+                actual = initial.messages
+            )
+
+            container.onLoadNext()
+
+            advanceUntilIdle()
+
+            val updated = awaitItem()
+            assertEquals(
+                expected = listOf(initialMessage, newerMessage),
+                actual = updated.messages
+            )
+        }
+    }
+
+    @Test()
+    fun `should insert new message before existing message according to order`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val initialMsg = StubChatMessage(
+            order = "B",
+            content = StubChatMessageContent(
+                text = "Hello, "
+            )
+        )
+
+        val newMsg = StubChatMessage(
+            content = StubChatMessageContent(
+                text = "Hello, "
+            ),
+            order = "A"
+        )
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(initialMsg),
+                messageCountBefore = 0
+            )
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow {
+                delay(300)
+                emit(
+                    listOf(
+                        Event.Command.Chats.Add(
+                            context = givenChatID,
+                            message = newMsg,
+                            id = newMsg.id,
+                            order = newMsg.order,
+                            spaceId = SpaceId(MockDataFactory.randomUuid())
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val first = awaitItem()
+            assertEquals(
+                expected = listOf(
+                    initialMsg
+                ),
+                actual = first.messages
+            )
+            advanceUntilIdle()
+            val second = awaitItem()
+            assertEquals(
+                expected = listOf(
+                    newMsg,
+                    initialMsg
+                ),
+                actual = second.messages
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should load next messages and prepend to state`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val firstMessage = StubChatMessage(order = "B")
+        val nextMessage = StubChatMessage(order = "A")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(firstMessage),
+                messageCountBefore = 0
+            )
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        beforeOrderId = firstMessage.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE,
+                        afterOrderId = null
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(nextMessage)
+            )
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow { }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(
+                expected = listOf(firstMessage),
+                actual = initial.messages
+            )
+
+            container.onLoadPrevious()
+
+            advanceUntilIdle()
+
+            val updated = awaitItem()
+            assertEquals(
+                expected = listOf(nextMessage, firstMessage),
+                actual = updated.messages
+            )
+        }
+    }
+
+    @Test
+    fun `should scroll to bottom when scroll-to-bottom is clicked when subscribing chat`() =
+        runTest {
+            turbineScope {
+                val container = ChatContainer(
+                    repo = repo,
+                    channel = channel,
+                    logger = logger,
+                    subscription = storelessSubscriptionContainer,
+                    readScope = backgroundScope
+                )
+
+                val messages = buildList {
+                    repeat(100) {
+                        add(
+                            StubChatMessage(
+                                id = it.toString(),
+                                order = it.toString()
+                            )
+                        )
+                    }
+                }
+
+                val state = Chat.State.UnreadState(
+                    counter = 10,
+                    olderOrderId = "90"
+                )
+
+                repo.stub {
+                    onBlocking {
+                        subscribeLastChatMessages(
+                            Command.ChatCommand.SubscribeLastMessages(
+                                chat = givenChatID,
+                                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                            )
+                        )
+                    } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                        messages = messages.takeLast(10),
+                        messageCountBefore = 0,
+                        chatState = Chat.State(unreadMessages = state)
+                    )
+
+                    onBlocking {
+                        getChatMessages(
+                            Command.ChatCommand.GetMessages(
+                                chat = givenChatID,
+                                beforeOrderId = state.olderOrderId,
+                                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE,
+                                afterOrderId = null,
+                                includeBoundary = false
+                            )
+                        )
+                    } doReturn Command.ChatCommand.GetMessages.Response(
+                        messages = messages.slice(80..89)
+                    )
+
+                    onBlocking {
+                        getChatMessages(
+                            Command.ChatCommand.GetMessages(
+                                chat = givenChatID,
+                                afterOrderId = state.olderOrderId,
+                                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE,
+                                includeBoundary = true
+                            )
+                        )
+                    } doReturn Command.ChatCommand.GetMessages.Response(
+                        messages = messages.slice(90..99)
+                    )
+                }
+
+                channel.stub {
+                    on { observe(chat = givenChatID) } doReturn emptyFlow()
+                }
+
+                container.watch(givenChatID).test {
+
+                    val initial = awaitItem()
+
+                    assertEquals(
+                        expected = messages.takeLast(10),
+                        actual = initial.messages,
+                    )
+
+                    assertEquals(
+                        expected = ChatContainer.Intent.ScrollToMessage(
+                            id = "90",
+                            startOfUnreadMessageSection = true
+                        ),
+                        actual = initial.intent,
+                    )
+
+                    container.onLoadChatTail(
+                        msg = "80"
+                    )
+
+                    val next = awaitItem()
+
+                    assertEquals(
+                        expected = ChatContainer.Intent.ScrollToBottom,
+                        actual = next.intent,
+                    )
+
+                    // New state is not emitted, since it does not change.
+                }
+            }
+        }
+
+    @Test
+    fun `should scroll to unread message section from subscription results after opening chat`() =
+        runTest {
+
+            val container = ChatContainer(
+                repo = repo,
+                channel = channel,
+                logger = logger,
+                subscription = storelessSubscriptionContainer,
+                readScope = backgroundScope
+            )
+
+            val messages = buildList {
+                repeat(10) {
+                    add(
+                        StubChatMessage(
+                            id = it.toString(),
+                            order = it.toString()
+                        )
+                    )
+                }
+            }
+
+            val state = Chat.State.UnreadState(
+                counter = 1,
+                olderOrderId = "9"
+            )
+
+            val subscriptionCommand = Command.ChatCommand.SubscribeLastMessages(
+                chat = givenChatID,
+                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+            )
+
+            repo.stub {
+                onBlocking {
+                    subscribeLastChatMessages(subscriptionCommand)
+                } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                    messages = messages,
+                    messageCountBefore = 0,
+                    chatState = Chat.State(unreadMessages = state)
+                )
+            }
+
+            channel.stub {
+                on { observe(chat = givenChatID) } doReturn emptyFlow()
+            }
+
+            container.watch(givenChatID).test {
+
+                val initial = awaitItem()
+
+                assertEquals(
+                    expected = messages,
+                    actual = initial.messages,
+                )
+
+                assertEquals(
+                    expected = ChatContainer.Intent.ScrollToMessage(
+                        id = "9",
+                        startOfUnreadMessageSection = true,
+                        smooth = false
+                    ),
+                    actual = initial.intent,
+                )
+
+                verify(repo, times(1)).subscribeLastChatMessages(subscriptionCommand)
+                verify(repo, never()).getChatMessages(any())
+            }
+        }
+
+    @Test
+    fun `should scroll to unread message section from unread-message section after opening chat`() =
+        runTest {
+
+            val container = ChatContainer(
+                repo = repo,
+                channel = channel,
+                logger = logger,
+                subscription = storelessSubscriptionContainer,
+                readScope = backgroundScope
+            )
+
+            val allMessages = buildList {
+                repeat(200) {
+                    add(
+                        StubChatMessage(
+                            id = it.toString(),
+                            order = it.toString()
+                        )
+                    )
+                }
+            }
+
+            val state = Chat.State.UnreadState(
+                counter = 150,
+                olderOrderId = "50"
+            )
+
+            val subscriptionCommand = Command.ChatCommand.SubscribeLastMessages(
+                chat = givenChatID,
+                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+            )
+
+            repo.stub {
+                onBlocking {
+                    subscribeLastChatMessages(subscriptionCommand)
+                } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                    messages = allMessages.takeLast(ChatContainer.DEFAULT_CHAT_PAGING_SIZE),
+                    messageCountBefore = 0,
+                    chatState = Chat.State(unreadMessages = state)
+                )
+                onBlocking {
+                    getChatMessages(
+                        Command.ChatCommand.GetMessages(
+                            chat = givenChatID,
+                            beforeOrderId = state.olderOrderId,
+                            limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2,
+                            afterOrderId = null,
+                            includeBoundary = false
+                        )
+                    )
+                } doReturn Command.ChatCommand.GetMessages.Response(
+                    messages = allMessages.slice(0..49)
+                )
+
+                onBlocking {
+                    getChatMessages(
+                        Command.ChatCommand.GetMessages(
+                            chat = givenChatID,
+                            afterOrderId = state.olderOrderId,
+                            limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2,
+                            includeBoundary = true
+                        )
+                    )
+                } doReturn Command.ChatCommand.GetMessages.Response(
+                    messages = allMessages.slice(50..99)
+                )
+            }
+
+            channel.stub {
+                on { observe(chat = givenChatID) } doReturn emptyFlow()
+            }
+
+            container.watch(givenChatID).test {
+
+                val initial = awaitItem()
+
+                assertEquals(
+                    expected = allMessages.slice(0..99),
+                    actual = initial.messages,
+                )
+
+                assertEquals(
+                    expected = ChatContainer.Intent.ScrollToMessage(
+                        id = "50",
+                        startOfUnreadMessageSection = true,
+                        smooth = false
+                    ),
+                    actual = initial.intent,
+                )
+
+                verify(repo, times(1)).subscribeLastChatMessages(subscriptionCommand)
+                verify(repo, times(2)).getChatMessages(any())
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should apply ChatState update with higher order`() = runTest {
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val initialState = Chat.State(order = 1L)
+        val newerState = Chat.State(order = 2L)
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = emptyList(),
+                messageCountBefore = 0,
+                chatState = initialState
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn flow {
+                emit(
+                    listOf(
+                        Event.Command.Chats.UpdateState(
+                            context = givenChatID,
+                            state = newerState
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(1L, initial.state.order)
+
+            val updated = awaitItem()
+            assertEquals(2L, updated.state.order)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should reject ChatState update with lower order`() = runTest {
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val newerState = Chat.State(order = 5L)
+        val olderState = Chat.State(order = 3L)
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = emptyList(),
+                messageCountBefore = 0,
+                chatState = newerState
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn flow {
+                emit(
+                    listOf(
+                        Event.Command.Chats.UpdateState(
+                            context = givenChatID,
+                            state = olderState
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(5L, initial.state.order)
+
+            // Should not emit a new state since the older state is rejected
+            expectNoEvents()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should handle ChatState update with equal order`() = runTest {
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val currentState = Chat.State(order = 3L)
+        val sameOrderState = Chat.State(order = 3L)
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = emptyList(),
+                messageCountBefore = 0,
+                chatState = currentState
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn flow {
+                emit(
+                    listOf(
+                        Event.Command.Chats.UpdateState(
+                            context = givenChatID,
+                            state = sameOrderState
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(3L, initial.state.order)
+
+            // Should not emit a new state since equal order is rejected
+            expectNoEvents()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should apply first ChatState when no previous state exists`() = runTest {
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val firstState = Chat.State(order = 1L)
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = emptyList(),
+                messageCountBefore = 0,
+                chatState = null
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn flow {
+                emit(
+                    listOf(
+                        Event.Command.Chats.UpdateState(
+                            context = givenChatID,
+                            state = firstState
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(-1L, initial.state.order) // Default empty state
+
+            val updated = awaitItem()
+            assertEquals(1L, updated.state.order)
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should handle null ChatState update gracefully`() = runTest {
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val initialState = Chat.State(order = 1L)
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = emptyList(),
+                messageCountBefore = 0,
+                chatState = initialState
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn flow {
+                emit(
+                    listOf(
+                        Event.Command.Chats.UpdateState(
+                            context = givenChatID,
+                            state = null
+                        )
+                    )
+                )
+            }
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(1L, initial.state.order)
+
+            // When null state is received and current state order is 1L,
+            // the new default state (order = -1L) is not applied because -1L < 1L
+            // So we should not get a new emission
+            expectNoEvents()
+        }
+    }
+
+    /**
+     * While no visible range has been reported the container does not know where the user is
+     * looking, so it must not extend the window forward on its own (see DROID-4556) — the
+     * stranded message is only reachable through explicit paging.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should not append incoming message when window is detached and no visible range was reported`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val older = StubChatMessage(order = "A")
+        val anchor = StubChatMessage(order = "B")
+        val middle = StubChatMessage(order = "C")
+        val tail = StubChatMessage(order = "T")
+        val incoming = StubChatMessage(order = "Z")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(tail),
+                messageCountBefore = 0
+            )
+
+            // Jump-to-message target fetch
+            onBlocking {
+                getChatMessagesByIds(
+                    Command.ChatCommand.GetMessagesByIds(
+                        chat = givenChatID,
+                        messages = listOf(anchor.id)
+                    )
+                )
+            } doReturn listOf(anchor)
+
+            // Messages before the jump target
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        beforeOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(older)
+            )
+
+            // Messages after the jump target — the target is far from the chat tail
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = emptyList()
+            )
+
+            // The next contiguous page after the detached window
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(middle)
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(
+                expected = listOf(tail),
+                actual = initial.messages
+            )
+
+            // Jump to a message far away from the tail — the window no longer contains the tail.
+            container.onLoadToReply(anchor.id)
+            advanceUntilIdle()
+
+            val jumped = awaitItem()
+            assertEquals(
+                expected = listOf(older, anchor),
+                actual = jumped.messages
+            )
+
+            // A new message arrives while the window is detached from the chat tail:
+            // it must not be appended right after much older history, which would
+            // silently hide the not-yet-loaded range between them.
+            container.onPayload(
+                listOf(
+                    Event.Command.Chats.Add(
+                        context = givenChatID,
+                        message = incoming,
+                        id = incoming.id,
+                        order = incoming.order,
+                        spaceId = SpaceId(MockDataFactory.randomUuid())
+                    )
+                )
+            )
+            advanceUntilIdle()
+
+            val afterIncoming = awaitItem()
+            assertEquals(
+                expected = listOf(older, anchor),
+                actual = afterIncoming.messages
+            )
+
+            // Paging down continues from the last contiguous message, so the range
+            // between the window and the chat tail is fetched instead of skipped.
+            container.onLoadNext()
+            advanceUntilIdle()
+
+            val paged = awaitItem()
+            assertEquals(
+                expected = listOf(older, anchor, middle),
+                actual = paged.messages
+            )
+        }
+    }
+
+    /**
+     * DROID-4556. A message arriving while the window is detached from the chat tail is
+     * dropped from the window (see the test above). When the user is parked at the newest
+     * edge of that window, there is nothing below them to scroll into and the window size
+     * never changes — so the UI's bottom-reach detector never re-arms and no LoadNext is
+     * ever dispatched. The chat looks frozen until the user scrolls up and back down.
+     *
+     * The container must therefore extend the window forward itself, through the same
+     * contiguous paging path LoadNext uses.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should load the next page when a message arrives while the user is parked at the tail of a detached window`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val older = StubChatMessage(order = "A")
+        val anchor = StubChatMessage(order = "B")
+        val middle = StubChatMessage(order = "C")
+        val tail = StubChatMessage(order = "T")
+        val incoming = StubChatMessage(order = "Z")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(tail),
+                messageCountBefore = 0
+            )
+
+            onBlocking {
+                getChatMessagesByIds(
+                    Command.ChatCommand.GetMessagesByIds(
+                        chat = givenChatID,
+                        messages = listOf(anchor.id)
+                    )
+                )
+            } doReturn listOf(anchor)
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        beforeOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(older)
+            )
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = emptyList()
+            )
+
+            // The next contiguous page after the detached window: it carries both the
+            // not-yet-loaded range and the message that was just dropped.
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(middle, incoming)
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            val initial = awaitItem()
+            assertEquals(
+                expected = listOf(tail),
+                actual = initial.messages
+            )
+
+            // Jump to a message far away from the tail — the window no longer contains the tail.
+            container.onLoadToReply(anchor.id)
+            advanceUntilIdle()
+
+            val jumped = awaitItem()
+            assertEquals(
+                expected = listOf(older, anchor),
+                actual = jumped.messages
+            )
+
+            // The user is parked at the newest edge of the window: the newest visible
+            // message is the newest message the window holds.
+            container.onVisibleRangeChanged(from = anchor.id, to = older.id)
+            advanceUntilIdle()
+
+            container.onPayload(
+                listOf(
+                    Event.Command.Chats.Add(
+                        context = givenChatID,
+                        message = incoming,
+                        id = incoming.id,
+                        order = incoming.order,
+                        spaceId = SpaceId(MockDataFactory.randomUuid())
+                    )
+                )
+            )
+            advanceUntilIdle()
+
+            // [middle] proves the intervening range was fetched rather than skipped, and
+            // [incoming] proves the stranded message became reachable — had it simply been
+            // appended, [middle] would be missing and the gap would be hidden.
+            val healed = awaitItem()
+            assertEquals(
+                expected = listOf(older, anchor, middle, incoming),
+                actual = healed.messages
+            )
+        }
+    }
+
+    /**
+     * DROID-4556. The forward extension must be gated on the user actually sitting at the
+     * newest edge of the window. A user reading old history is far from it, and extending
+     * forward on every incoming message would let [trimKeepingNewest] evict the history
+     * under their scroll anchor.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should not extend the window forward when the user is parked away from the window tail`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val older = StubChatMessage(order = "A")
+        val anchor = StubChatMessage(order = "B")
+        val tail = StubChatMessage(order = "T")
+        val incoming = StubChatMessage(order = "Z")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(tail),
+                messageCountBefore = 0
+            )
+
+            onBlocking {
+                getChatMessagesByIds(
+                    Command.ChatCommand.GetMessagesByIds(
+                        chat = givenChatID,
+                        messages = listOf(anchor.id)
+                    )
+                )
+            } doReturn listOf(anchor)
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        beforeOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(older)
+            )
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = emptyList()
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            awaitItem()
+
+            container.onLoadToReply(anchor.id)
+            advanceUntilIdle()
+
+            assertEquals(
+                expected = listOf(older, anchor),
+                actual = awaitItem().messages
+            )
+
+            // The user is reading old history: the newest visible message is the OLDEST
+            // message of the window, not its tail.
+            container.onVisibleRangeChanged(from = older.id, to = older.id)
+            advanceUntilIdle()
+
+            container.onPayload(
+                listOf(
+                    Event.Command.Chats.Add(
+                        context = givenChatID,
+                        message = incoming,
+                        id = incoming.id,
+                        order = incoming.order,
+                        spaceId = SpaceId(MockDataFactory.randomUuid())
+                    )
+                )
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                expected = listOf(older, anchor),
+                actual = awaitItem().messages
+            )
+        }
+
+        // Explicit verification is required: an unstubbed getChatMessages returns null,
+        // which loadTheNextPage swallows in its catch block — the window would look
+        // unchanged even if the gate were broken.
+        verify(repo, never()).getChatMessages(
+            Command.ChatCommand.GetMessages(
+                chat = givenChatID,
+                afterOrderId = anchor.order,
+                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+            )
+        )
+    }
+
+    /**
+     * DROID-4556. When the window still holds the chat tail, an incoming message is appended
+     * normally and no forward page must be fetched.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should not fetch a forward page when the window is attached to the chat tail`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val tail = StubChatMessage(order = "T")
+        val incoming = StubChatMessage(order = "Z")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(tail),
+                messageCountBefore = 0
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            assertEquals(
+                expected = listOf(tail),
+                actual = awaitItem().messages
+            )
+
+            container.onVisibleRangeChanged(from = tail.id, to = tail.id)
+            advanceUntilIdle()
+
+            container.onPayload(
+                listOf(
+                    Event.Command.Chats.Add(
+                        context = givenChatID,
+                        message = incoming,
+                        id = incoming.id,
+                        order = incoming.order,
+                        spaceId = SpaceId(MockDataFactory.randomUuid())
+                    )
+                )
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                expected = listOf(tail, incoming),
+                actual = awaitItem().messages
+            )
+        }
+
+        verify(repo, never()).getChatMessages(any())
+    }
+
+    /**
+     * DROID-4556. The forward extension is self-limiting: one successful extension moves the
+     * window tail past the message the user is looking at, so a burst of stranded messages
+     * cannot cascade into a round-trip per event. Paging is handed back to the user, whose
+     * next scroll reports a new visible range.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should load at most one forward page while the reported visible range is unchanged`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val older = StubChatMessage(order = "A")
+        val anchor = StubChatMessage(order = "B")
+        val middle = StubChatMessage(order = "C")
+        val tail = StubChatMessage(order = "T")
+        val incoming = StubChatMessage(order = "Y")
+        val incomingAgain = StubChatMessage(order = "Z")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(tail),
+                messageCountBefore = 0
+            )
+
+            onBlocking {
+                getChatMessagesByIds(
+                    Command.ChatCommand.GetMessagesByIds(
+                        chat = givenChatID,
+                        messages = listOf(anchor.id)
+                    )
+                )
+            } doReturn listOf(anchor)
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        beforeOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(older)
+            )
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE / 2
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = emptyList()
+            )
+
+            // Leaves the window still detached from the chat tail.
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = anchor.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(middle)
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            awaitItem()
+
+            container.onLoadToReply(anchor.id)
+            advanceUntilIdle()
+            awaitItem()
+
+            container.onVisibleRangeChanged(from = anchor.id, to = older.id)
+            advanceUntilIdle()
+
+            container.onPayload(
+                listOf(
+                    Event.Command.Chats.Add(
+                        context = givenChatID,
+                        message = incoming,
+                        id = incoming.id,
+                        order = incoming.order,
+                        spaceId = SpaceId(MockDataFactory.randomUuid())
+                    )
+                )
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                expected = listOf(older, anchor, middle),
+                actual = awaitItem().messages
+            )
+
+            // The window tail has moved past the message the user reported: a second
+            // stranded message must not trigger another round-trip.
+            container.onPayload(
+                listOf(
+                    Event.Command.Chats.Add(
+                        context = givenChatID,
+                        message = incomingAgain,
+                        id = incomingAgain.id,
+                        order = incomingAgain.order,
+                        spaceId = SpaceId(MockDataFactory.randomUuid())
+                    )
+                )
+            )
+            advanceUntilIdle()
+
+            expectNoEvents()
+        }
+
+        verify(repo, times(1)).getChatMessages(
+            Command.ChatCommand.GetMessages(
+                chat = givenChatID,
+                afterOrderId = anchor.order,
+                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+            )
+        )
+        verify(repo, never()).getChatMessages(
+            Command.ChatCommand.GetMessages(
+                chat = givenChatID,
+                afterOrderId = middle.order,
+                limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+            )
+        )
+    }
+
+    /**
+     * The message window feeds a LazyColumn keyed on message id, and duplicate keys throw.
+     * A page that overlaps the window — e.g. a middleware echoing the boundary message —
+     * must therefore never introduce a duplicate.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should not duplicate messages already present in the window when loading the next page`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val first = StubChatMessage(order = "A")
+        val second = StubChatMessage(order = "B")
+        val third = StubChatMessage(order = "C")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(first, second),
+                messageCountBefore = 0
+            )
+
+            // The boundary message comes back with the page.
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = second.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(second, third)
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            assertEquals(
+                expected = listOf(first, second),
+                actual = awaitItem().messages
+            )
+
+            container.onLoadNext()
+            advanceUntilIdle()
+
+            assertEquals(
+                expected = listOf(first, second, third),
+                actual = awaitItem().messages
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should not duplicate messages already present in the window when loading the previous page`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val first = StubChatMessage(order = "A")
+        val second = StubChatMessage(order = "B")
+        val third = StubChatMessage(order = "C")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(second, third),
+                messageCountBefore = 0
+            )
+
+            // The boundary message comes back with the page.
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        beforeOrderId = second.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(first, second)
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            assertEquals(
+                expected = listOf(second, third),
+                actual = awaitItem().messages
+            )
+
+            container.onLoadPrevious()
+            advanceUntilIdle()
+
+            assertEquals(
+                expected = listOf(first, second, third),
+                actual = awaitItem().messages
+            )
+        }
+    }
+
+    /**
+     * The "New messages" divider is anchored on [ChatStreamState.initialUnreadSectionMessageId].
+     * LoadPrevious and the event fold both preserve it; LoadNext must too, since the first
+     * forward page is precisely where the unread messages are. Note LoadNext also fires when
+     * the user merely bounces off the bottom of an already-complete window, which would
+     * otherwise destroy the divider without any forward navigation having happened.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should keep the new-messages divider when loading the next page`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val read = StubChatMessage(order = "A")
+        val oldestUnread = StubChatMessage(order = "B")
+        val next = StubChatMessage(order = "C")
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(read, oldestUnread),
+                messageCountBefore = 0,
+                chatState = Chat.State(
+                    unreadMessages = Chat.State.UnreadState(
+                        counter = 1,
+                        olderOrderId = oldestUnread.order
+                    )
+                )
+            )
+
+            onBlocking {
+                getChatMessages(
+                    Command.ChatCommand.GetMessages(
+                        chat = givenChatID,
+                        afterOrderId = oldestUnread.order,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.GetMessages.Response(
+                messages = listOf(next)
+            )
+        }
+
+        channel.stub {
+            on { observe(chat = givenChatID) } doReturn emptyFlow()
+        }
+
+        container.watch(givenChatID).test {
+            assertEquals(
+                expected = oldestUnread.id,
+                actual = awaitItem().initialUnreadSectionMessageId
+            )
+
+            container.onLoadNext()
+            advanceUntilIdle()
+
+            val paged = awaitItem()
+            assertEquals(
+                expected = listOf(read, oldestUnread, next),
+                actual = paged.messages
+            )
+            assertEquals(
+                expected = oldestUnread.id,
+                actual = paged.initialUnreadSectionMessageId
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should not refetch a reply target the middleware never returns`() = runTest {
+
+        val container = ChatContainer(
+            repo = repo,
+            channel = channel,
+            logger = logger,
+            subscription = storelessSubscriptionContainer,
+            readScope = backgroundScope
+        )
+
+        val deletedTarget = "deleted-quoted-message-id"
+        val otherTarget = "other-quoted-message-id"
+
+        // A message quoting a target the middleware can never return (already deleted).
+        val quotingDeleted = StubChatMessage(
+            order = "A",
+            content = StubChatMessageContent(text = "replying to a deleted message")
+        ).copy(replyToMessageId = deletedTarget)
+
+        // A later message quoting a different (also unresolvable) target, whose arrival
+        // changes the tracked reply set and re-runs the fetch step.
+        val quotingOther = StubChatMessage(
+            order = "B",
+            content = StubChatMessageContent(text = "replying to another message")
+        ).copy(replyToMessageId = otherTarget)
+
+        repo.stub {
+            onBlocking {
+                subscribeLastChatMessages(
+                    Command.ChatCommand.SubscribeLastMessages(
+                        chat = givenChatID,
+                        limit = ChatContainer.DEFAULT_CHAT_PAGING_SIZE
+                    )
+                )
+            } doReturn Command.ChatCommand.SubscribeLastMessages.Response(
+                messages = listOf(quotingDeleted),
+                messageCountBefore = 0
+            )
+            onBlocking {
+                getChatMessagesByIds(any())
+            } doReturn emptyList()
+        }
+
+        channel.stub {
+            on {
+                observe(chat = givenChatID)
+            } doReturn flow {
+                delay(300)
+                emit(
+                    listOf(
+                        Event.Command.Chats.Add(
+                            context = givenChatID,
+                            message = quotingOther,
+                            id = quotingOther.id,
+                            order = quotingOther.order,
+                            spaceId = SpaceId(MockDataFactory.randomUuid())
+                        )
+                    )
+                )
+            }
+        }
+
+        val watchJob = launch {
+            container.watchWhileTrackingAttachments(givenChatID).collect { }
+        }
+        val repliesJob = launch {
+            container.fetchReplies(givenChatID).collect { }
+        }
+        advanceUntilIdle()
+
+        val captor = argumentCaptor<Command.ChatCommand.GetMessagesByIds>()
+        verify(repo, atLeastOnce()).getChatMessagesByIds(captor.capture())
+        val fetchesOfDeletedTarget = captor.allValues.count { command ->
+            command.messages.contains(deletedTarget)
+        }
+        assertEquals(
+            expected = 1,
+            actual = fetchesOfDeletedTarget,
+            message = "A reply target the middleware never returns must be fetched at most once, " +
+                "not on every emission (fetched $fetchesOfDeletedTarget times)"
+        )
+
+        watchJob.cancel()
+        repliesJob.cancel()
+    }
+}

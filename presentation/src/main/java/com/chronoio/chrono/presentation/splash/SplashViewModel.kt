@@ -1,0 +1,615 @@
+package com.chronoio.chrono.presentation.splash
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.CrashReporter
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.analytics.base.updateUserProperties
+import com.chronoio.chrono.analytics.props.UserProperty
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.exceptions.AccountMigrationNeededException
+import com.chronoio.chrono.core_models.exceptions.NeedToUpdateApplicationException
+import com.chronoio.chrono.core_models.multiplayer.SpaceUxType
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeKey
+import com.chronoio.chrono.domain.auth.interactor.CheckAuthorizationStatus
+import com.chronoio.chrono.domain.auth.interactor.GetLastOpenedObject
+import com.chronoio.chrono.domain.auth.interactor.LaunchAccount
+import com.chronoio.chrono.domain.auth.interactor.LaunchWallet
+import com.chronoio.chrono.domain.auth.interactor.MigrateAccount
+import com.chronoio.chrono.domain.auth.model.AuthStatus
+import com.chronoio.chrono.domain.base.BaseUseCase
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.deeplink.PendingIntentStore
+import com.chronoio.chrono.domain.launch.PreferredSpaceIdHolder
+import com.chronoio.chrono.domain.misc.DeepLinkResolver
+import com.chronoio.chrono.domain.misc.LocaleProvider
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.misc.OpenObjectNavigation
+import com.chronoio.chrono.core_models.misc.navigation
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.search.SearchObjects
+import com.chronoio.chrono.domain.page.CreateObjectByTypeAndTemplate
+import com.chronoio.chrono.domain.spaces.GetLastOpenedSpace
+import com.chronoio.chrono.domain.subscriptions.GlobalSubscriptionManager
+import com.chronoio.chrono.domain.vault.SetVaultSearchHighlightSeen
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.auth.account.MigrationHelperDelegate
+import com.chronoio.chrono.presentation.extension.proceedWithAccountEvent
+import com.chronoio.chrono.presentation.extension.sendAnalyticsObjectCreateEvent
+import com.chronoio.chrono.presentation.search.ObjectSearchConstants
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
+
+/**
+ * Created by Konstantin Ivanov
+ * email :  ki@agileburo.com
+ * on 2019-10-21.
+ */
+class SplashViewModel(
+    private val analytics: Analytics,
+    private val checkAuthorizationStatus: CheckAuthorizationStatus,
+    private val launchWallet: LaunchWallet,
+    private val launchAccount: LaunchAccount,
+    private val getLastOpenedObject: GetLastOpenedObject,
+    private val crashReporter: CrashReporter,
+    private val localeProvider: LocaleProvider,
+    private val spaceManager: SpaceManager,
+    private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+    private val globalSubscriptionManager: GlobalSubscriptionManager,
+    private val getLastOpenedSpace: GetLastOpenedSpace,
+    private val createObjectByTypeAndTemplate: CreateObjectByTypeAndTemplate,
+    private val spaceViews: SpaceViewSubscriptionContainer,
+    private val migration: MigrationHelperDelegate,
+    private val deepLinkResolver: DeepLinkResolver,
+    private val pendingIntentStore: PendingIntentStore,
+    private val searchObjects: SearchObjects,
+    private val preferredSpaceIdHolder: PreferredSpaceIdHolder,
+    private val setVaultSearchHighlightSeen: SetVaultSearchHighlightSeen
+) : ViewModel(),
+    AnalyticSpaceHelperDelegate by analyticSpaceHelperDelegate,
+    MigrationHelperDelegate by migration {
+
+    val state = MutableStateFlow<State>(State.Init)
+
+    /**
+     * One-shot navigation commands. Backed by an unbounded [Channel] (not a
+     * `replay = 0` SharedFlow) so a command emitted while [SplashFragment] is not
+     * collecting — e.g. during the activity stop -> resume gap on cold start — is
+     * buffered and delivered to the next subscriber instead of being silently dropped.
+     */
+    private val commandsChannel = Channel<Command>(Channel.UNLIMITED)
+    val commands: Flow<Command> = commandsChannel.receiveAsFlow()
+
+    override fun onCleared() {
+        // viewModelScope is already cancelled by the time onCleared() runs, so no
+        // send() can race this close(). Closing is explicit about intent: nothing
+        // will consume the channel once the ViewModel is gone.
+        commandsChannel.close()
+        super.onCleared()
+    }
+
+    private var migrationRetryCount: Int = 0
+
+    init {
+        Timber.i("SplashViewModel, init")
+        checkAuthorizationStatus()
+    }
+
+    fun onErrorClicked() {
+        if (state.value is State.Error) {
+            proceedWithLaunchingAccount()
+        }
+    }
+
+    fun onStartMigrationClicked() {
+        viewModelScope.launch {
+            if (state.value is State.Migration.AwaitingStart) {
+                proceedWithAccountMigration()
+            }
+        }
+    }
+
+    fun onRetryMigrationClicked() {
+        viewModelScope.launch {
+            migrationRetryCount = migrationRetryCount + 1
+            proceedWithAccountMigration()
+        }
+    }
+
+    private suspend fun proceedWithAccountMigration() {
+        if (migrationRetryCount <= 1) {
+            proceedWithMigration(MigrateAccount.Params.Current).collect { migrationState ->
+                when (migrationState) {
+                    is MigrationHelperDelegate.State.Failed -> {
+                        state.value = State.Migration.Failed(migrationState)
+                    }
+                    is MigrationHelperDelegate.State.Init -> {
+                        // Do nothing.
+                    }
+                    is MigrationHelperDelegate.State.InProgress -> {
+                        state.value = State.Migration.InProgress(
+                            progress = migrationState.progress
+                        )
+                    }
+                    is MigrationHelperDelegate.State.Migrated -> {
+                        proceedWithLaunchingAccount()
+                    }
+                }
+            }
+        } else {
+            Timber.e("Failed to migration account after retry")
+        }
+    }
+
+    private fun checkAuthorizationStatus() {
+        viewModelScope.launch {
+            checkAuthorizationStatus.async(Unit).fold(
+                onFailure = { e -> Timber.e(e, "Error while checking auth status") },
+                onSuccess = { (status, account) ->
+                    Timber.i("Authorization status: $status")
+                    if (status == AuthStatus.UNAUTHORIZED) {
+                        markVaultSearchHighlightSeen()
+                        commandsChannel.send(Command.NavigateToAuthStart)
+                    } else {
+                        proceedWithLaunchingWallet()
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * No account on this device means the user has never seen the vault, so its
+     * cross-space search is not new to them: pre-dismiss the one-time search glow.
+     * Anyone who arrives here already signed in is exactly who the glow is for.
+     */
+    private fun markVaultSearchHighlightSeen() {
+        viewModelScope.launch {
+            setVaultSearchHighlightSeen.async(Unit).fold(
+                onSuccess = { Timber.d("Vault search highlight pre-dismissed for a fresh install") },
+                onFailure = { e -> Timber.w(e, "Error pre-dismissing vault search highlight") }
+            )
+        }
+    }
+
+    private fun proceedWithLaunchingWallet() {
+        Timber.i("proceedWithLaunchingWallet")
+        viewModelScope.launch {
+            launchWallet(BaseUseCase.None).either(
+                fnL = {
+                    Timber.e(it, "Error while launching wallet")
+                    retryLaunchingWallet()
+                },
+                fnR = {
+                    Timber.i("Wallet launched successfully")
+                    proceedWithLaunchingAccount()
+                }
+            )
+        }
+    }
+
+    private fun retryLaunchingWallet() {
+        viewModelScope.launch {
+            launchWallet(BaseUseCase.None).process(
+                failure = { e ->
+                    Timber.e(e, "Error while retrying launching wallet")
+                    val msg = "Error while launching account: ${e.message}"
+                    state.value = State.Error(msg)
+                },
+                success = {
+                    proceedWithLaunchingAccount()
+                }
+            )
+        }
+    }
+
+    private fun proceedWithLaunchingAccount() {
+        Timber.i("proceedWithLaunchingAccount")
+        val startTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            state.value = State.Loading
+            launchAccount(BaseUseCase.None).proceed(
+                success = { (analyticsId, networkId) ->
+                    Timber.i("Account launched successfully, analyticsId: $analyticsId, networkId: $networkId")
+                    crashReporter.setUser(analyticsId)
+                    updateUserProps(analyticsId = analyticsId, networkId = networkId)
+                    analytics.proceedWithAccountEvent(
+                        startTime = startTime,
+                        eventName = EventsDictionary.openAccount,
+                        analyticsId = analyticsId
+                    )
+                    proceedWithGlobalSubscriptions()
+                    commandsChannel.send(Command.CheckAppStartIntent)
+                },
+                failure = { e ->
+                    Timber.e(e, "Error while launching account")
+                    when (e) {
+                        is AccountMigrationNeededException -> {
+                            state.value = State.Migration.AwaitingStart
+                        }
+                        is NeedToUpdateApplicationException -> {
+                            state.value = State.Error(ERROR_NEED_UPDATE)
+                        }
+                        else -> {
+                            val msg = "$ERROR_MESSAGE : ${e.message ?: "Unknown error"}"
+                            state.value = State.Error(msg)
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    private fun proceedWithGlobalSubscriptions() {
+        globalSubscriptionManager.onStart()
+    }
+
+    fun onIntentCreateNewObject(type: Key) {
+        Timber.d("onIntentCreateNewObject, type:[$type]")
+        viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
+            val space = getLastOpenedSpace.async(Unit).getOrNull()
+            if (space == null) {
+                Timber.e("No space found")
+                proceedWithVaultNavigation()
+                return@launch
+            }
+            val spaceId = space.id
+            val params = CreateObjectByTypeAndTemplate.Param(
+                typeKey = TypeKey(type),
+                space = space,
+                keys = ObjectSearchConstants.defaultKeysObjectType
+            )
+            createObjectByTypeAndTemplate.async(params).fold(
+                onFailure = { e ->
+                    Timber.e(e, "Error while creating a new object with type:$type")
+                    commandsChannel.send(Command.Toast(e.message ?: "Error while creating object"))
+                    proceedWithNavigation()
+                },
+                onSuccess = { result ->
+                    sendAnalyticsObjectCreateEvent(
+                        objType = type,
+                        analytics = analytics,
+                        route = EventsDictionary.Routes.home,
+                        startTime = startTime,
+                        view = EventsDictionary.View.viewHome,
+                        spaceParams = provideParams(spaceId)
+                    )
+                    when (result) {
+                        CreateObjectByTypeAndTemplate.Result.ObjectTypeNotFound -> {
+                            commandsChannel.send(Command.Toast(ERROR_CREATE_OBJECT))
+                            proceedWithVaultNavigation()
+                        }
+                        is CreateObjectByTypeAndTemplate.Result.Success -> {
+                            val target = result.objectId
+                            val view = awaitActiveSpaceView(space)
+                            if (view != null) {
+                                val chatId = resolveChatID(
+                                    space = space,
+                                    spaceView = view
+                                )
+                                // Layout may not be known here; open as an object and let UI resolve.
+                                commandsChannel.send(
+                                    Command.NavigateToObject(
+                                        id = target,
+                                        space = spaceId,
+                                        chat = chatId
+                                    )
+                                )
+                            } else {
+                                proceedWithVaultNavigation()
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    fun onIntentTriggeredByChatPush(space: Id, chat: Id) {
+        preferredSpaceIdHolder.set(space)
+        viewModelScope.launch {
+            spaceManager.set(space = space)
+                .onSuccess {
+                    pendingIntentStore.setPushSpaceEntry(space)
+                    commandsChannel.send(
+                        Command.NavigateToChat(
+                            space = space,
+                            chat = chat
+                        )
+                    )
+                }
+                .onFailure {
+                    Timber.e(it, "Error while setting space due to chat intent")
+                }
+        }
+    }
+
+    fun onIntentActionNotFound() {
+        Timber.i("onIntentActionNotFound")
+        proceedWithNavigation()
+    }
+
+    fun onDeepLinkLaunch(deeplink: String) {
+        Timber.d("onDeepLinkLaunch, deeplink:[$deeplink]")
+        viewModelScope.launch {
+            proceedWithVaultNavigation(deeplink)
+        }
+    }
+
+    private fun updateUserProps(analyticsId: String, networkId: String) {
+        viewModelScope.updateUserProperties(
+            analytics = analytics,
+            userProperty = UserProperty.AccountId(analyticsId)
+        )
+        viewModelScope.updateUserProperties(
+            analytics = analytics,
+            userProperty = UserProperty.NetworkId(networkId)
+        )
+        localeProvider.language().let { lang ->
+            viewModelScope.updateUserProperties(
+                analytics = analytics,
+                userProperty = UserProperty.InterfaceLanguage(lang)
+            )
+        }
+    }
+
+    //region NAVIGATION
+    private suspend fun awaitActiveSpaceView(space: SpaceId): ObjectWrapper.SpaceView? = withTimeoutOrNull(SPACE_LOADING_TIMEOUT) {
+        spaceViews
+            .observe(space)
+            .onEach { view ->
+                Timber.i(
+                    "Observing space view for ${space.id}, isActive: ${view.isActive}, spaceUxType: ${view.spaceUxType}, chat: ${view.chatId}"
+                )
+            }
+            .filter { view -> view.isActive }
+            .take(1)
+            .catch {
+                Timber.w(it, "Error while observing space view for ${space.id}")
+            }
+            .firstOrNull()
+    }
+
+    private suspend fun emitNavigationForObject(
+        id: Id,
+        space: Id,
+        layout: ObjectType.Layout?,
+        chatId: Id?
+    ) {
+        when (layout) {
+            ObjectType.Layout.SET,
+            ObjectType.Layout.COLLECTION ->
+                commandsChannel.send(
+                    Command.NavigateToObjectSet(
+                        id = id,
+                        space = space,
+                        chat = chatId
+                    )
+                )
+            ObjectType.Layout.DATE -> {
+                commandsChannel.send(
+                    Command.NavigateToDateObject(
+                        id = id,
+                        space = space,
+                        chat = chatId
+                    )
+                )
+            }
+            ObjectType.Layout.OBJECT_TYPE -> {
+                commandsChannel.send(
+                    Command.NavigateToObjectType(
+                        id = id,
+                        space = space,
+                        chat = chatId
+                    )
+                )
+            }
+            else ->
+                commandsChannel.send(
+                    Command.NavigateToObject(
+                        id = id,
+                        space = space,
+                        chat = chatId
+                    )
+                )
+        }
+    }
+
+    private fun proceedWithNavigation() {
+        Timber.i("proceedWithNavigation, navigating to vault (last-opened-object logic removed)")
+        viewModelScope.launch {
+            proceedWithVaultNavigation()
+        }
+    }
+
+    private suspend fun proceedWithVaultNavigation(deeplink: String? = null) {
+        Timber.d("proceedWithVaultNavigation deep link: $deeplink")
+
+        // For one-to-one chat deeplinks, always navigate to Vault
+        // where the proper handling logic exists in VaultViewModel
+        if (deeplink != null) {
+            val action = deepLinkResolver.resolve(deeplink)
+            if (action is DeepLinkResolver.Action.InitiateOneToOneChat) {
+                Timber.d("One-to-one chat deeplink detected, navigating to Vault")
+                commandsChannel.send(Command.NavigateToVault(deeplink))
+                return
+            }
+        }
+
+        val space = getLastOpenedSpace.async(Unit).getOrNull()
+        if (space != null) {
+            val view = awaitActiveSpaceView(SpaceId(space.id))
+            if (view != null) {
+                Timber.i("Space view loaded: $view")
+                when(view.spaceUxType) {
+                    SpaceUxType.ONE_TO_ONE -> {
+                        val chat = resolveChatID(
+                            space = space,
+                            spaceView = view
+                        )
+                        if (chat != null) {
+                            commandsChannel.send(
+                                Command.NavigateToChat(
+                                    space = space.id,
+                                    chat = chat,
+                                    deeplink = deeplink
+                                )
+                            )
+                        } else {
+                            Timber.w("Could not resolve chat ID for one-to-one space")
+                            commandsChannel.send(
+                                Command.NavigateToWidgets(
+                                    space = space.id,
+                                    deeplink = deeplink
+                                )
+                            )
+                        }
+                    }
+                    else -> {
+                        // Regular channels: resolve homepage
+                        val homepage = view.homepage
+                        resolveHomepageNavigation(
+                            homepage = homepage,
+                            spaceId = space.id,
+                            deeplink = deeplink
+                        )
+                    }
+                }
+            } else {
+                Timber.w("Timeout while waiting for active space view. Navigating to vault.")
+                commandsChannel.send(Command.NavigateToVault(deeplink))
+            }
+        } else {
+            Timber.w("No space found or space manager state is NoSpace. Navigating to vault.")
+            commandsChannel.send(Command.NavigateToVault(deeplink))
+        }
+    }
+
+    /**
+     * Resolves chat ID for chat spaces.
+     * Using space manager as fallback, assuming that the space has been opened already via space manager.
+     */
+    fun resolveChatID(
+        space: SpaceId,
+        spaceView: ObjectWrapper.SpaceView
+    ) : Id? {
+        return spaceView.chatId ?: spaceManager.getConfig(space)?.spaceChatId
+    }
+
+    private suspend fun resolveHomepageNavigation(
+        homepage: String?,
+        spaceId: Id,
+        deeplink: String?
+    ) {
+        if (homepage.isNullOrEmpty() || homepage in HOMEPAGE_SPECIAL_CONSTANTS) {
+            commandsChannel.send(Command.NavigateToWidgets(space = spaceId, deeplink = deeplink))
+            return
+        }
+        // Homepage is an object ID — resolve and navigate
+        val results = searchObjects.invoke(
+            params = SearchObjects.Params(
+                space = SpaceId(spaceId),
+                filters = listOf(
+                    DVFilter(
+                        relation = Relations.ID,
+                        value = homepage,
+                        condition = DVFilterCondition.EQUAL
+                    )
+                ),
+                keys = listOf(Relations.ID, Relations.LAYOUT, Relations.SPACE_ID),
+                limit = 1
+            )
+        )
+        val obj = results.getOrNull()?.firstOrNull()
+        if (obj == null) {
+            Timber.w("Homepage object $homepage not found, falling back to widgets")
+            commandsChannel.send(Command.NavigateToWidgets(space = spaceId, deeplink = deeplink))
+            return
+        }
+        when (obj.navigation()) {
+            is OpenObjectNavigation.OpenEditor -> {
+                commandsChannel.send(Command.NavigateToObject(id = homepage, space = spaceId, chat = null))
+            }
+            is OpenObjectNavigation.OpenDataView -> {
+                commandsChannel.send(Command.NavigateToObjectSet(id = homepage, space = spaceId, chat = null))
+            }
+            is OpenObjectNavigation.OpenChat -> {
+                commandsChannel.send(Command.NavigateToChat(space = spaceId, chat = homepage, deeplink = deeplink))
+            }
+            is OpenObjectNavigation.OpenType -> {
+                commandsChannel.send(Command.NavigateToObjectType(id = homepage, space = spaceId, chat = null))
+            }
+            is OpenObjectNavigation.OpenDateObject -> {
+                commandsChannel.send(Command.NavigateToDateObject(id = homepage, space = spaceId, chat = null))
+            }
+            is OpenObjectNavigation.OpenBookmarkUrl -> {
+                commandsChannel.send(Command.NavigateToObject(id = homepage, space = spaceId, chat = null))
+            }
+            is OpenObjectNavigation.OpenParticipant -> {
+                commandsChannel.send(Command.NavigateToWidgets(space = spaceId, deeplink = deeplink))
+            }
+            else -> {
+                commandsChannel.send(Command.NavigateToWidgets(space = spaceId, deeplink = deeplink))
+            }
+        }
+    }
+
+    //endregion
+
+    sealed class Command {
+        data class NavigateToVault(val deeplink: String? = null) : Command()
+        data class NavigateToWidgets(val space: Id, val deeplink: String? = null) : Command()
+        data class NavigateToChat(
+            val space: Id,
+            val chat: Id,
+            val deeplink: String? = null
+        ) : Command()
+        data object NavigateToAuthStart : Command()
+        data object CheckAppStartIntent : Command()
+        data class NavigateToObject(val id: Id, val space: Id, val chat: Id?) : Command()
+        data class NavigateToObjectSet(val id: Id, val space: Id, val chat: Id?) : Command()
+        data class NavigateToDateObject(val id: Id, val space: Id, val chat: Id?) : Command()
+        data class NavigateToObjectType(val id: Id, val space: Id, val chat: Id?) : Command()
+        data class Toast(val message: String) : Command()
+    }
+
+    companion object {
+        const val ERROR_MESSAGE = "An error occurred while starting account"
+        const val ERROR_NEED_UPDATE =
+            "Unable to retrieve account. Please update Anytype to the latest version."
+        const val ERROR_CREATE_OBJECT = "Error while creating object: object type not found"
+        const val SPACE_LOADING_TIMEOUT = 5000L
+        private val HOMEPAGE_SPECIAL_CONSTANTS = setOf("widgets", "graph", "lastOpened")
+    }
+
+    sealed class State {
+        data object Init : State()
+        data object Loading : State()
+        data object Success : State()
+        data class Error(val msg: String) : State()
+        sealed class Migration : State() {
+            data object AwaitingStart : Migration()
+            data class InProgress(val progress: Float) : Migration()
+            data class Failed(val state: MigrationHelperDelegate.State.Failed) : Migration()
+        }
+    }
+}

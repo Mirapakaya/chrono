@@ -1,0 +1,73 @@
+plugins {
+    id "com.android.library"
+    id "kotlin-android"
+    id "com.google.devtools.ksp"
+    id "kotlin-parcelize"
+    id "kotlinx-serialization"
+}
+
+def networkConfigFile = rootProject.file("network.properties")
+def networkConfigProps = new Properties()
+if (networkConfigFile.exists()) {
+    networkConfigProps.load(new FileInputStream(networkConfigFile))
+}
+
+android {
+
+    defaultConfig {
+        buildConfigField "boolean", "ENABLE_LINK_APPERANCE_MENU", "true"
+        buildConfigField "boolean", "USE_SIMPLE_TABLES_IN_EDITOR_EDDITING", "true"
+        buildConfigField "boolean", "ENABLE_VIEWS_MENU", "true"
+        buildConfigField "boolean", "ENABLE_RELATIVE_DATES_IN_MENTIONS", "true"
+        buildConfigField "boolean", "ENABLE_SPACE_PUSH_DIAGNOSTICS", "true"
+    }
+    namespace 'com.chronoio.chrono.presentation'
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation project(':domain')
+    implementation project(':core-utils')
+    implementation project(':localization')
+    implementation project(':library-emojifier')
+    implementation project(':analytics')
+    implementation project(':core-models')
+    implementation project(':crash-reporting')
+
+    implementation libs.kotlin
+    implementation libs.coroutinesAndroid
+
+    implementation libs.lifecycleViewModel
+    implementation libs.lifecycleLiveData
+    implementation libs.compose
+    implementation libs.androidxCore
+
+    implementation libs.timber
+
+    implementation libs.urlcleaner
+
+    implementation libs.amplitude
+
+    compileOnly libs.javaxInject
+
+    implementation libs.gson
+
+    implementation libs.kotlinxSerializationJson
+    implementation libs.anyCrypto
+
+    testImplementation libs.junit
+    testImplementation libs.kotlinTest
+    testImplementation libs.mockitoKotlin
+    testImplementation libs.coroutineTesting
+    testImplementation libs.liveDataTesting
+    testImplementation libs.archCoreTesting
+    testImplementation libs.androidXTestCore
+    testImplementation libs.robolectric
+    testImplementation libs.timberJUnit
+    testImplementation libs.turbine
+    testImplementation project(":test:utils")
+    testImplementation project(":test:core-models-stub")
+}

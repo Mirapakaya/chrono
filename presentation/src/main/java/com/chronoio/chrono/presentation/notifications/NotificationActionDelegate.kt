@@ -1,0 +1,174 @@
+package com.chronoio.chrono.presentation.notifications
+
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.multiplayer.GetSpaceMemberByIdentity
+import com.chronoio.chrono.domain.notifications.ReplyNotifications
+import com.chronoio.chrono.domain.notifications.SystemNotificationService
+import com.chronoio.chrono.domain.spaces.ResolveSpaceHomepage
+import com.chronoio.chrono.domain.spaces.SaveCurrentSpace
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import javax.inject.Inject
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
+import timber.log.Timber
+
+interface NotificationActionDelegate {
+
+    /**
+     * Buffered one-shot commands (see [Default] for the backing [Channel]).
+     *
+     * Single-consumer invariant: collect this from exactly ONE place. The backing
+     * channel hands each command to a single receiver, so a second concurrent
+     * collector would silently steal half the commands. Re-collecting sequentially
+     * across lifecycle bounces (e.g. `repeatOnLifecycle(STARTED)`) is fine — that is
+     * one consumer at a time, not two at once.
+     */
+    val dispatcher: Flow<NotificationCommand>
+
+    suspend fun proceedWithNotificationAction(action: NotificationAction)
+
+    class Default @Inject constructor(
+        private val getSpaceMemberByIdentity: GetSpaceMemberByIdentity,
+        private val replyNotifications: ReplyNotifications,
+        private val systemNotificationService: SystemNotificationService,
+        private val spaceManager: SpaceManager,
+        private val saveCurrentSpace: SaveCurrentSpace,
+        private val resolveSpaceHomepage: ResolveSpaceHomepage
+    ) : NotificationActionDelegate {
+
+        // Unbounded Channel (not a `replay = 0` SharedFlow): a notification command
+        // emitted while MainActivity isn't collecting — e.g. a notification tap on
+        // cold start, before the STARTED-scoped collector attaches — is buffered and
+        // delivered to the next subscriber instead of being dropped (DROID-4523).
+        private val dispatcherChannel = Channel<NotificationCommand>(Channel.UNLIMITED)
+        override val dispatcher: Flow<NotificationCommand> = dispatcherChannel.receiveAsFlow()
+
+        override suspend fun proceedWithNotificationAction(action: NotificationAction) {
+            Timber.d("Proceeding with notification action: $action")
+            when(action) {
+                is NotificationAction.Multiplayer.ViewSpaceJoinRequest -> {
+                    proceedWithSpaceJoinRequest(action)
+                }
+                is NotificationAction.Multiplayer.ViewSpaceLeaveRequest -> {
+                    proceedWithSpaceLeaveRequest(action)
+                }
+                is NotificationAction.Multiplayer.GoToSpace -> {
+                    proceedWithGoToSpaceAction(action)
+                }
+            }
+        }
+
+        private suspend fun proceedWithSpaceJoinRequest(
+            action: NotificationAction.Multiplayer.ViewSpaceJoinRequest
+        ) {
+            getSpaceMemberByIdentity.async(
+                GetSpaceMemberByIdentity.Params(
+                    space = action.space,
+                    identity = action.identity
+                )
+            ).fold(
+                onSuccess = { member ->
+                    if (member != null && member.spaceId == action.space.id) {
+                        if (action.notification.isNotEmpty()) {
+                            replyNotifications.async(
+                                params = listOf(action.notification)
+                            ).fold(
+                                onSuccess = {
+                                    Timber.d("Replied notification: ${action.notification}")
+                                },
+                                onFailure = {
+                                    Timber.e(it, "Error while replying notification")
+                                }
+                            )
+                        }
+                        dispatcherChannel.send(
+                            NotificationCommand.ViewSpaceJoinRequest(
+                                space = action.space,
+                                member = member.id
+                            )
+                        )
+                    } else {
+                        Timber.w("Space member not found")
+                    }
+                },
+                onFailure = {
+                    Timber.e(it, "Error while searching space member by identity")
+                }
+            )
+            systemNotificationService.cancel(action.notification)
+        }
+
+        private suspend fun proceedWithSpaceLeaveRequest(
+            action: NotificationAction.Multiplayer.ViewSpaceLeaveRequest
+        ) {
+            replyNotifications.async(
+                params = listOf(action.notification)
+            ).fold(
+                onSuccess = {
+                    Timber.d("Replied notification: ${action.notification}")
+                },
+                onFailure = {
+                    Timber.e(it, "Error while replying notification")
+                }
+            )
+            dispatcherChannel.send(NotificationCommand.ViewSpaceLeaveRequest(space = action.space,))
+            systemNotificationService.cancel(action.notification)
+        }
+
+        private suspend fun proceedWithGoToSpaceAction(action: NotificationAction.Multiplayer.GoToSpace) {
+            // TODO check permissions before navigating
+            replyNotifications.async(
+                params = listOf(action.notification)
+            ).fold(
+                onSuccess = {
+                    Timber.d("Replied notification: ${action.notification}")
+                },
+                onFailure = {
+                    Timber.e(it, "Error while replying notification")
+                }
+            )
+            val result = spaceManager.set(space = action.space.id)
+            if (result.isSuccess) {
+                saveCurrentSpace
+                    .async(SaveCurrentSpace.Params(space = action.space))
+                    .fold(
+                        onSuccess = {
+                            Timber.d("Saved current space")
+                        },
+                        onFailure = {
+                            Timber.e(it, "Error while saving current space")
+                        }
+                    )
+                dispatcherChannel.send(resolveGoToSpaceCommand(action.space))
+            } else {
+                // TODO show error msg
+            }
+            systemNotificationService.cancel(action.notification)
+        }
+
+        /**
+         * When a user taps a notification to enter a space, honor the space's
+         * homepage setting: if an explicit object is configured, open that
+         * object directly; otherwise fall back to the widgets home screen
+         * (DROID-4388).
+         */
+        private suspend fun resolveGoToSpaceCommand(
+            space: com.chronoio.chrono.core_models.primitives.SpaceId
+        ): NotificationCommand {
+            val homepageResult = resolveSpaceHomepage.async(
+                ResolveSpaceHomepage.Params(space = space)
+            ).getOrNull()
+            if (homepageResult !is ResolveSpaceHomepage.Result.Object) {
+                return NotificationCommand.GoToSpace(space = space)
+            }
+            // Chat homepages need the chat-screen nav graph, not the generic
+            // object-navigation path (which rejects OpenChat with a toast).
+            return when (val nav = homepageResult.navigation) {
+                is com.chronoio.chrono.core_models.misc.OpenObjectNavigation.OpenChat ->
+                    NotificationCommand.GoToChat(space = space, chat = nav.target)
+                else -> NotificationCommand.GoToObject(space = space, navigation = nav)
+            }
+        }
+    }
+}

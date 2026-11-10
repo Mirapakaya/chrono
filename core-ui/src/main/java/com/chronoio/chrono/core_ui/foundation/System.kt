@@ -1,0 +1,75 @@
+package com.chronoio.chrono.core_ui.foundation
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.views.Caption1Medium
+import com.chronoio.chrono.core_ui.views.Caption1Regular
+import com.chronoio.chrono.core_ui.views.Title1
+
+@Composable
+fun Section(
+    modifier: Modifier = Modifier,
+    title: String,
+    color: Color = colorResource(id = R.color.text_secondary),
+    textPaddingStart: Dp = 16.dp
+) {
+    Box(modifier = modifier
+        .height(52.dp)
+        .fillMaxWidth()) {
+        Text(
+            modifier = Modifier
+                .padding(
+                    start = textPaddingStart,
+                    bottom = 8.dp
+                )
+                .align(Alignment.BottomStart),
+            text = title,
+            color = color,
+            style = Caption1Medium
+        )
+    }
+}
+
+@Composable
+fun Header(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .fillMaxWidth()
+    ) {
+        Text(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .fillMaxWidth()
+                .align(Alignment.Center)
+            ,
+            text = text,
+            color = colorResource(id = R.color.text_primary),
+            style = Caption1Medium,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun HeaderPreview() {
+    Header(text = "Header")
+}

@@ -1,0 +1,78 @@
+package com.chronoio.chrono.core_models.ui
+
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.SystemColor
+import com.chronoio.chrono.core_models.Url
+import com.chronoio.chrono.core_models.UrlBuilder
+
+/**
+ * Represents the visual icon for a space in the UI.
+ * Supports both chat spaces and data spaces with image or placeholder variants.
+ */
+sealed class SpaceIconView {
+    data object Loading : SpaceIconView()
+
+    sealed class ChatSpace : SpaceIconView() {
+        data class Image(
+            val url: Url,
+            val color: SystemColor = SystemColor.SKY,
+        ) : ChatSpace()
+
+        data class Placeholder(
+            val color: SystemColor = SystemColor.SKY,
+            val name: String = ""
+        ) : ChatSpace()
+    }
+
+    sealed class DataSpace : SpaceIconView() {
+        data class Image(
+            val url: Url,
+            val color: SystemColor = SystemColor.SKY,
+        ) : DataSpace()
+
+        data class Placeholder(
+            val color: SystemColor = SystemColor.SKY,
+            val name: String = ""
+        ) : DataSpace()
+    }
+}
+
+private val DEFAULT_PLACEHOLDER_COLOR = SystemColor.SKY
+
+fun ObjectWrapper.SpaceView.spaceIcon(
+    builder: UrlBuilder,
+): SpaceIconView {
+    // Only ONE_TO_ONE spaces get the round ChatSpace-variant icon now.
+    val isOneToOne = isOneToOneSpace
+
+    // Helpers to eliminate duplication between Chat and Data branches
+    val makeImage: (SystemColor, Url) -> SpaceIconView = { color, url ->
+        if (isOneToOne) {
+            SpaceIconView.ChatSpace.Image(url, color)
+        } else {
+            SpaceIconView.DataSpace.Image(url, color)
+        }
+    }
+    val makePlaceholder: (SystemColor, String) -> SpaceIconView = { color, title ->
+        if (isOneToOne) {
+            SpaceIconView.ChatSpace.Placeholder(color = color, name = title)
+        } else {
+            SpaceIconView.DataSpace.Placeholder(color = color, name = title)
+        }
+    }
+
+    // Derive placeholder color & name with safe defaults
+    val placeholderColor = iconOption
+        ?.toInt()
+        ?.let { SystemColor.color(idx = it) }
+        ?: DEFAULT_PLACEHOLDER_COLOR
+
+    // Prefer image if we have a non-empty hash
+    iconImage?.takeIf { it.isNotEmpty() }?.let { hash ->
+        return makeImage(placeholderColor, builder.medium(hash))
+    }
+
+    val displayName = name.orEmpty()
+
+    return makePlaceholder(placeholderColor, displayName)
+}

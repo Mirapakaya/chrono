@@ -1,0 +1,801 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Payload
+import com.chronoio.chrono.core_models.Position
+import com.chronoio.chrono.core_models.StubCodeSnippet
+import com.chronoio.chrono.core_models.StubHeader
+import com.chronoio.chrono.core_models.StubLinkToObjectBlock
+import com.chronoio.chrono.core_models.StubParagraph
+import com.chronoio.chrono.core_models.StubSmartBlock
+import com.chronoio.chrono.core_models.StubTable
+import com.chronoio.chrono.core_models.StubTitle
+import com.chronoio.chrono.core_models.restrictions.ObjectRestriction
+import com.chronoio.chrono.domain.base.Either
+import com.chronoio.chrono.domain.block.interactor.CreateBlock
+import com.chronoio.chrono.domain.block.interactor.UpdateText
+import com.chronoio.chrono.domain.page.bookmark.CreateBookmarkBlock
+import com.chronoio.chrono.presentation.MockBlockFactory
+import com.chronoio.chrono.presentation.editor.EditorViewModel.Companion.VIRTUAL_TRAILING_BLOCK_ID
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.util.DefaultCoroutineTestRule
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+import org.mockito.kotlin.verifyNoInteractions
+
+class EditorEmptySpaceInteractionTest : EditorPresentationTestSetup() {
+
+    val title = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Text(
+            text = MockDataFactory.randomString(),
+            style = Block.Content.Text.Style.TITLE,
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    private fun trailingPlaceholderOrNull(vm: com.chronoio.chrono.presentation.editor.EditorViewModel): BlockView.Text.Paragraph? =
+        vm.views.lastOrNull()?.takeIf { it.id == VIRTUAL_TRAILING_BLOCK_ID } as? BlockView.Text.Paragraph
+
+    @Test
+    fun `should ignore outside click if document isn't started yet`() = runTest {
+        val vm = buildViewModel()
+        vm.onOutsideClicked()
+        advanceUntilIdle()
+        verifyNoInteractions(createBlock)
+    }
+
+    @Test
+    fun `should show focused trailing placeholder without any middleware calls on outside click if page contains only title with icon`() = runTest {
+
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val doc = listOf(page, header, title)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        // Clicking the empty area must produce zero middleware calls.
+        verifyNoInteractions(createBlock)
+        verifyNoInteractions(updateText)
+
+        val placeholder = trailingPlaceholderOrNull(vm)
+        assertTrue(
+            placeholder != null && placeholder.isFocused,
+            "Expected a focused virtual trailing placeholder as the last view"
+        )
+    }
+
+    @Test
+    fun `should show trailing placeholder instead of creating a block if the last block is a non-empty paragraph`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(trailingPlaceholderOrNull(vm) != null)
+    }
+
+    @Test
+    fun `should show trailing placeholder instead of creating a block if the last block is a link block`() = runTest {
+
+        // SETUP
+
+        val link = StubLinkToObjectBlock()
+
+        val root = StubSmartBlock(
+            id = root,
+            children = listOf(
+                header.id,
+                link.id
+            )
+        )
+
+        val doc = listOf(
+            root, header, title, link
+        )
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubOpenDocument(doc)
+        stubGetNetworkMode()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root.id, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(trailingPlaceholderOrNull(vm) != null)
+    }
+
+    @Test
+    fun `should not show trailing placeholder on outside-clicked event if object has restriction BLOCKS`() = runTest {
+
+        // SETUP
+
+        val firstChild = MockDataFactory.randomUuid()
+        val secondChild = MockDataFactory.randomUuid()
+
+        val page = MockBlockFactory.makeOnePageWithTitleAndOnePageLinkBlock(
+            rootId = root,
+            titleBlockId = firstChild,
+            pageBlockId = secondChild
+        )
+
+        stubInterceptEvents()
+        stubOpenDocument(document = page, objectRestrictions = listOf(ObjectRestriction.BLOCKS))
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(trailingPlaceholderOrNull(vm) == null)
+    }
+
+    @Test
+    fun `should show trailing placeholder instead of creating a block if the last block is a table block`() = runTest {
+
+        // SETUP
+
+        val table = StubTable(children = listOf())
+        val title = StubTitle()
+        val header = StubHeader(children = listOf(title.id))
+        val page = Block(
+            id = root,
+            children = listOf(header.id) + listOf(table.id),
+            fields = Block.Fields.empty(),
+            content = Block.Content.Smart
+        )
+
+        val document = listOf(page, header, title, table)
+
+        stubInterceptEvents()
+        stubOpenDocument(document)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(trailingPlaceholderOrNull(vm) != null)
+    }
+
+    @Test
+    fun `should show trailing placeholder instead of creating a block if the last block is a code snippet block`() = runTest {
+
+        // SETUP
+
+        val snippet = StubCodeSnippet(children = listOf())
+        val title = StubTitle()
+        val header = StubHeader(children = listOf(title.id))
+        val page = Block(
+            id = root,
+            children = listOf(header.id) + listOf(snippet.id),
+            fields = Block.Fields.empty(),
+            content = Block.Content.Smart
+        )
+
+        val document = listOf(page, header, title, snippet)
+
+        stubInterceptEvents()
+        stubOpenDocument(document)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(trailingPlaceholderOrNull(vm) != null)
+    }
+
+    @Test
+    fun `should never create blocks or duplicate the placeholder on repeated outside clicks`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        repeat(3) {
+            vm.onOutsideClicked()
+            advanceUntilIdle()
+        }
+
+        verifyNoInteractions(createBlock)
+
+        assertEquals(
+            expected = 1,
+            actual = vm.views.count { it.id == VIRTUAL_TRAILING_BLOCK_ID },
+            message = "Repeated taps must never produce more than one placeholder"
+        )
+    }
+
+    @Test
+    fun `should create exactly one block carrying the first input when typing into the placeholder`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+        stubCreateBlock(root)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        val placeholder = trailingPlaceholderOrNull(vm)!!
+
+        vm.onTextBlockTextChanged(placeholder.copy(text = "h"))
+
+        advanceUntilIdle()
+
+        verifyBlocking(createBlock, times(1)) {
+            async(
+                params = eq(
+                    CreateBlock.Params(
+                        context = root,
+                        target = "",
+                        position = Position.INNER,
+                        prototype = Block.Prototype.Text(
+                            style = Block.Content.Text.Style.P,
+                            text = "h"
+                        )
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `should swap the placeholder for the created block preserving text and focus`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        val created = StubParagraph(text = "h")
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        stubCreateBlockWithSwap(
+            created = created,
+            children = listOf(header.id, block.id, created.id)
+        )
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        val placeholder = trailingPlaceholderOrNull(vm)!!
+
+        vm.onTextBlockTextChanged(placeholder.copy(text = "h"))
+
+        advanceUntilIdle()
+
+        // The placeholder is gone, replaced by the created block carrying the input.
+        assertTrue(vm.views.none { it.id == VIRTUAL_TRAILING_BLOCK_ID })
+
+        val last = vm.views.last() as BlockView.Text.Paragraph
+        assertEquals(expected = created.id, actual = last.id)
+        assertEquals(expected = "h", actual = last.text)
+        assertTrue(last.isFocused, "Focus must move to the created block")
+
+        // The block was created already carrying the text — no follow-up set-text needed.
+        verifyNoInteractions(updateText)
+
+        // The view layer needs the virtual -> created mapping to diff the swap as a change
+        // of the same row: removing the focused row would clear its focus and kill the IME
+        // composition (DROID-4557).
+        assertEquals(
+            expected = mapOf(VIRTUAL_TRAILING_BLOCK_ID to created.id),
+            actual = vm.blockIdAliases
+        )
+    }
+
+    @Test
+    fun `should show placeholder below a foreign empty trailing paragraph instead of focus-reusing it`() = runTest {
+
+        // SETUP
+
+        val foreign = StubParagraph(text = "")
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, foreign.id)
+        )
+
+        val doc = listOf(page, header, title, foreign)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        // The foreign empty block is not deleted and not reused.
+        verifyNoInteractions(unlinkBlocks)
+
+        val placeholder = trailingPlaceholderOrNull(vm)
+        assertTrue(placeholder != null && placeholder.isFocused)
+
+        val foreignView = vm.views.first { it.id == foreign.id } as BlockView.Text.Paragraph
+        assertTrue(
+            !foreignView.isFocused,
+            "A foreign empty trailing block must not be focus-reused"
+        )
+    }
+
+    @Test
+    fun `should focus-reuse an empty trailing paragraph created by this session`() = runTest {
+
+        // SETUP
+
+        val own = StubParagraph(text = "")
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, own.id)
+        )
+
+        val doc = listOf(page, header, title, own)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        val vm = buildViewModel()
+
+        orchestrator.memory.sessionCreatedBlockIds.add(own.id)
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(trailingPlaceholderOrNull(vm) == null)
+
+        val ownView = vm.views.first { it.id == own.id } as BlockView.Text.Paragraph
+        assertTrue(ownView.isFocused, "An empty trailing block created by this session is focus-reused")
+    }
+
+    @Test
+    fun `should remove the placeholder when focus is lost with nothing typed`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        assertTrue(trailingPlaceholderOrNull(vm) != null)
+
+        vm.onBlockFocusChanged(id = VIRTUAL_TRAILING_BLOCK_ID, hasFocus = false)
+
+        advanceUntilIdle()
+
+        verifyNoInteractions(createBlock)
+        assertTrue(
+            vm.views.none { it.id == VIRTUAL_TRAILING_BLOCK_ID },
+            "Nothing typed: the placeholder simply goes away, nothing is created"
+        )
+    }
+
+    @Test
+    fun `should create a block on enter pressed inside the empty placeholder`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+        stubCreateBlock(root)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        vm.onEnterKeyClicked(
+            target = VIRTUAL_TRAILING_BLOCK_ID,
+            text = "",
+            marks = emptyList(),
+            range = 0..0
+        )
+
+        advanceUntilIdle()
+
+        verifyBlocking(createBlock, times(1)) {
+            async(
+                params = eq(
+                    CreateBlock.Params(
+                        context = root,
+                        target = "",
+                        position = Position.INNER,
+                        prototype = Block.Prototype.Text(
+                            style = Block.Content.Text.Style.P,
+                            text = ""
+                        )
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `should materialize the placeholder before creating a bookmark from a pasted url`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        val created = StubParagraph(text = "")
+
+        val url = "https://chrono.app"
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+
+        stubCreateBlockWithSwap(
+            created = created,
+            children = listOf(header.id, block.id, created.id)
+        )
+
+        createBookmarkBlock.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(
+                Payload(context = root, events = emptyList())
+            )
+        }
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        vm.onBookmarkPasted(url)
+
+        advanceUntilIdle()
+
+        // The bookmark is created against the materialized block — never the
+        // virtual id, which the middleware knows nothing about.
+        verifyBlocking(createBookmarkBlock, times(1)) {
+            invoke(
+                params = eq(
+                    CreateBookmarkBlock.Params(
+                        context = root,
+                        target = created.id,
+                        url = url,
+                        position = Position.TOP
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `should defer link paste until the placeholder materializes and apply the mark to the created block`() = runTest {
+
+        // SETUP
+
+        val block = StubParagraph(text = MockDataFactory.randomString())
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        val url = "https://chrono.app"
+
+        val created = StubParagraph(text = url)
+
+        stubInterceptEvents()
+        stubOpenDocument(doc)
+        stubUpdateText()
+
+        stubCreateBlockWithSwap(
+            created = created,
+            children = listOf(header.id, block.id, created.id)
+        )
+
+        stubUpdateLinkMarksToAppend()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        // TESTING
+
+        vm.onOutsideClicked()
+
+        advanceUntilIdle()
+
+        // The UI reports the selection covering the pasted url.
+        vm.onSelectionChanged(
+            id = VIRTUAL_TRAILING_BLOCK_ID,
+            selection = 0..url.length
+        )
+
+        advanceUntilIdle()
+
+        val placeholder = trailingPlaceholderOrNull(vm)!!
+
+        // "Paste link" inserts the url into the block (materialization starts)...
+        vm.onTextBlockTextChanged(placeholder.copy(text = url))
+
+        // ...and applies the link mark while the create request is still in flight.
+        vm.proceedToAddUriToTextAsLink(url)
+
+        advanceUntilIdle()
+
+        // The mark is applied to the created block — never the virtual id.
+        verifyBlocking(updateText, times(1)) {
+            invoke(
+                params = eq(
+                    UpdateText.Params(
+                        context = root,
+                        target = created.id,
+                        text = url,
+                        marks = listOf(
+                            Block.Content.Text.Mark(
+                                range = 0..url.length,
+                                type = Block.Content.Text.Mark.Type.LINK,
+                                param = url
+                            )
+                        )
+                    )
+                )
+            )
+        }
+    }
+}

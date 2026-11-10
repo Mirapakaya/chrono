@@ -1,0 +1,365 @@
+package com.chronoio.chrono.ui.date
+
+import android.os.Build
+import com.chronoio.chrono.core_utils.intents.ActivityCustomTabsHelper
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.fragment.compose.content
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.fragment.findNavController
+import androidx.navigation.navOptions
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.views.BaseAlertDialog
+import com.chronoio.chrono.core_utils.ext.argString
+import com.chronoio.chrono.core_utils.ext.subscribe
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.insets.EDGE_TO_EDGE_MIN_SDK
+import com.chronoio.chrono.core_utils.ui.BaseComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.feature_create_object.presentation.CreateObjectViewModelFactory
+import com.chronoio.chrono.feature_create_object.presentation.NewCreateObjectViewModel
+import com.chronoio.chrono.feature_create_object.ui.CreateObjectSheetHost
+import com.chronoio.chrono.feature_date.viewmodel.UiErrorState
+import com.chronoio.chrono.feature_date.viewmodel.DateObjectViewModel
+import com.chronoio.chrono.feature_date.viewmodel.DateObjectVMFactory
+import com.chronoio.chrono.feature_date.ui.DateMainScreen
+import com.chronoio.chrono.feature_date.viewmodel.DateObjectCommand
+import com.chronoio.chrono.feature_date.viewmodel.DateObjectVmParams
+import com.chronoio.chrono.ui.base.navigation
+import com.chronoio.chrono.ui.home.WidgetOverlayFragment
+import com.chronoio.chrono.ui.profile.ParticipantFragment
+import com.chronoio.chrono.ui.search.GlobalSearchFragment
+import com.google.accompanist.navigation.material.ExperimentalMaterialNavigationApi
+import com.google.accompanist.navigation.material.rememberBottomSheetNavigator
+import javax.inject.Inject
+import timber.log.Timber
+
+class DateObjectFragment : BaseComposeFragment() {
+    @Inject
+    lateinit var factory: DateObjectVMFactory
+
+    private val vm by viewModels<DateObjectViewModel> { factory }
+
+    private lateinit var createObjectFactory: CreateObjectViewModelFactory
+
+    private val createObjectVm by viewModels<NewCreateObjectViewModel> { createObjectFactory }
+
+    private lateinit var navComposeController: NavHostController
+
+    private val space get() = argString(ARG_SPACE)
+    private val objectId get() = argString(ARG_OBJECT_ID)
+
+    private fun createObjectComponentKey(): String = "date-object-create-object:$space:$objectId"
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ) = content {
+        MaterialTheme {
+            DateLayoutScreenWrapper()
+            ErrorScreen()
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        subscribe(vm.effects) { effect ->
+            Timber.d("Received date effect: $effect")
+            when (effect) {
+                DateObjectCommand.Back -> {
+                    runCatching {
+                        findNavController().popBackStack()
+                    }.onFailure { e ->
+                        Timber.e(e, "Error while exiting back from all content")
+                    }
+                }
+                DateObjectCommand.ExitToVault -> {
+                    runCatching {
+                        navigation().exitToVault()
+                    }.onFailure { e ->
+                        Timber.e(e, "Error while exiting to vault from date object screen")
+                    }
+                }
+                is DateObjectCommand.PopToBackStackEntry -> {
+                    runCatching {
+                        navigation().popToBackStackEntry(effect.entryId)
+                    }.onFailure { e ->
+                        Timber.e(e, "Error while popping to back-history entry from date object screen")
+                    }
+                }
+                is DateObjectCommand.NavigateToEditor -> {
+                    runCatching {
+                        navigation().openDocument(
+                            target = effect.id,
+                            space = effect.space.id
+                        )
+                    }.onFailure {
+                        toast("Failed to open document")
+                        Timber.e(it, "Failed to open document from all content")
+                    }
+                }
+                is DateObjectCommand.NavigateToSetOrCollection -> {
+                    runCatching {
+                        navigation().openObjectSet(
+                            target = effect.id,
+                            space = effect.space.id
+                        )
+                    }.onFailure {
+                        toast("Failed to open object set")
+                        Timber.e(it, "Failed to open object set from all content")
+                    }
+                }
+                is DateObjectCommand.OpenChat -> {
+                    runCatching {
+                        navigation().openChat(
+                            target = effect.target,
+                            space = effect.space.id
+                        )
+                    }.onFailure {
+                        Timber.e(it, "Failed to open a chat from all content")
+                    }
+                }
+                is DateObjectCommand.OpenType -> {
+                    runCatching {
+                        navigation().openObjectType(
+                            objectId = effect.target,
+                            space = effect.space.id
+                        )
+                    }.onFailure {
+                        Timber.e(it, "Failed to open type object from data object")
+                    }
+                }
+                DateObjectCommand.OpenGlobalSearch -> {
+                    runCatching {
+                        findNavController().navigate(
+                            resId = R.id.globalSearchScreen,
+                            args = GlobalSearchFragment.args(
+                                space = space
+                            )
+                        )
+                    }.onFailure { e ->
+                        Timber.e(e, "Error while opening global search screen from all content")
+                    }
+                }
+                is DateObjectCommand.NavigateToDateObject -> {
+                    runCatching {
+                        findNavController().navigate(
+                            resId = R.id.dateObjectScreen,
+                            args = args(
+                                objectId = effect.objectId,
+                                space = effect.space.id
+                            ),
+                            navOptions = navOptions {
+                                launchSingleTop = true
+                            }
+                        )
+                    }.onFailure {
+                        Timber.e(it, "Failed to navigate to date object")
+                    }
+                }
+
+                DateObjectCommand.ExitToHomeOrChat -> {
+                    runCatching {
+                        val result = findNavController().popBackStack(R.id.chatScreen, false)
+                        if (!result) {
+                            findNavController().popBackStack(R.id.homeScreen, false)
+                        }
+                    }.onFailure { e ->
+                        Timber.e(e, "Error while exiting to vault from all content")
+                    }
+                }
+                is DateObjectCommand.SendToast.UnexpectedLayout -> {
+                    toast("Unexpected layout")
+                }
+                is DateObjectCommand.SendToast.Error -> {
+                    toast(effect.message)
+                }
+                is DateObjectCommand.NavigateToParticipant -> {
+                    runCatching {
+                        findNavController().navigate(
+                            R.id.participantScreen,
+                            ParticipantFragment.args(
+                                objectId = effect.objectId,
+                                space = effect.space.id
+                            )
+                        )
+                    }.onFailure {
+                        Timber.w("Error while opening participant screen")
+                    }
+                }
+
+                is DateObjectCommand.OpenUrl -> {
+                    try {
+                        ActivityCustomTabsHelper.openUrl(
+                            activity = requireActivity(),
+                            url = effect.url
+                        )
+                    } catch (e: Throwable) {
+                        Timber.e(e, "Error opening bookmark URL: ${effect.url}")
+                        toast("Failed to open URL")
+                    }
+                }
+
+                DateObjectCommand.OpenWidgets -> {
+                    runCatching {
+                        WidgetOverlayFragment.show(
+                            parentFragmentManager,
+                            space
+                        )
+                    }.onFailure { e ->
+                        Timber.e(e, "Error opening widget overlay from date object")
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.onStart()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        vm.onStop()
+    }
+
+    @OptIn(ExperimentalMaterialNavigationApi::class)
+    @Composable
+    fun DateLayoutScreenWrapper() {
+        val bottomSheetNavigator = rememberBottomSheetNavigator()
+        navComposeController = rememberNavController(bottomSheetNavigator)
+        NavHost(
+            navController = navComposeController,
+            startDestination = DATE_MAIN
+        ) {
+            composable(route = DATE_MAIN) {
+                var createObjectSheetVisible by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    DateMainScreen(
+                        uiCalendarIconState = vm.uiCalendarIconState.collectAsStateWithLifecycle().value,
+                        uiSyncStatusBadgeState = vm.uiSyncStatusBadgeState.collectAsStateWithLifecycle().value,
+                        uiHeaderState = vm.uiHeaderState.collectAsStateWithLifecycle().value,
+                        uiFieldsState = vm.uiFieldsState.collectAsStateWithLifecycle().value,
+                        uiObjectsListState = vm.uiObjectsListState.collectAsStateWithLifecycle().value,
+                        uiFieldsSheetState = vm.uiFieldsSheetState.collectAsStateWithLifecycle().value,
+                        uiContentState = vm.uiContentState.collectAsStateWithLifecycle().value,
+                        canPaginate = vm.canPaginate.collectAsStateWithLifecycle().value,
+                        uiCalendarState = vm.uiCalendarState.collectAsStateWithLifecycle().value,
+                        uiSyncStatusState = vm.uiSyncStatusWidgetState.collectAsStateWithLifecycle().value,
+                        uiSnackbarState = vm.uiSnackbarState.collectAsStateWithLifecycle().value,
+                        onDateEvent = { event ->
+                            if (event is com.chronoio.chrono.feature_date.ui.models.DateEvent.NavigationWidget.OnAddDocClick) {
+                                createObjectSheetVisible = true
+                            } else {
+                                vm.onDateEvent(event)
+                            }
+                        },
+                        backHistoryMenu = vm.backHistoryMenu.collectAsStateWithLifecycle().value
+                    )
+                    CreateObjectSheetHost(
+                        vm = createObjectVm,
+                        visible = createObjectSheetVisible,
+                        onDismiss = { createObjectSheetVisible = false },
+                        onCreateObjectOfType = { objType ->
+                            vm.onCreateObjectOfTypeClicked(objType = objType)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun ErrorScreen() {
+        val errorStateScreen = vm.errorState.collectAsStateWithLifecycle()
+        when (val state = errorStateScreen.value) {
+            UiErrorState.Hidden -> {
+                // Do nothing
+            }
+            is UiErrorState.Show -> {
+                val message = when (val r = state.reason) {
+                    is UiErrorState.Reason.YearOutOfRange ->
+                        stringResource(
+                            id = R.string.date_layout_alert_date_out_of_range,
+                            r.min,
+                            r.max
+                        )
+                    is UiErrorState.Reason.ErrorGettingFields -> r.msg
+                    is UiErrorState.Reason.ErrorGettingObjects -> r.msg
+                    is UiErrorState.Reason.Other -> r.msg
+                }
+                BaseAlertDialog(
+                    dialogText = message,
+                    buttonText = stringResource(id = R.string.membership_error_button_text_dismiss),
+                    onButtonClick = vm::hideError,
+                    onDismissRequest = vm::hideError
+                )
+            }
+        }
+    }
+
+    override fun injectDependencies() {
+        val params = DateObjectVmParams(
+            spaceId = SpaceId(space),
+            objectId = objectId
+        )
+        componentManager().dateObjectComponent.get(params).inject(this)
+        val createObjectVmParams = NewCreateObjectViewModel.VmParams(
+            spaceId = SpaceId(space),
+            showAttachObject = false,
+            showMediaSection = true
+        )
+        createObjectFactory = componentManager()
+            .createObjectFeatureComponent
+            .get(key = createObjectComponentKey(), param = createObjectVmParams)
+            .viewModelFactory()
+    }
+
+    override fun releaseDependencies() {
+        componentManager().dateObjectComponent.release()
+        componentManager().createObjectFeatureComponent.release(createObjectComponentKey())
+    }
+
+    override fun onApplyWindowRootInsets(view: View) {
+        if (Build.VERSION.SDK_INT >= EDGE_TO_EDGE_MIN_SDK) {
+            // Do nothing.
+        } else {
+            super.onApplyWindowRootInsets(view)
+        }
+    }
+
+    companion object DateLayoutNavigation {
+        private const val DATE_MAIN = "date_main"
+        const val ARG_SPACE = "arg.date.object.space"
+        const val ARG_OBJECT_ID = "arg.date.object.object_id"
+
+        fun args(space: Id, objectId: Id) = bundleOf(
+            ARG_SPACE to space,
+            ARG_OBJECT_ID to objectId
+        )
+    }
+}

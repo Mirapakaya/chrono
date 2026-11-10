@@ -1,0 +1,351 @@
+package com.chronoio.chrono.presentation.mapper
+
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectType.Layout
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.domain.debugging.Logger
+import com.chronoio.chrono.domain.misc.DateProvider
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.objects.GetDateObjectByTimestamp
+import com.chronoio.chrono.domain.objects.ObjectStore
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.primitives.FieldParserImpl
+import com.chronoio.chrono.domain.resources.StringResourceProvider
+import com.chronoio.chrono.presentation.objects.files
+import com.chronoio.chrono.presentation.objects.statuses
+import com.chronoio.chrono.presentation.objects.tags
+import com.chronoio.chrono.presentation.objects.toViews
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
+
+class ObjectWrapperExtensionsKtTest {
+
+    @Mock
+    lateinit var urlBuilder: UrlBuilder
+
+    @Mock
+    lateinit var dateProvider: DateProvider
+
+    @Mock
+    lateinit var logger: Logger
+
+    @Mock
+    lateinit var getDateObjectByTimestamp: GetDateObjectByTimestamp
+
+    @Mock
+    lateinit var stringResourceProvider: StringResourceProvider
+
+    @Mock
+    lateinit var storeOfObjectTypes: StoreOfObjectTypes
+
+    lateinit var fieldParser: FieldParser
+
+    val URL = "chrono.app/"
+
+    @Before
+    fun before() {
+        MockitoAnnotations.openMocks(this)
+        fieldParser = FieldParserImpl(dateProvider, logger, getDateObjectByTimestamp, stringResourceProvider)
+        storeOfObjectTypes.stub {
+            onBlocking { getAll() } doReturn emptyList()
+        }
+    }
+
+    @Test
+    fun `should return proper image url from object wrapper`() {
+
+        val imageHash = "ycd79"
+
+        val obj = ObjectWrapper.Basic(
+            mapOf("iconImage" to imageHash)
+        )
+
+        stubUrlBuilder(imageHash)
+
+        val result = urlBuilder.large(obj.iconImage!!)
+
+        val expected = URL + imageHash
+
+        assertEquals(
+            expected = expected,
+            actual = result
+        )
+    }
+
+    @Test
+    fun `should return null emoji from object wrapper when emoji is empty`() {
+
+        val emojiHash: String = ""
+
+        val obj = ObjectWrapper.Basic(
+            mapOf("iconEmoji" to emojiHash)
+        )
+
+        val result = urlBuilder.large(obj.iconEmoji!!)
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `should return null emoji from object wrapper when emoji is blank`() {
+
+        val emojiHash: String = " "
+
+        val obj = ObjectWrapper.Basic(
+            mapOf("iconEmoji" to emojiHash)
+        )
+
+        val result = urlBuilder.large(obj.iconEmoji!!)
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `should map to view with snippet as name when layout is note`() = runTest {
+
+        val imageHash = "ycd79"
+
+        val obj = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to "Ef6",
+                Relations.SPACE_ID to MockDataFactory.randomUuid(),
+                Relations.NAME to "LmL7R",
+                Relations.SNIPPET to "OMr2Y",
+                Relations.LAYOUT to ObjectType.Layout.NOTE.code.toDouble()
+            )
+
+        )
+
+        val result = listOf(obj).toViews(
+            urlBuilder = urlBuilder,
+            fieldParser,
+            storeOfObjectTypes
+        )
+
+        assertEquals(
+            expected = "OMr2Y",
+            actual = result.first().name
+        )
+    }
+
+    @Test
+    fun `should map to view with name as name when layout is not note`() = runTest {
+
+        val imageHash = "ycd79"
+
+        val obj = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to "Ef6",
+                Relations.SPACE_ID to MockDataFactory.randomUuid(),
+                Relations.NAME to "LmL7R",
+                Relations.SNIPPET to "OMr2Y",
+                Relations.LAYOUT to ObjectType.Layout.BASIC.code.toDouble()
+            )
+
+        )
+
+        val result = listOf(obj).toViews(
+            urlBuilder = urlBuilder,
+            fieldParser,
+            storeOfObjectTypes
+        )
+
+        assertEquals(
+            expected = "LmL7R",
+            actual = result.first().name
+        )
+    }
+
+    @Test
+    fun `should map to view proper snippet max 30 characters`() = runTest {
+
+        val obj = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to "Ef6",
+                Relations.SPACE_ID to MockDataFactory.randomUuid(),
+                Relations.NAME to "LmL7R",
+                Relations.SNIPPET to "Anytype\nis\nnext-generation software that\n" +
+                        "works like\nyour brain does. It solves everyday\n" +
+                        "problems\nwhile respecting your privacy and\n" +
+                        "data rights.",
+                Relations.LAYOUT to ObjectType.Layout.NOTE.code.toDouble()
+            )
+
+        )
+
+        val result = listOf(obj).toViews(
+            urlBuilder = urlBuilder,
+            fieldParser = fieldParser,
+            storeOfObjectTypes = storeOfObjectTypes
+        )
+
+        assertEquals(
+            expected = "Anytype is next-generation sof",
+            actual = result.first().name
+        )
+    }
+
+    @Test
+    fun testLegacyLayoutTakesPrecedence() {
+        val details = mapOf(
+            Relations.ID to "root",
+            Relations.LEGACY_LAYOUT to 1.0, // should map to Layout.PROFILE
+            Relations.LAYOUT to 3.0         // would map to Set, but legacy should win
+        )
+        val result = ObjectWrapper.Basic(details)
+        val resultType = ObjectWrapper.Type(details)
+        assertEquals(Layout.PROFILE, result.layout)
+        assertEquals(Layout.PROFILE, resultType.layout)
+    }
+
+    @Test
+    fun testResolvedLayoutUsedWhenLegacyAbsent() {
+        val details = mapOf(
+            Relations.ID to "root",
+            Relations.LAYOUT to 3.0, // should map to Layout.Set
+        )
+        val result = ObjectWrapper.Basic(details)
+        val resultType = ObjectWrapper.Type(details)
+        assertEquals(Layout.SET, result.layout)
+        assertEquals(Layout.SET, resultType.layout)
+    }
+
+    @Test
+    fun testNonDoubleValueReturnsNull() {
+        val details = mapOf(
+            Relations.LEGACY_LAYOUT to "invalid"  // invalid value type
+        )
+        val result = ObjectWrapper.Basic(details)
+        val resultType = ObjectWrapper.Type(details)
+        assertNull(result.layout)
+        assertNull(resultType.layout)
+    }
+
+    // region DROID-4545 — Gallery/List single-value Status/Tag must resolve the option, not the host
+
+    @Test
+    fun `statuses resolves a single-Id value to the option and not the host object`() = runTest {
+        val statusKey = "status"
+        val optionId = "opt-in-progress"
+        val hostId = "host-1"
+
+        val option = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to optionId,
+                Relations.NAME to "In progress",
+                Relations.RELATION_OPTION_COLOR to "red"
+            )
+        )
+        val host = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to hostId,
+                Relations.NAME to "Ao Ashi",
+                statusKey to optionId // single Id, NOT a list
+            )
+        )
+
+        val store = mock<ObjectStore>()
+        store.stub {
+            onBlocking { get(optionId) } doReturn option
+            onBlocking { get(hostId) } doReturn host
+        }
+
+        val result = host.statuses(relation = statusKey, storeOfObjects = store)
+
+        assertEquals(1, result.size)
+        assertEquals(optionId, result.first().id)
+        assertEquals("In progress", result.first().status)
+        assertEquals("red", result.first().color)
+    }
+
+    @Test
+    fun `tags resolves a single-Id value to the option and not the host object`() = runTest {
+        val tagKey = "tag"
+        val optionId = "opt-drama"
+        val hostId = "host-2"
+
+        val option = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to optionId,
+                Relations.NAME to "Drama",
+                Relations.RELATION_OPTION_COLOR to "blue"
+            )
+        )
+        val host = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to hostId,
+                Relations.NAME to "Firefly Wedding",
+                tagKey to optionId // single Id, NOT a list
+            )
+        )
+
+        val store = mock<ObjectStore>()
+        store.stub {
+            onBlocking { get(optionId) } doReturn option
+            onBlocking { get(hostId) } doReturn host
+        }
+
+        val result = host.tags(relation = tagKey, storeOfObjects = store)
+
+        assertEquals(1, result.size)
+        assertEquals(optionId, result.first().id)
+        assertEquals("Drama", result.first().tag)
+        assertEquals("blue", result.first().color)
+    }
+
+    @Test
+    fun `files resolves a single-Id value to the file object and not the host object`() = runTest {
+        val fileKey = "attachment"
+        val fileId = "file-1"
+        val hostId = "host-3"
+
+        val file = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to fileId,
+                Relations.NAME to "cover",
+                Relations.FILE_MIME_TYPE to "image/png",
+                Relations.FILE_EXT to "png"
+            )
+        )
+        val host = ObjectWrapper.Basic(
+            mapOf(
+                Relations.ID to hostId,
+                Relations.NAME to "Behind the Supermarket",
+                fileKey to fileId // single Id, NOT a list
+            )
+        )
+
+        val store = mock<ObjectStore>()
+        store.stub {
+            onBlocking { get(fileId) } doReturn file
+            onBlocking { get(hostId) } doReturn host
+        }
+
+        val result = host.files(relation = fileKey, storeOfObjects = store)
+
+        assertEquals(1, result.size)
+        assertEquals(fileId, result.first().id)
+        assertEquals("cover", result.first().name)
+        assertEquals("image/png", result.first().mime)
+        assertEquals("png", result.first().ext)
+    }
+
+    // endregion
+
+    fun stubUrlBuilder(targetObjectId: String) {
+        urlBuilder.stub {
+            on { large(targetObjectId) } doReturn URL + targetObjectId
+        }
+    }
+}

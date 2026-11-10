@@ -1,0 +1,112 @@
+package com.chronoio.chrono.ui_settings.about
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.analytics.base.sendEvent
+import com.chronoio.chrono.domain.auth.interactor.GetAccount
+import com.chronoio.chrono.domain.auth.interactor.GetLibraryVersion
+import com.chronoio.chrono.domain.base.BaseUseCase
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.config.ConfigStorage
+import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class AboutAppViewModel(
+    private val getAccount: GetAccount,
+    private val getLibraryVersion: GetLibraryVersion,
+    private val analytics: Analytics,
+    private val configStorage: ConfigStorage
+) : ViewModel() {
+
+    val navigation = MutableSharedFlow<Navigation>()
+    fun onExternalLinkClicked(link: ExternalLink) {
+        proceedWithAnalytics(link)
+        viewModelScope.launch {
+            navigation.emit(Navigation.OpenExternalLink(link))
+        }
+    }
+
+    fun onContactUsClicked() {
+        viewModelScope.sendEvent(
+            analytics = analytics,
+            eventName = EventsDictionary.MENU_HELP_CONTACT_US
+        )
+    }
+
+    private fun proceedWithAnalytics(link: ExternalLink) {
+        viewModelScope.sendEvent(
+            analytics = analytics,
+            eventName = link.eventName
+        )
+    }
+
+    val libraryVersion = MutableStateFlow("")
+    val accountId = MutableStateFlow("")
+    val analyticsId = MutableStateFlow("")
+    val deviceId = MutableStateFlow("")
+    val ethereumAddress = MutableStateFlow("")
+
+    init {
+        viewModelScope.launch {
+            getAccount.stream(Unit).collect { result ->
+                result.fold(
+                    onSuccess = { accountId.value = it.id },
+                    onFailure = { Timber.e(it, "getAccount error") }
+                )
+            }
+        }
+
+        val config = configStorage.getOrNull()
+        if (config != null) {
+            viewModelScope.launch {
+                analyticsId.value = config.analytics
+                deviceId.value = config.device
+                ethereumAddress.value = config.ethereumAddress
+            }
+        }
+        viewModelScope.launch {
+            getLibraryVersion(BaseUseCase.None).process(
+                failure = {},
+                success = { version ->
+                    libraryVersion.value = version
+                }
+            )
+        }
+    }
+
+    sealed interface Navigation {
+        class OpenExternalLink(val link: ExternalLink) : Navigation
+    }
+
+    sealed class ExternalLink(val eventName: String) {
+        object WhatIsNew : ExternalLink(EventsDictionary.MENU_HELP_WHAT_IS_NEW)
+        object AnytypeCommunity : ExternalLink(EventsDictionary.MENU_HELP_COMMUNITY)
+        object HelpAndTutorials : ExternalLink(EventsDictionary.MENU_HELP_TUTORIAL)
+        object TermsOfUse : ExternalLink(EventsDictionary.MENU_HELP_TERMS)
+        object PrivacyPolicy : ExternalLink(EventsDictionary.MENU_HELP_PRIVACY)
+    }
+
+    class Factory @Inject constructor(
+        private val getAccount: GetAccount,
+        private val getLibraryVersion: GetLibraryVersion,
+        private val analytics: Analytics,
+        private val configStorage: ConfigStorage
+    ) : ViewModelProvider.Factory {
+
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return AboutAppViewModel(
+                getAccount = getAccount,
+                getLibraryVersion = getLibraryVersion,
+                analytics = analytics,
+                configStorage = configStorage
+            ) as T
+        }
+    }
+}

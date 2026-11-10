@@ -1,0 +1,740 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main_navigation"
+    app:startDestination="@id/splashScreen">
+
+    <navigation
+        android:id="@+id/objectNavigation"
+        app:startDestination="@id/pageScreen">
+        <fragment
+            android:id="@+id/pageScreen"
+            android:name="com.chronoio.chrono.ui.editor.EditorFragment"
+            android:label="Page screen"
+            tools:layout="@layout/fragment_editor">
+            <action
+                android:id="@+id/action_pageScreen_to_objectCoverScreen"
+                app:destination="@id/objectCoverScreen"
+                app:enterAnim="@anim/nav_default_enter_anim"
+                app:exitAnim="@anim/nav_default_exit_anim"
+                app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+                app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+            <action
+                android:id="@+id/action_pageScreen_to_objectIconPickerScreen"
+                app:destination="@id/objectIconPickerScreen"
+                app:enterAnim="@anim/nav_default_enter_anim"
+                app:exitAnim="@anim/nav_default_exit_anim"
+                app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+                app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+        </fragment>
+        <dialog
+            android:id="@+id/objectMenuScreen"
+            android:name="com.chronoio.chrono.ui.editor.sheets.ObjectMenuFragment"
+            android:label="Object-Menu-Screen" />
+        <dialog
+            android:id="@+id/objectRelationListScreen"
+            android:name="com.chronoio.chrono.ui.primitives.ObjectFieldsFragment"
+            android:label="Object-Relation-List-Screen" />
+        <dialog
+            android:id="@+id/objectIconPickerScreen"
+            android:name="com.chronoio.chrono.ui.editor.modals.ObjectIconPickerFragment"
+            android:label="Object-Icon-Picker-Screen" />
+        <dialog
+            android:id="@+id/objectCoverScreen"
+            android:name="com.chronoio.chrono.ui.editor.cover.SelectCoverObjectFragment"
+            android:label="Object-Cover-Screen" />
+        <dialog
+            android:id="@+id/objectCoverUnsplashScreen"
+            android:name="com.chronoio.chrono.ui.editor.cover.ObjectUnsplashFragment"
+            android:label="Object-Cover-Unsplash-Screen" />
+        <dialog
+            android:id="@+id/relationAddToObjectBlockFragment"
+            android:name="com.chronoio.chrono.ui.relations.RelationAddToObjectBlockFragment"
+            android:label="RelationAddToObjectBlockFragment">
+            <action
+                android:id="@+id/action_relationAddToObjectBlockFragment_to_relationCreateFromScratchForObjectBlockFragment"
+                app:destination="@id/relationCreateFromScratchForObjectBlockFragment"
+                app:enterAnim="@anim/nav_default_enter_anim"
+                app:exitAnim="@anim/nav_default_exit_anim"
+                app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+                app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+        </dialog>
+        <dialog
+            android:id="@+id/relationCreateFromScratchForObjectBlockFragment"
+            android:name="com.chronoio.chrono.ui.relations.RelationCreateFromScratchForObjectBlockFragment"
+            android:label="RelationCreateFromScratchForObjectBlockFragment" />
+
+        <dialog
+            android:id="@+id/objectValueScreen"
+            android:name="com.chronoio.chrono.ui.relations.value.ObjectValueFragment"
+            android:label="Relation-Object-Value-Screen" />
+
+        <dialog
+            android:id="@+id/versionHistoryScreen"
+            android:name="com.chronoio.chrono.ui.history.VersionHistoryFragment"
+            android:label="Object-Version_history-Screen"/>
+        <action
+            android:id="@+id/actionExitToSpaceWidgets"
+            app:popUpTo="@+id/homeScreen"
+            app:popUpToInclusive="false" />
+
+        <dialog android:id="@+id/objectTypeFieldsScreen"
+            android:name="com.chronoio.chrono.ui.primitives.ObjectTypeFieldsFragment"
+            android:label="ObjectTypeFieldsScreen" />
+
+        <dialog
+            android:id="@+id/publishToWebScreen"
+            android:name="com.chronoio.chrono.ui.publishtoweb.PublishToWebFragment"
+            android:label="PublishToWebScreen"/>
+
+    </navigation>
+
+    <include app:graph="@navigation/nav_editor_modal" />
+    <include app:graph="@navigation/nav_templates_modal" />
+    <include app:graph="@navigation/nav_quick_capture" />
+    <include app:graph="@navigation/nav_relations" />
+
+    <navigation
+        android:id="@+id/dataViewNavigation"
+        app:startDestination="@id/objectSetScreen">
+        <fragment
+            android:id="@+id/objectSetScreen"
+            android:name="com.chronoio.chrono.ui.sets.ObjectSetFragment"
+            android:label="ObjectSetScreen">
+            <action
+                android:id="@+id/action_objectSetScreen_to_objectSetIconPickerScreen"
+                app:destination="@id/objectSetIconPickerScreen"
+                app:enterAnim="@anim/nav_default_enter_anim"
+                app:exitAnim="@anim/nav_default_exit_anim"
+                app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+                app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+            <action
+                android:id="@+id/action_objectSetScreen_to_objectSetCoverScreen"
+                app:destination="@id/objectSetCoverScreen"
+                app:enterAnim="@anim/nav_default_enter_anim"
+                app:exitAnim="@anim/nav_default_exit_anim"
+                app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+                app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+        </fragment>
+
+        <dialog
+            android:id="@+id/objectRelationListScreen"
+            android:name="com.chronoio.chrono.ui.primitives.ObjectFieldsFragment"
+            android:label="Object-Relation-List-Screen" />
+        <dialog
+            android:id="@+id/objectSetMainMenuScreen"
+            android:name="com.chronoio.chrono.ui.sets.ObjectSetMenuFragment"
+            android:label="Object-SetMenu" />
+        <dialog
+            android:id="@+id/objectSetIconPickerScreen"
+            android:name="com.chronoio.chrono.ui.sets.ObjectSetIconPickerFragment"
+            android:label="Object-Set-Icon-Picker-Screen">
+            <argument
+                android:name="arg.show_remove_button"
+                android:defaultValue="true"
+                app:argType="boolean" />
+        </dialog>
+        <dialog
+            android:id="@+id/objectSetCoverScreen"
+            android:name="com.chronoio.chrono.ui.editor.cover.SelectCoverObjectSetFragment"
+            android:label="Object-Cover-Screen" />
+        <dialog
+            android:id="@+id/objectCoverUnsplashScreen"
+            android:name="com.chronoio.chrono.ui.editor.cover.ObjectSetUnsplashFragment"
+            android:label="Object-Cover-Unsplash-Screen" />
+        <dialog
+            android:id="@+id/setNameForNewRecordScreen"
+            android:name="com.chronoio.chrono.ui.sets.modals.SetObjectSetRecordNameFragment" />
+        <dialog
+            android:id="@+id/setUrlForNewBookmark"
+            android:name="com.chronoio.chrono.ui.sets.modals.SetObjectCreateBookmarkRecordFragment" />
+        <dialog
+            android:id="@+id/objectValueScreen"
+            android:name="com.chronoio.chrono.ui.relations.value.ObjectValueFragment"
+            android:label="Relation-Object-Value-Screen" />
+        <dialog
+            android:id="@+id/versionHistoryScreen"
+            android:name="com.chronoio.chrono.ui.history.VersionHistoryFragment"
+            android:label="Set-Version_history-Screen"/>
+        <action
+            android:id="@+id/actionExitToSpaceWidgets"
+            app:popUpTo="@+id/homeScreen"
+            app:popUpToInclusive="false" />
+        <dialog android:id="@+id/objectTypeFieldsScreen"
+            android:name="com.chronoio.chrono.ui.primitives.ObjectTypeFieldsFragment"
+            android:label="ObjectTypeFieldsScreen" />
+
+        <include app:graph="@navigation/nav_relations" />
+    </navigation>
+
+    <fragment
+        android:id="@+id/chatScreen"
+        android:name="com.chronoio.chrono.ui.chats.ChatFragment"
+        android:label="Chat" >
+        <action
+            android:id="@+id/actionOpenWidgetsFromChat"
+            app:destination="@id/homeScreen"
+            app:popUpTo="@id/chatScreen"
+            app:popUpToInclusive="false" />
+        <action
+            android:id="@+id/action_back_on_vault"
+            app:destination="@id/vaultScreen"
+            app:popUpTo="@+id/main_navigation"
+            app:popUpToInclusive="false" />
+        <action
+            android:id="@+id/action_open_space_settings_from_chat"
+            app:destination="@id/spaceSettingsScreen" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/discussionScreen"
+        android:name="com.chronoio.chrono.ui.discussions.DiscussionFragment"
+        android:label="Discussion" />
+
+    <dialog
+        android:id="@+id/selectChatReactionScreen"
+        android:name="com.chronoio.chrono.ui.chats.SelectChatReactionFragment"
+        android:label="Select chat reaction" />
+
+    <dialog
+        android:id="@+id/chatReactionScreen"
+        android:name="com.chronoio.chrono.ui.chats.ChatReactionFragment"
+        android:label="Chat reaction" />
+
+    <dialog
+        android:id="@+id/participantScreen"
+        android:name="com.chronoio.chrono.ui.profile.ParticipantFragment"
+        android:label="Profile screen" />
+
+    <fragment
+        android:id="@+id/homeScreen"
+        android:name="com.chronoio.chrono.ui.home.WidgetsScreenFragment"
+        android:label="Widgets screen"
+        tools:layout="@layout/fragment_widgets">
+        <action
+            android:id="@+id/action_open_space_settings"
+            app:destination="@id/spaceSettingsScreen" />
+        <action
+            android:id="@+id/action_open_vault"
+            app:destination="@id/vaultScreen"
+            app:popUpTo="@id/vaultScreen"
+            app:popUpToInclusive="true"
+            />
+        <action
+            android:id="@+id/action_open_all_content"
+            app:destination="@id/allContentScreen" />
+        <action
+            android:id="@+id/action_open_space_settings_from_widgets"
+            app:destination="@id/spaceSettingsScreen"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_open_manage_sections"
+            app:destination="@id/manageSectionsScreen" />
+        <action
+            android:id="@+id/action_back_on_vault"
+            app:destination="@id/vaultScreen"
+            app:popUpTo="@+id/main_navigation"
+            app:popUpToInclusive="false" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/homeScreenWidgets"
+        android:name="com.chronoio.chrono.ui.widgets.collection.CollectionFragment"
+        android:label="Home screen">
+        <action
+            android:id="@+id/actionOpenVault"
+            app:destination="@id/vaultScreen"
+            app:popUpTo="@id/vaultScreen"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/actionExitToSpaceWidgets"
+            app:popUpTo="@+id/homeScreen"
+            app:popUpToInclusive="false" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/dateObjectScreen"
+        android:name="com.chronoio.chrono.ui.date.DateObjectFragment"
+        android:label="Date Object">
+        <action
+            android:id="@+id/actionExitToSpaceWidgets"
+            app:popUpTo="@+id/vaultScreen"
+            app:popUpToInclusive="false" />
+    </fragment>
+
+    <navigation
+        android:id="@+id/objectTypeNavigation"
+        app:startDestination="@id/objectTypeScreen">
+        <fragment
+            android:id="@+id/objectTypeScreen"
+            android:name="com.chronoio.chrono.ui.primitives.ObjectTypeFragment"
+            android:label="Object Type Screen">
+            <action
+                android:id="@+id/openEmojiPicker"
+                app:destination="@id/typeSetIconPickerScreen" />
+        </fragment>
+
+        <dialog
+            android:id="@+id/typeSetIconPickerScreen"
+            android:name="com.chronoio.chrono.ui.types.picker.TypeIconPickFragment"
+            android:label="Object-Icon-Picker-Screen">
+            <argument
+                android:name="arg.type_show_remove"
+                android:defaultValue="true"
+                app:argType="boolean" />
+        </dialog>
+
+        <dialog
+            android:id="@+id/objectTypeFieldsScreen"
+            android:name="com.chronoio.chrono.ui.primitives.ObjectTypeFieldsFragment"
+            android:label="ObjectTypeFieldsScreen" />
+    </navigation>
+
+    <dialog
+        android:id="@+id/editTypePropertiesScreen"
+        android:name="com.chronoio.chrono.ui.primitives.EditTypePropertiesFragment"/>
+
+    <dialog
+        android:id="@+id/selectWidgetSourceScreen"
+        android:name="com.chronoio.chrono.ui.widgets.SelectWidgetSourceFragment" />
+
+    <dialog
+        android:id="@+id/alertImportExperienceUnsupported"
+        android:name="com.chronoio.chrono.ui.alert.AlertImportExperienceUnsupported" />
+
+    <dialog
+        android:id="@+id/remoteStorageFragment"
+        android:name="com.chronoio.chrono.ui.settings.RemoteFilesManageFragment"/>
+
+    <dialog
+        android:id="@+id/selectWidgetTypeScreen"
+        android:name="com.chronoio.chrono.ui.widgets.SelectWidgetTypeFragment"/>
+
+    <fragment
+        android:id="@+id/vaultScreen"
+        android:name="com.chronoio.chrono.ui.vault.VaultFragment">
+        <action
+            android:id="@+id/actionOpenSpaceFromVault"
+            app:destination="@id/homeScreen" />
+        <action
+            android:id="@+id/actionOpenChatFromVault"
+            app:destination="@id/chatScreen" />
+        <action
+            android:id="@+id/action_open_space_settings"
+            app:destination="@id/spaceSettingsScreen" />
+    </fragment>
+
+    <dialog
+        android:id="@+id/createSpaceScreen"
+        android:name="com.chronoio.chrono.ui.spaces.CreateSpaceFragment">
+        <argument
+            android:name="channelType"
+            android:defaultValue="PERSONAL"
+            app:argType="com.chronoio.chrono.core_models.multiplayer.ChannelCreationType" />
+        <argument
+            android:name="selectedMemberIdentities"
+            app:argType="string[]"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
+            android:name="writersLimit"
+            app:argType="integer"
+            android:defaultValue="0" />
+        <action
+            android:id="@+id/exitToVaultAction"
+            app:popUpTo="@+id/vaultScreen"
+            app:popUpToInclusive="false" />
+    </dialog>
+
+    <fragment
+        android:id="@+id/spaceSettingsScreen"
+        android:name="com.chronoio.chrono.ui.settings.space.SpaceSettingsFragment"
+        android:label="SpaceSettingsScreen" />
+
+    <fragment
+        android:id="@+id/manageSectionsScreen"
+        android:name="com.chronoio.chrono.ui.settings.space.ManageSectionsFragment"
+        android:label="ManageSectionsScreen" />
+
+    <dialog
+        android:id="@+id/spaceListScreen"
+        android:name="com.chronoio.chrono.ui.spaces.SpaceListFragment"
+        android:label="SpaceListScreen">
+        <action
+            android:id="@+id/actionCreateSpaceFromVault"
+            app:destination="@id/createSpaceScreen" />
+    </dialog>
+
+    <dialog
+        android:id="@+id/objectSetIconPickerScreenForSpace"
+        android:name="com.chronoio.chrono.ui.sets.ObjectSetIconPickerFragment"
+        android:label="Object-Set-Icon-Picker-Screen" />
+
+    <dialog
+        android:id="@+id/profileSettingsScreen"
+        android:name="com.chronoio.chrono.ui.settings.ProfileSettingsFragment">
+    </dialog>
+
+    <dialog
+        android:id="@+id/filesStorageScreen"
+        android:name="com.chronoio.chrono.ui.settings.FilesStorageFragment"
+        android:label="Files-Storage-Screen">
+    </dialog>
+
+    <dialog
+        android:id="@+id/spacesStorageScreen"
+        android:name="com.chronoio.chrono.ui.settings.SpacesStorageFragment"
+        android:label="Spaces-Storage-Screen">
+    </dialog>
+
+    <dialog
+        android:id="@+id/aboutAppScreen"
+        android:name="com.chronoio.chrono.ui.settings.AboutAppFragment" />
+
+    <dialog
+        android:id="@+id/logoutWarningScreen"
+        android:name="com.chronoio.chrono.ui.settings.LogoutWarningFragment"/>
+
+    <dialog
+        android:id="@+id/deleteAccountWarningScreen"
+        android:name="com.chronoio.chrono.ui.auth.account.DeleteAccountWarning"/>
+
+    <dialog
+        android:id="@+id/paymentsScreen"
+        android:name="com.chronoio.chrono.ui.payments.MembershipFragment" />
+
+    <dialog
+        android:id="@+id/galleryInstallationScreen"
+        android:name="com.chronoio.chrono.ui.gallery.GalleryInstallationFragment" />
+
+    <fragment
+        android:id="@+id/splashScreen"
+        android:name="com.chronoio.chrono.ui.splash.SplashFragment"
+        android:label="SplashFragment"
+        tools:layout="@layout/fragment_splash">
+        <action
+            android:id="@+id/actionOpenVaultFromSplash"
+            app:destination="@id/vaultScreen"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"
+            app:popUpTo="@+id/splashScreen"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_splashScreen_to_widgets"
+            app:destination="@id/homeScreen"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"
+            app:popUpTo="@+id/splashScreen"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_splashScreen_to_objectScreen"
+            app:destination="@id/objectNavigation"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"
+            app:popUpTo="@+id/main_navigation"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_splashScreen_to_objectSetScreen"
+            app:destination="@id/dataViewNavigation"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"
+            app:popUpTo="@+id/main_navigation"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_splashFragment_to_authStart"
+            app:destination="@id/onboarding_nav"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"
+            app:popUpTo="@+id/splashScreen"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <dialog
+        android:id="@+id/keychainDialog"
+        android:name="com.chronoio.chrono.ui.profile.KeychainPhraseDialog"
+        tools:layout="@layout/dialog_keychain_phrase" />
+
+    <dialog
+        android:id="@+id/dashboardKeychainDialog"
+        android:name="com.chronoio.chrono.ui.dashboard.DashboardMnemonicReminderDialog"
+        tools:layout="@layout/dialog_dashboard_keychain_phrase" />
+
+    <dialog
+        android:id="@+id/mnemonicReminderDialog"
+        android:name="com.chronoio.chrono.ui.dashboard.MnemonicReminderDialog"
+        tools:layout="@layout/alert_mnemonic_reminder" />
+
+    <navigation
+        android:id="@+id/onboarding_nav"
+        app:startDestination="@id/authStartScreen">
+
+        <fragment
+            android:id="@+id/authStartScreen"
+            android:name="com.chronoio.chrono.ui.onboarding.OnboardingFragment" />
+        <action
+            android:id="@+id/action_openHome"
+            app:destination="@id/homeScreen"
+            app:enterAnim="@anim/fade_in"
+            app:popUpTo="@id/authStartScreen"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/actionOpenVault"
+            app:destination="@id/vaultScreen"
+            app:enterAnim="@anim/fade_in"
+            app:popUpTo="@id/authStartScreen"
+            app:popUpToInclusive="true" />
+
+    </navigation>
+
+    <fragment
+        android:id="@+id/debugSettingsFragment"
+        android:name="com.chronoio.chrono.ui.settings.DebugSettingsFragment"
+        android:label="DebugSettingsFragment"
+        tools:layout="@layout/fragment_debug_settings" />
+
+    <dialog
+        android:id="@+id/debugScreen"
+        android:name="com.chronoio.chrono.ui.settings.DebugFragment"
+        android:label="DebugScreen" />
+
+    <dialog
+        android:id="@+id/experimentalFeaturesScreen"
+        android:name="com.chronoio.chrono.ui.settings.ExperimentalFeaturesFragment"
+        android:label="ExperimentalFeaturesScreen" />
+
+    <dialog
+        android:id="@+id/globalSearchScreen"
+        android:name="com.chronoio.chrono.ui.search.GlobalSearchFragment"
+        android:label="GlobalSearchScreen" />
+
+    <fragment
+        android:id="@+id/allContentScreen"
+        android:name="com.chronoio.chrono.ui.allcontent.AllContentFragment"
+        android:label="AllContentScreen">
+        <action
+            android:id="@+id/openTypeEditingScreen"
+            app:destination="@id/typeEditingFragment" />
+        <action
+            android:id="@+id/openTypeCreationScreen"
+            app:destination="@id/typeCreationFragment" />
+        <action
+            android:id="@+id/openRelationCreationScreen"
+            app:destination="@id/relationCreationFragment" />
+        <action
+            android:id="@+id/openRelationEditingScreen"
+            app:destination="@id/relationEditingFragment" />
+        <action
+            android:id="@+id/actionOpenVault"
+            app:destination="@id/vaultScreen"
+            app:popUpTo="@id/vaultScreen"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/actionOpenGlobalSearch"
+            app:destination="@id/globalSearchScreen" />
+        <action
+            android:id="@+id/actionOpenTypeCreationScreen"
+            app:destination="@id/typeCreationFragment" />
+    </fragment>
+
+    <dialog
+        android:id="@+id/typeCreationFragment"
+        android:name="com.chronoio.chrono.ui.types.create.CreateObjectTypeFragment"
+        android:label="TypeCreationFragment">
+        <action
+            android:id="@+id/openEmojiPicker"
+            app:destination="@id/typeSetIconPickerScreen" />
+        <argument
+            android:name="arg.type_name"
+            android:defaultValue=""
+            app:argType="string" />
+    </dialog>
+
+    <dialog
+        android:id="@+id/relationCreationFragment"
+        android:name="com.chronoio.chrono.ui.relations.RelationCreateFromLibraryFragment"
+        android:label="RelationCreationFragment"/>
+
+    <dialog
+        android:id="@+id/typeEditingFragment"
+        android:name="com.chronoio.chrono.ui.types.edit.TypeEditFragment"
+        android:label="TypeEditFragment">
+        <action
+            android:id="@+id/openEmojiPicker"
+            app:destination="@id/typeSetIconPickerScreen" />
+        <argument
+            android:name="arg.arg.type_edit_name"
+            android:defaultValue=""
+            app:argType="string" />
+        <argument
+            android:name="arg.arg.type_edit_id"
+            android:defaultValue=""
+            app:argType="string" />
+        <argument
+            android:name="arg.arg.type_edit_unicode"
+            android:defaultValue=""
+            app:argType="string" />
+        <argument
+            android:name="arg.arg.type_edit_readonly"
+            android:defaultValue="false"
+            app:argType="boolean" />
+    </dialog>
+
+    <dialog
+        android:id="@+id/relationEditingFragment"
+        android:name="com.chronoio.chrono.ui.relations.RelationEditFragment"
+        android:label="TypeEditFragment">
+        <action
+            android:id="@+id/openEmojiPicker"
+            app:destination="@id/typeSetIconPickerScreen" />
+        <argument
+            android:name="arg.arg.relation_edit_name"
+            android:defaultValue=""
+            app:argType="string" />
+        <argument
+            android:name="arg.arg.relation_edit_id"
+            android:defaultValue=""
+            app:argType="string" />
+        <argument
+            android:name="arg.arg.relation_edit_unicode"
+            android:defaultValue="0"
+            app:argType="integer" />
+        <argument
+            android:name="arg.arg.relation_edit_readonly"
+            android:defaultValue="false"
+            app:argType="boolean" />
+    </dialog>
+
+    <dialog
+        android:id="@+id/typeSetIconPickerScreen"
+        android:name="com.chronoio.chrono.ui.types.picker.TypeIconPickFragment"
+        android:label="Object-Icon-Picker-Screen">
+        <argument
+            android:name="arg.type_show_remove"
+            android:defaultValue="true"
+            app:argType="boolean" />
+    </dialog>
+
+    <fragment
+        android:id="@+id/fullScreenImageFragment"
+        android:name="com.chronoio.chrono.ui.editor.gallery.FullScreenPictureFragment"
+        android:label="FullScreenImageFragment" />
+    <dialog
+        android:id="@+id/appearanceScreen"
+        android:name="com.chronoio.chrono.ui.settings.AppearanceFragment"
+        android:label="fragment_wallpaper_set" />
+    <dialog
+        android:id="@+id/alertUpdateAppFragment"
+        android:name="com.chronoio.chrono.ui.alert.AlertUpdateAppFragment"
+        android:label="AlertUpdateAppFragment" />
+    <fragment
+        android:id="@+id/createObjectFragment"
+        android:name="com.chronoio.chrono.ui.editor.CreateObjectFragment"
+        android:label="CreateObjectFragment" />
+    <action
+        android:id="@+id/action_global_createObjectFragment"
+        app:destination="@id/createObjectFragment"
+        app:launchSingleTop="true" />
+
+    <dialog
+        android:id="@+id/relationFormatPickerScreen"
+        android:name="com.chronoio.chrono.ui.relations.RelationCreateFromScratchFormatPickerFragment"
+        android:label="Pick relation screen" />
+
+    <dialog
+        android:id="@+id/limitObjectTypeScreen"
+        android:name="com.chronoio.chrono.ui.relations.LimitObjectTypeFragment"
+        android:label="Limit object type screen" />
+
+    <navigation
+        android:id="@+id/deletedAccountNavigation"
+        app:startDestination="@id/deletedAccountScreen">
+
+        <fragment
+            android:id="@+id/deletedAccountScreen"
+            android:name="com.chronoio.chrono.ui.auth.account.DeletedAccountFragment"
+            android:label="DeletedAccountScreen" />
+
+    </navigation>
+
+    <action
+        android:id="@+id/actionLogout"
+        app:destination="@+id/main_navigation"
+        app:popUpTo="@+id/main_navigation"
+        app:popUpToInclusive="true" />
+
+    <fragment
+        android:id="@+id/templateSelectScreen"
+        android:name="com.chronoio.chrono.ui.templates.TemplateSelectFragment"
+        android:label="TemplateSelectScreen"
+        tools:layout="@layout/fragment_template_select" />
+
+    <dialog
+        android:id="@+id/shareSpaceScreen"
+        android:name="com.chronoio.chrono.ui.multiplayer.ShareSpaceFragment"/>
+
+    <dialog
+        android:id="@+id/spaceJoinRequestScreen"
+        android:name="com.chronoio.chrono.ui.multiplayer.SpaceJoinRequestFragment"/>
+
+    <dialog
+        android:id="@+id/requestJoinSpaceScreen"
+        android:name="com.chronoio.chrono.ui.multiplayer.RequestJoinSpaceFragment">
+        <action
+            android:id="@+id/actionOpenSpaceFromVault"
+            app:destination="@id/homeScreen" />
+    </dialog>
+
+    <dialog
+        android:id="@+id/howToShareSpaceScreen"
+        android:name="com.chronoio.chrono.ui.multiplayer.HowToShareSpaceFragment"/>
+
+    <dialog
+        android:id="@+id/shareSpaceInviteQrCodeScreen"
+        android:name="com.chronoio.chrono.ui.multiplayer.ShareQrCodeSpaceInviteFragment"/>
+
+    <dialog
+        android:id="@+id/requestNotificationPermissionDialog"
+        android:name="com.chronoio.chrono.ui.notifications.NotificationPermissionPromptDialog"/>
+
+    <dialog
+        android:id="@+id/createObjectTypeScreen"
+        android:name="com.chronoio.chrono.ui.primitives.CreateTypeFragment"/>
+
+    <action
+        android:id="@+id/actionOpenSpaceFromVault"
+        app:destination="@id/homeScreen" />
+
+    <fragment
+        android:id="@+id/searchV2Screen"
+        android:name="com.chronoio.chrono.ui.search.v2.SearchV2Fragment"
+        android:label="SearchV2Screen" />
+
+    <fragment android:id="@+id/spacePropertiesScreen"
+        android:name="com.chronoio.chrono.ui.primitives.SpacePropertiesFragment"
+        android:label="SpacePropertiesScreen" />
+
+    <fragment
+        android:id="@+id/spaceTypesScreen"
+        android:name="com.chronoio.chrono.ui.primitives.SpaceTypesFragment"
+        android:label="SpaceMembersScreen" />
+
+    <dialog
+        android:id="@+id/mySitesScreen"
+        android:name="com.chronoio.chrono.ui.publishtoweb.MySitesFragment"
+        android:label="MySitesScreen"/>
+
+</navigation>

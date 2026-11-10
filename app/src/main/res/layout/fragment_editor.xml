@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/defaultCanvasColor"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    tools:context="com.chronoio.chrono.ui.editor.EditorFragment">
+
+    <View
+        android:id="@+id/placeholder"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clickable="true"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+
+    <include
+        android:id="@+id/loading_container"
+        layout="@layout/object_loading_state"/>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/sheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:clipToPadding="false"
+            android:paddingBottom="@dimen/editor_recycler_bottom_padding"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:itemCount="1"
+            android:visibility="gone"
+            tools:listitem="@layout/item_block_title" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.ObjectTopToolbar
+            android:id="@+id/topToolbar"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:clickable="true"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.0"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <androidx.compose.ui.platform.ComposeView
+            android:id="@+id/backHistoryMenu"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/topToolbar" />
+
+        <LinearLayout
+            android:id="@+id/templateBanner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:background="@color/defaultCanvasColor"
+            android:visibility="gone"
+            android:paddingStart="@dimen/dp_32"
+            android:paddingEnd="@dimen/dp_32"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/topToolbar"
+            tools:visibility="visible">
+
+            <TextView
+                android:id="@+id/templateBannerPrefix"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/template_title_prefix"
+                style="@style/TextView.UXStyle.Body.Callout.Regular"
+                android:textColor="@color/text_secondary" />
+
+            <com.chronoio.chrono.core_ui.widgets.ObjectIconWidget
+                android:id="@+id/templateBannerIcon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="4dp" />
+
+            <TextView
+                android:id="@+id/templateBannerTypeName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                style="@style/TextView.UXStyle.Body.Callout.Regular"
+                android:textColor="@color/text_secondary"
+                tools:text="Task" />
+
+        </LinearLayout>
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.MultiSelectTopToolbarWidget
+            android:id="@+id/multiSelectTopToolbar"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:background="@color/defaultCanvasColor"
+            android:translationY="-120dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.BlockToolbarWidget
+            android:id="@+id/toolbar"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/default_toolbar_height"
+            android:background="@color/defaultCanvasColor"
+            android:visibility="invisible"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.MarkupColorToolbarWidget
+            android:id="@+id/markupColorToolbar"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:background="@color/defaultCanvasColor"
+            android:translationY="104dp"
+            app:layout_constraintBottom_toTopOf="@id/markupToolbar"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.MarkupToolbarWidget
+            android:id="@+id/markupToolbar"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/default_toolbar_height"
+            android:background="@color/defaultCanvasColor"
+            android:visibility="invisible"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.MentionToolbar
+            android:id="@+id/mentionSuggesterToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/background_primary"
+            android:visibility="invisible"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            tools:visibility="visible" />
+
+        <com.chronoio.chrono.core_ui.widgets.ScrollAndMoveHintWidget
+            android:id="@+id/scrollAndMoveHint"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@color/defaultCanvasColor"
+            android:translationY="-120dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <com.chronoio.chrono.core_ui.widgets.ScrollAndMoveActionWidget
+            android:id="@+id/scrollAndMoveBottomAction"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:background="@color/background_primary"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <com.chronoio.chrono.core_ui.features.editor.slash.SlashWidget
+            android:id="@+id/slashWidget"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            tools:visibility="visible" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.SearchToolbarWidget
+            android:id="@+id/searchToolbar"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/default_toolbar_height"
+            android:background="@color/defaultCanvasColor"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+
+    <View
+        android:id="@+id/bottomSystemBarProtection"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_bottom_system_bar_protection"
+        android:importantForAccessibility="no" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/fabSearchOnPage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="8dp"
+        android:visibility="invisible"
+        tools:visibility="visible" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/fabCreate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:visibility="invisible"
+        tools:visibility="visible" />
+
+    <FrameLayout
+        android:id="@+id/targeter"
+        android:layout_width="match_parent"
+        android:layout_height="8dp"
+        android:layout_gravity="center_vertical"
+        android:alpha="0.5"
+        android:visibility="invisible">
+
+        <ImageView
+            android:layout_width="8dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:rotation="180"
+            android:src="@drawable/ic_scroll_and_move_target_anchor" />
+
+        <ImageView
+            android:layout_width="8dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:src="@drawable/ic_scroll_and_move_target_anchor" />
+
+    </FrameLayout>
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:id="@+id/panels"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <com.chronoio.chrono.core_ui.widgets.BlockActionWidget
+            android:id="@+id/blockActionToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="false"
+            app:cardBackgroundColor="@color/background_secondary"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior" />
+
+        <com.chronoio.chrono.core_ui.widgets.StyleToolbarMainWidget
+            android:id="@+id/styleToolbarMain"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="true"
+            app:cardBackgroundColor="@color/background_secondary"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.StyleToolbarExtraWidget
+            android:id="@+id/styleToolbarOther"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="true"
+            app:cardBackgroundColor="@color/background_secondary"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.style.StyleColorToolbarWidget
+            android:id="@+id/styleToolbarColors"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="true"
+            app:cardBackgroundColor="@color/background_secondary"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.style.StyleBackgroundToolbarWidget
+            android:id="@+id/styleToolbarBackground"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="true"
+            app:cardBackgroundColor="@color/background_secondary"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.UndoRedoToolbarWidget
+            android:id="@+id/undoRedoToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="true"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior" />
+
+        <com.chronoio.chrono.core_ui.widgets.toolbar.table.SimpleTableSettingWidget
+            android:id="@+id/simpleTableWidget"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="invisible"
+            app:behavior_hideable="true"
+            app:behavior_skipCollapsed="true"
+            app:cardBackgroundColor="@color/background_secondary"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            app:cardUseCompatPadding="true"
+            app:layout_behavior="@string/bottom_sheet_behavior"/>
+
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+
+    <View
+        android:id="@+id/dndTargetLine"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@color/orange"
+        android:visibility="invisible" />
+
+    <include
+        android:id="@+id/objectNotExist"
+        layout="@layout/view_object_not_exist"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <com.chronoio.chrono.core_ui.views.ButtonPrimaryLarge
+        android:id="@+id/btnSelectTemplate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/dp_20"
+        android:layout_marginStart="@dimen/dp_20"
+        android:layout_marginEnd="@dimen/dp_20"
+        android:text="Select Template"
+        android:visibility="gone"
+        android:layout_gravity="bottom|center_horizontal"/>
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/chooseTypeWidget"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/syncStatusWidget"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/editorDatePicker"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/discussionButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="8dp"
+        android:visibility="invisible"
+        tools:visibility="visible" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/attachToChatPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:layout_gravity="bottom|center_horizontal" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/selectLanguageSheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/createObjectSheetHost"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</FrameLayout>

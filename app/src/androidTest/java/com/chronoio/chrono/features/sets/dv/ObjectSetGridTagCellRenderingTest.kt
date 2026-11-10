@@ -1,0 +1,174 @@
+package com.chronoio.chrono.features.sets.dv
+
+import androidx.core.os.bundleOf
+import androidx.test.espresso.assertion.ViewAssertions
+import androidx.test.espresso.matcher.ViewMatchers
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.DVViewerRelation
+import com.chronoio.chrono.core_models.Relation
+import com.chronoio.chrono.emojifier.data.DefaultDocumentEmojiIconProvider
+import com.chronoio.chrono.presentation.MockBlockContentFactory.StubTextContent
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.presentation.relations.ObjectSetConfig
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.chronoio.chrono.test_utils.utils.checkHasText
+import com.chronoio.chrono.test_utils.utils.checkIsRecyclerSize
+import com.chronoio.chrono.test_utils.utils.onItemView
+import com.chronoio.chrono.test_utils.utils.rVMatcher
+import com.chronoio.chrono.ui.sets.ObjectSetFragment
+import com.bartoszlipinski.disableanimationsrule.DisableAnimationsRule
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+@LargeTest
+class ObjectSetGridTagCellRenderingTest : TestObjectSetSetup() {
+
+    @get:Rule
+    val animationsRule = DisableAnimationsRule()
+
+    override val title: Block = Block(
+        id = MockDataFactory.randomUuid(),
+        content = StubTextContent(
+            style = Block.Content.Text.Style.TITLE,
+            text = "Data View UI Testing",
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    @Before
+    override fun setup() {
+        super.setup()
+    }
+
+    @Test
+    fun shouldRenderOneSameTagAndTwoDifferentTagsOfTwoRecords() {
+
+        // SETUP
+
+        val relationName = "FilmTags"
+        val tag1Name = "Silent film"
+        val tag1Id = MockDataFactory.randomUuid()
+        val tag2Name = "Sound film"
+        val tag2Id = MockDataFactory.randomUuid()
+        val tag3Name = "Director"
+        val tag3Id = MockDataFactory.randomUuid()
+
+        val relationId = MockDataFactory.randomUuid()
+        val record1Id = MockDataFactory.randomUuid()
+        val record2Id = MockDataFactory.randomUuid()
+
+        val record1: Map<String, Any?> = mapOf(
+            ObjectSetConfig.ID_KEY to record1Id,
+            ObjectSetConfig.NAME_KEY to "The Face on the Bar Room Floor",
+            ObjectSetConfig.EMOJI_KEY to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+            relationId to listOf(tag1Id, tag3Id)
+        )
+
+        val record2: Map<String, Any?> = mapOf(
+            ObjectSetConfig.ID_KEY to record2Id,
+            ObjectSetConfig.NAME_KEY to "The Great Dictator",
+            ObjectSetConfig.EMOJI_KEY to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+            relationId to listOf(tag2Id, tag3Id)
+        )
+
+        val relation = Relation(
+            key = relationId,
+            name = relationName,
+            format = Relation.Format.TAG,
+            selections = listOf(
+                Relation.Option(id = tag1Id, text = tag1Name, color = "blue"),
+                Relation.Option(id = tag2Id, text = tag2Name, color = "red"),
+                Relation.Option(id = tag3Id, text = tag3Name, color = "black"),
+                Relation.Option(
+                    id = MockDataFactory.randomUuid(),
+                    text = MockDataFactory.randomString(),
+                    color = "black"
+                )
+            ),
+            source = Relation.Source.values().random()
+        )
+
+        val viewer = Block.Content.DataView.Viewer(
+            id = MockDataFactory.randomUuid(),
+            name = MockDataFactory.randomString(),
+            filters = emptyList(),
+            sorts = emptyList(),
+            viewerRelations = listOf(
+                DVViewerRelation(
+                    key = relation.key,
+                    isVisible = true
+                )
+            ),
+            type = Block.Content.DataView.Viewer.Type.GRID
+        )
+
+        val dataview = Block(
+            id = MockDataFactory.randomUuid(),
+            children = emptyList(),
+            fields = Block.Fields.empty(),
+            content = Block.Content.DataView(
+                viewers = listOf(viewer),
+                
+            )
+        )
+
+        val details = ObjectViewDetails.EMPTY
+
+        val root = Block(
+            id = ctx,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, dataview.id)
+        )
+
+        val set = listOf(root, header, title, dataview)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubOpenObjectSetWithRecord(
+            set = set,
+            details = details
+        )
+
+        // TESTING
+
+        launchFragment(bundleOf(ObjectSetFragment.CONTEXT_ID_KEY to ctx))
+
+        with(R.id.rvRows.rVMatcher()) {
+            checkIsRecyclerSize(2)
+            // Grid tag cells now render like the List view: the first tag chip + a "+N" badge.
+            // Each object here has 2 tags, so the overflow badge reads "+1".
+            onItemView(0, R.id.tvTitle).checkHasText("The Face on the Bar Room Floor")
+            onItemView(0, R.id.tvName).check(
+                ViewAssertions.matches(
+                    ViewMatchers.withText("Silent film")
+                )
+            )
+            onItemView(0, R.id.tvCount).check(
+                ViewAssertions.matches(
+                    ViewMatchers.withText("+1")
+                )
+            )
+            onItemView(1, R.id.tvTitle).checkHasText("The Great Dictator")
+            onItemView(1, R.id.tvName).check(
+                ViewAssertions.matches(
+                    ViewMatchers.withText("Sound film")
+                )
+            )
+            onItemView(1, R.id.tvCount).check(
+                ViewAssertions.matches(
+                    ViewMatchers.withText("+1")
+                )
+            )
+        }
+    }
+
+}

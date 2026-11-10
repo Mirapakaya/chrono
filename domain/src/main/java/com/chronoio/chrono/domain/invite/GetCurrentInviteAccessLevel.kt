@@ -1,0 +1,113 @@
+package com.chronoio.chrono.domain.invite
+
+import com.chronoio.chrono.core_models.multiplayer.InviteType
+import com.chronoio.chrono.core_models.multiplayer.SpaceInviteError
+import com.chronoio.chrono.core_models.multiplayer.SpaceInviteLink
+import com.chronoio.chrono.core_models.multiplayer.SpaceInviteLinkAccessLevel
+import com.chronoio.chrono.core_models.multiplayer.SpaceMemberPermissions
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.base.ResultInteractor
+import com.chronoio.chrono.domain.block.repo.BlockRepository
+import com.chronoio.chrono.domain.debugging.Logger
+import javax.inject.Inject
+
+/**
+ * Use case to determine the current invite access level from middleware
+ * Uses spaceInviteGetCurrent to get detailed invite information including type and permissions
+ */
+class GetCurrentInviteAccessLevel @Inject constructor(
+    dispatchers: AppCoroutineDispatchers,
+    private val repo: BlockRepository,
+    private val logger: Logger,
+    private val store: SpaceInviteLinkStore
+) : ResultInteractor<GetCurrentInviteAccessLevel.Params, SpaceInviteLinkAccessLevel>(dispatchers.io) {
+
+    override suspend fun doWork(params: Params): SpaceInviteLinkAccessLevel {
+        return try {
+            val result = repo.getSpaceInviteLink(params.space)
+            val accessLevel = mapInviteToAccessLevel(result)
+
+            // Update the store so all subscribed screens get the latest state
+            store.update(params.space, accessLevel)
+
+            accessLevel
+        } catch (e: Exception) {
+            /**
+             * Exception handling:
+             * - SpaceInviteError.InviteNotActive is considered an expected exception, indicating there is no active invite link.
+             * - All other exceptions are considered unexpected and are logged for debugging purposes.
+             */
+            if (e !is SpaceInviteError.InviteNotActive) {
+                // Log non-expected errors
+                logger.logException(e, "GetCurrentInviteAccessLevel error")
+            }
+            
+            // Return disabled state for any exception
+            updateStoreAndReturnDisabled(params.space)
+        }
+    }
+
+    /**
+     * Helper method to update store with disabled state and return it
+     */
+    private fun updateStoreAndReturnDisabled(spaceId: SpaceId): SpaceInviteLinkAccessLevel {
+        val disabledState = SpaceInviteLinkAccessLevel.LinkDisabled()
+        store.update(spaceId, disabledState)
+        return disabledState
+    }
+
+    /**
+     * Maps middleware invite type and permissions to SpaceInviteLinkAccessLevel
+     */
+    private fun mapInviteToAccessLevel(
+        spaceInviteLink: SpaceInviteLink
+    ): SpaceInviteLinkAccessLevel {
+        // A member's device gets a successful response with empty cid + key when the
+        // invite is held by the owner. There is no link to render — only the fact that
+        // an invite exists and the owner is the one to ask.
+        if (!spaceInviteLink.isLinkVisible) {
+            return if (spaceInviteLink.heldByOwner) {
+                SpaceInviteLinkAccessLevel.HeldByOwner
+            } else {
+                SpaceInviteLinkAccessLevel.LinkDisabled()
+            }
+        }
+        // The invite is shared within the space when it is not held by the owner.
+        val isShared = !spaceInviteLink.heldByOwner
+        return when (spaceInviteLink.inviteType) {
+            InviteType.MEMBER -> {
+                // MEMBER type = request access (manual approval)
+                SpaceInviteLinkAccessLevel.RequestAccess(spaceInviteLink.scheme, isShared)
+            }
+
+            InviteType.GUEST -> {
+                // GUEST type is not supported in our current UI
+                SpaceInviteLinkAccessLevel.LinkDisabled()
+            }
+
+            InviteType.WITHOUT_APPROVE -> {
+                // WITHOUT_APPROVE type - check permissions to determine editor vs viewer
+                when (spaceInviteLink.permissions) {
+                    SpaceMemberPermissions.OWNER,
+                    SpaceMemberPermissions.WRITER,
+                    SpaceMemberPermissions.ADMIN -> SpaceInviteLinkAccessLevel.EditorAccess(
+                        spaceInviteLink.scheme,
+                        isShared
+                    )
+
+                    SpaceMemberPermissions.READER -> SpaceInviteLinkAccessLevel.ViewerAccess(
+                        spaceInviteLink.scheme,
+                        isShared
+                    )
+
+                    SpaceMemberPermissions.NO_PERMISSIONS -> SpaceInviteLinkAccessLevel.LinkDisabled()
+                }
+            }
+        }
+    }
+
+    data class Params(
+        val space: SpaceId
+    )
+}

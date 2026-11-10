@@ -1,0 +1,905 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Position
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.domain.block.interactor.Move
+import com.chronoio.chrono.domain.block.interactor.MoveOld
+import com.chronoio.chrono.presentation.MockBlockFactory.link
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.presentation.editor.editor.actions.ActionItemType
+import com.chronoio.chrono.presentation.editor.editor.control.ControlPanelState
+import com.chronoio.chrono.presentation.editor.editor.listener.ListenerType
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.render.parseThemeBackgroundColor
+import com.chronoio.chrono.presentation.util.CoroutinesTestRule
+import com.chronoio.chrono.presentation.util.TXT
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.jraska.livedata.test
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runBlockingTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+import org.mockito.kotlin.verifyNoInteractions
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+
+
+class EditorScrollAndMoveTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = CoroutinesTestRule()
+
+    val title = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Text(
+            text = MockDataFactory.randomString(),
+            style = Block.Content.Text.Style.TITLE,
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @Test
+    fun `should enter scroll-and-move mode after selecting one-block`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val c = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id, c.id)
+        )
+
+        val document = listOf(page, a, b, c)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onEnterMultiSelectModeClicked()
+            onTextInputClicked(a.id)
+            onEnterScrollAndMoveClicked()
+        }
+
+        vm.controlPanelViewState.test().apply {
+            assertValue(
+                ControlPanelState(
+                    multiSelect = ControlPanelState.Toolbar.MultiSelect(
+                        isVisible = true,
+                        isScrollAndMoveEnabled = true,
+                        count = 1,
+                        isSelectAllVisible = true
+                    )
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should exit scroll-and-move mode on cancel-button-pressed event`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val c = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id, c.id)
+        )
+
+        val document = listOf(page, a, b, c)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onEnterMultiSelectModeClicked()
+            onTextInputClicked(a.id)
+            onEnterScrollAndMoveClicked()
+            onExitScrollAndMoveClicked()
+        }
+
+        vm.controlPanelViewState.test().apply {
+            assertValue(
+                ControlPanelState(
+                    multiSelect = ControlPanelState.Toolbar.MultiSelect(
+                        isVisible = true,
+                        isScrollAndMoveEnabled = false,
+                        isSelectAllVisible = true,
+                        count = 1
+                    )
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should exit to editor mode on system back button event`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onEnterMultiSelectModeClicked()
+            onTextInputClicked(a.id)
+            onEnterScrollAndMoveClicked()
+            onSystemBackPressed(false)
+        }
+
+        coroutineTestRule.advanceTime(EditorViewModel.DELAY_REFRESH_DOCUMENT_ON_EXIT_MULTI_SELECT_MODE + 100)
+
+        vm.controlPanelViewState.test().apply {
+            assertValue(
+                ControlPanelState(
+                    navigationToolbar = ControlPanelState.Toolbar.Navigation(
+                        isVisible = true
+                    ),
+                    multiSelect = ControlPanelState.Toolbar.MultiSelect(isVisible = false, isSelectAllVisible = false)
+                )
+            )
+        }
+
+        coroutineTestRule.advanceTime(EditorViewModel.DELAY_REFRESH_DOCUMENT_ON_EXIT_MULTI_SELECT_MODE + 100)
+
+        vm.state.test().assertValue(
+            ViewState.Success(
+                listOf(
+                    BlockView.Title.Basic(
+                        id = title.id,
+                        text = title.content<Block.Content.Text>().text,
+                        icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                    ),
+                    BlockView.Text.Paragraph(
+                        id = a.id,
+                        text = a.content<TXT>().text,
+                        mode = BlockView.Mode.EDIT,
+                        isSelected = false,
+                        decorations = listOf(
+                            BlockView.Decoration(
+                                background = a.parseThemeBackgroundColor()
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should exit scroll-and-move mode and enter in edit-mode on apply-scroll-and-move event`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val c = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id, c.id)
+        )
+
+        val document = listOf(page, a, b, c)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onClickListener(
+                clicked = ListenerType.LongClick(
+                    target = a.id,
+                    dimensions = BlockDimensions(0, 0, 0, 0, 0, 0)
+                )
+            )
+            onMultiSelectAction(ActionItemType.SAM)
+            onApplyScrollAndMove(
+                target = b.id,
+                ratio = 0.9f
+            )
+        }
+
+        vm.controlPanelViewState.test().apply {
+            assertValue(
+                ControlPanelState(
+                    navigationToolbar = ControlPanelState.Toolbar.Navigation(
+                        isVisible = true
+                    ),
+                    multiSelect = ControlPanelState.Toolbar.MultiSelect(isVisible = false, isSelectAllVisible = true)
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should move the selected block below target`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id)
+        )
+
+        val document = listOf(page, a, b)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onEnterMultiSelectModeClicked()
+            onTextInputClicked(a.id)
+            onEnterScrollAndMoveClicked()
+            onApplyScrollAndMove(
+                target = b.id,
+                ratio = 0.9f
+            )
+        }
+
+        verifyBlocking(move, times(1)) {
+            async(
+                params = Move.Params(
+                    context = root,
+                    targetContext = root,
+                    targetId = b.id,
+                    blockIds = listOf(a.id),
+                    position = Position.BOTTOM
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should move the selected block above target`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id)
+        )
+
+        val document = listOf(page, a, b)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onEnterMultiSelectModeClicked()
+            onTextInputClicked(a.id)
+            onEnterScrollAndMoveClicked()
+            onApplyScrollAndMove(
+                target = b.id,
+                ratio = 0.1f
+            )
+        }
+
+        verifyBlocking(move, times(1)) {
+            async(
+                params = Move.Params(
+                    context = root,
+                    targetContext = root,
+                    targetId = b.id,
+                    blockIds = listOf(a.id),
+                    position = Position.TOP
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should move the selected block inside page`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = link()
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id)
+        )
+
+        val document = listOf(page, a, b)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onEnterMultiSelectModeClicked()
+            onTextInputClicked(a.id)
+            onEnterScrollAndMoveClicked()
+            onApplyScrollAndMove(
+                target = b.id,
+                ratio = 0.5f
+            )
+        }
+
+        verifyBlocking(move, times(1)) {
+            async(
+                params = Move.Params(
+                    context = root,
+                    targetContext = b.content<Block.Content.Link>().target,
+                    targetId = "",
+                    blockIds = listOf(a.id),
+                    position = Position.INNER
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should not move parent paragraph into child paragraph`() {
+
+        // SETUP
+
+        val child = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val parent = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = listOf(child.id),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, parent.id)
+        )
+
+        val document = listOf(page, header, title, parent, child)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        // TESTING
+
+        val toasts = mutableListOf<String>()
+
+        runBlockingTest {
+
+            val subscription = launch { vm.toasts.collect { toasts.add(it) } }
+
+            vm.apply {
+                onBlockFocusChanged(
+                    id = parent.id,
+                    hasFocus = true
+                )
+                onEnterMultiSelectModeClicked()
+                onTextInputClicked(parent.id)
+                onEnterScrollAndMoveClicked()
+                onApplyScrollAndMove(
+                    target = child.id,
+                    ratio = 0.5f
+                )
+            }
+
+            verifyNoInteractions(move)
+
+            assertEquals(
+                expected = 1,
+                actual = toasts.size
+            )
+
+            assertEquals(
+                expected = EditorViewModel.CANNOT_BE_DROPPED_INSIDE_ITSELF_ERROR,
+                actual = toasts.first()
+            )
+
+            clearPendingCoroutines()
+
+            subscription.cancel()
+        }
+    }
+
+    @Test
+    fun `should not move because one of selected blocks is parent for target`() {
+
+        // SETUP
+
+        val child = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val parent = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = listOf(child.id),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(parent.id, block.id)
+        )
+
+        val document = listOf(page, parent, child, block)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val toasts = mutableListOf<String>()
+
+        // TESTING
+
+        runBlockingTest {
+
+            val subscription = launch { vm.toasts.collect { toasts.add(it) } }
+
+            vm.apply {
+                onBlockFocusChanged(
+                    id = parent.id,
+                    hasFocus = true
+                )
+                onEnterMultiSelectModeClicked()
+                onTextInputClicked(parent.id)
+                onTextInputClicked(block.id)
+                onEnterScrollAndMoveClicked()
+                onApplyScrollAndMove(
+                    target = child.id,
+                    ratio = 0.5f
+                )
+            }
+
+            verifyNoInteractions(move)
+
+            assertEquals(
+                expected = 1,
+                actual = toasts.size
+            )
+
+            assertEquals(
+                expected = EditorViewModel.CANNOT_BE_DROPPED_INSIDE_ITSELF_ERROR,
+                actual = toasts.first()
+            )
+
+            clearPendingCoroutines()
+
+            subscription.cancel()
+        }
+    }
+
+    @Test
+    fun `should move blocks following document order, not selection order`() {
+
+        // SETUP
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val c = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val d = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val e = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val f = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id, b.id, c.id, d.id, e.id, f.id)
+        )
+
+        val document = listOf(page, a, b, c, d, e, f)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubMove()
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+
+            onEnterMultiSelectModeClicked()
+
+            onTextInputClicked(d.id)
+            onTextInputClicked(c.id)
+            onTextInputClicked(f.id)
+            onTextInputClicked(b.id)
+
+            onEnterScrollAndMoveClicked()
+
+            onApplyScrollAndMove(
+                target = a.id,
+                ratio = 0.1f
+            )
+        }
+
+        // Verifying order of selected blocks used in request
+
+        verifyBlocking(move, times(1)) {
+            async(
+                params = Move.Params(
+                    context = root,
+                    targetContext = root,
+                    targetId = a.id,
+                    blockIds = listOf(b.id, c.id, d.id, f.id),
+                    position = Position.TOP
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    private fun clearPendingCoroutines() {
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+}

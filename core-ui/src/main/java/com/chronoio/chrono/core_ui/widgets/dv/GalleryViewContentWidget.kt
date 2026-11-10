@@ -1,0 +1,353 @@
+package com.chronoio.chrono.core_ui.widgets.dv
+
+import android.content.Context
+import android.text.TextUtils
+import android.util.AttributeSet
+import android.view.ContextThemeWrapper
+import android.view.Gravity
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.content.res.use
+import androidx.core.view.updateLayoutParams
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.extensions.dark
+import com.chronoio.chrono.core_ui.extensions.getPrettyName
+import com.chronoio.chrono.core_ui.extensions.light
+import com.chronoio.chrono.core_ui.widgets.ListViewRelationTagValueView
+import com.chronoio.chrono.core_ui.widgets.ObjectIconWidget
+import com.chronoio.chrono.core_utils.ext.setDrawableColor
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.presentation.relations.model.DefaultObjectRelationValueView
+import com.chronoio.chrono.presentation.sets.model.ObjectView
+
+class GalleryViewContentWidget @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : LinearLayout(context, attrs) {
+
+    private var firstItemMargin = 0
+    private var intervalItemMargin = 0
+    private var marginAfterIcon = 0
+    private var marginAfterText = 0
+    private var defaultBottomMargin = resources.getDimension(R.dimen.dp_4).toInt()
+    private var defaultTextSize = 0f
+
+    private val style = R.style.GalleryViewContentWidgetStyle
+    private val themeWrapper = ContextThemeWrapper(context, style)
+
+    init {
+        orientation = VERTICAL
+        if (attrs != null) {
+            context.obtainStyledAttributes(attrs, R.styleable.GalleryViewContentWidget, 0, 0)
+                .use { props ->
+                    firstItemMargin =
+                        props.getDimension(R.styleable.GalleryViewContentWidget_firstItemMargin, 0f)
+                            .toInt()
+                    intervalItemMargin = props.getDimension(
+                        R.styleable.GalleryViewContentWidget_itemIntervalMargin,
+                        0f
+                    ).toInt()
+                    marginAfterIcon =
+                        props.getDimension(R.styleable.GalleryViewContentWidget_marginAfterIcon, 0f)
+                            .toInt()
+                    marginAfterText =
+                        props.getDimension(R.styleable.GalleryViewContentWidget_marginAfterText, 0f)
+                            .toInt()
+                    defaultTextSize = props.getDimensionPixelSize(
+                        R.styleable.GalleryViewContentWidget_defaultTextSize,
+                        0
+                    ).toFloat()
+                }
+        }
+    }
+
+    fun setItems(relations: List<DefaultObjectRelationValueView>) {
+        removeAllViews()
+        var placeholdersBottom = 0
+        val size = relations.size
+        relations.forEachIndexed { index, relation ->
+            when (relation) {
+                is DefaultObjectRelationValueView.Empty -> {
+                    placeholdersBottom += 1
+                }
+                is DefaultObjectRelationValueView.Text -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        text = relation.text
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Url -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        text = relation.url
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Email -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        text = relation.email
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Number -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        text = relation.number
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Phone -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        text = relation.phone
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Date -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        text = relation.relativeDate?.getPrettyName(
+                            isTimeIncluded = relation.isTimeIncluded,
+                            resources = resources
+                        )
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Status -> {
+                    val status = relation.status.firstOrNull()
+                    val color = ThemeColor.values().find { v -> v.code == status?.color }
+                    val defaultTextColor = resources.getColor(R.color.text_primary, null)
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        text = status?.status
+                        isSingleLine = true
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        if (color != null) {
+                            setTextColor(resources.dark(color, defaultTextColor))
+                        } else {
+                            setTextColor(defaultTextColor)
+                        }
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        marginEnd = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Checkbox -> {
+                    val image = ImageView(context)
+                    if (relation.isChecked) {
+                        image.setImageResource(R.drawable.ic_checkbox_gallery_view_checked)
+                    } else {
+                        image.setImageResource(R.drawable.ic_checkbox_gallery_view_unchecked)
+                    }
+                    addView(image)
+                    image.updateLayoutParams<LayoutParams> {
+                        width = resources.getDimension(R.dimen.dp_16).toInt()
+                        height = resources.getDimension(R.dimen.dp_16).toInt()
+                        marginStart = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Object -> {
+                    val group = LinearLayout(context).apply {
+                        id = generateViewId()
+                        orientation = HORIZONTAL
+                    }
+                    // Only show the first object
+                    val firstObj = relation.objects.firstOrNull()
+                    if (firstObj is ObjectView.Default) {
+                        val noIcon = firstObj.icon is ObjectIcon.None
+                        if (!noIcon) {
+                            val iconWidget = ObjectIconWidget(context).apply {
+                                setIcon(firstObj.icon)
+                            }
+                            group.addView(iconWidget)
+                            iconWidget.updateLayoutParams<LayoutParams> {
+                                width = resources.getDimension(R.dimen.dp_16).toInt()
+                                height = resources.getDimension(R.dimen.dp_16).toInt()
+                                gravity = Gravity.CENTER_VERTICAL
+                                marginStart = firstItemMargin
+                                marginEnd = marginAfterIcon
+                            }
+                        }
+
+                        val hasMoreObjects = relation.objects.size > 1
+                        val view = TextView(themeWrapper).apply {
+                            id = generateViewId()
+                            isSingleLine = true
+                            maxLines = 1
+                            ellipsize = TextUtils.TruncateAt.END
+                            setHint(R.string.untitled)
+                            text = firstObj.name
+                        }
+                        group.addView(view)
+                        view.updateLayoutParams<LayoutParams> {
+                            if (hasMoreObjects) {
+                                // Use weight to ensure text shrinks for badge
+                                width = 0
+                                weight = 1f
+                            }
+                            marginStart = if (noIcon) firstItemMargin else 0
+                        }
+                    }
+
+                    // Add "+n" badge if there are more objects
+                    val remainingCount = relation.objects.size - 1
+                    if (remainingCount > 0) {
+                        val countBadgePadding = resources.getDimension(R.dimen.dp_4).toInt()
+                        val countBadgeMargin = resources.getDimension(R.dimen.dp_4).toInt()
+                        val countView = TextView(themeWrapper).apply {
+                            id = generateViewId()
+                            isSingleLine = true
+                            maxLines = 1
+                            text = "+$remainingCount"
+                            setBackgroundResource(R.drawable.bg_dv_list_item_object_count)
+                            setTextColor(resources.getColor(R.color.text_secondary, null))
+                            setPadding(countBadgePadding, 0, countBadgePadding, 0)
+                        }
+                        group.addView(countView)
+                        countView.updateLayoutParams<LayoutParams> {
+                            gravity = Gravity.CENTER_VERTICAL
+                            marginStart = countBadgeMargin
+                        }
+                    }
+
+                    addView(group)
+                    group.updateLayoutParams<LayoutParams> {
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                        marginEnd = firstItemMargin
+                    }
+                }
+                is DefaultObjectRelationValueView.Tag -> {
+                    // Match the List view: render only the first tag chip + a "+N" overflow badge
+                    // (see ListViewRelationTagValueView), instead of laying out every tag.
+                    val firstTag = relation.tags.firstOrNull()
+                    if (firstTag != null) {
+                        val view = ListViewRelationTagValueView(themeWrapper).apply {
+                            id = generateViewId()
+                            setup(
+                                name = firstTag.tag,
+                                tagColor = firstTag.color,
+                                size = relation.tags.size
+                            )
+                        }
+                        addView(view)
+                        view.updateLayoutParams<LayoutParams> {
+                            marginStart = firstItemMargin
+                            marginEnd = firstItemMargin
+                            bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                        }
+                    }
+                }
+                is DefaultObjectRelationValueView.File -> {
+                    val group = LinearLayout(context).apply {
+                        id = generateViewId()
+                        orientation = HORIZONTAL
+                    }
+                    relation.files.forEachIndexed { idx, file ->
+                        val filename = file.name + "." + file.ext
+                        val view = TextView(themeWrapper).apply {
+                            id = generateViewId()
+                            isSingleLine = true
+                            maxLines = 1
+                            ellipsize = TextUtils.TruncateAt.END
+                            text = filename
+                            setHint(R.string.untitled)
+                        }
+                        group.addView(view)
+                        view.updateLayoutParams<LayoutParams> {
+                            marginStart = if (idx == 0) {
+                                firstItemMargin
+                            } else {
+                                intervalItemMargin
+                            }
+                        }
+                    }
+                    addView(group)
+                    group.updateLayoutParams<LayoutParams> {
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                        marginEnd = firstItemMargin
+                    }
+                }
+                else -> {
+                    val view = TextView(themeWrapper).apply {
+                        id = generateViewId()
+                        text = relation::class.java.simpleName
+                    }
+                    addView(view)
+                    view.updateLayoutParams<LayoutParams> {
+                        marginStart = firstItemMargin
+                        bottomMargin = if (index == size - 1) 0 else defaultBottomMargin
+                    }
+                }
+            }
+        }
+        if (placeholdersBottom > 0) {
+            val margin = resources.getDimension(R.dimen.dp_20)
+                .toInt() * placeholdersBottom
+            this.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                bottomMargin = margin
+            }
+        } else {
+            this.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                bottomMargin = 0
+            }
+        }
+    }
+}

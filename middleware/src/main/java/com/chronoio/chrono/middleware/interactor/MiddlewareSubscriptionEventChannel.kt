@@ -1,0 +1,222 @@
+package com.chronoio.chrono.middleware.interactor
+
+import anytype.Event
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.SubscriptionEvent
+import com.chronoio.chrono.data.auth.event.SubscriptionEventRemoteChannel
+import com.chronoio.chrono.middleware.EventProxy
+import com.chronoio.chrono.middleware.EventGroup
+import com.chronoio.chrono.middleware.mappers.parse
+import com.chronoio.chrono.middleware.mappers.toCoreModelsGroup
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.launch
+
+class MiddlewareSubscriptionEventChannel(
+    private val events: EventProxy,
+    scope: CoroutineScope
+) : SubscriptionEventRemoteChannel {
+
+    /**
+     * Each event payload is parsed once, subscriber-agnostically, into [ParsedSubEvent]s and
+     * shared across every [subscribe] caller. This replaces the previous design where each
+     * subscriber independently collected [EventProxy.flow] and re-parsed every event.
+     */
+    private val parsed: Flow<List<ParsedSubEvent>> = events
+        .flow(EventGroup.SUBSCRIPTION)
+        .map { payload -> payload.messages.mapNotNull { parseMessage(it) } }
+        .filter { it.isNotEmpty() }
+        .shareIn(
+            scope = scope,
+            // Eagerly: the upstream collector stays registered on the event fan-out for the whole
+            // app lifetime, so no event is lost while sharing (re)starts between subscribers —
+            // part of closing the subscribe-request/collector-attach race. With replay = 0,
+            // payloads parsed while nobody is subscribed are simply discarded.
+            started = SharingStarted.Eagerly,
+            replay = 0
+        )
+
+    override fun subscribe(subscriptions: List<Id>): Flow<List<SubscriptionEvent>> {
+        // Precomputed once per subscribe() call (not per event/message).
+        val exact = HashSet(subscriptions)
+        val dep = HashSet<Id>(subscriptions.size * 2)
+        for (s in subscriptions) {
+            dep.add(s)
+            dep.add(s + DEPENDENT_SUBSCRIPTION_POST_FIX)
+        }
+        return parsed
+            .map { parsedEvents ->
+                parsedEvents.mapNotNull { parsedEvent ->
+                    val matches = if (parsedEvent.dep) {
+                        parsedEvent.keys.any { it in dep }
+                    } else {
+                        parsedEvent.keys.any { it in exact }
+                    }
+                    if (matches) parsedEvent.event else null
+                }
+            }
+            .filter { it.isNotEmpty() }
+            // Per-subscriber unlimited buffer: a slow collector queues payloads into its own
+            // inbox instead of suspending the shared emitter — one stalled subscriber can no
+            // longer delay event delivery to every other subscription collector.
+            .bufferWithSynchronousSubscription()
+    }
+
+    /**
+     * Equivalent to `buffer(Channel.UNLIMITED)` with one crucial difference: the upstream
+     * subscription is established synchronously when the returned flow is collected with
+     * [CoroutineStart.UNDISPATCHED]. The stock `buffer` operator launches its producer
+     * coroutine with [CoroutineStart.ATOMIC] (a normal dispatch), so an UNDISPATCHED
+     * collector would return before the shared-flow slot is registered — reopening the
+     * subscribe-request/collector-attach race the containers rely on this channel to close
+     * (they attach a collector BEFORE firing the subscribe RPC, expecting no event gap).
+     */
+    private fun <T> Flow<T>.bufferWithSynchronousSubscription(): Flow<T> = flow {
+        val upstream = this@bufferWithSynchronousSubscription
+        val inbox = Channel<T>(capacity = Channel.UNLIMITED)
+        coroutineScope {
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    upstream.collect { inbox.send(it) }
+                } finally {
+                    inbox.close()
+                }
+            }
+            for (item in inbox) {
+                emit(item)
+            }
+        }
+    }
+
+    private fun parseMessage(message: Event.Message): ParsedSubEvent? = when {
+        message.objectDetailsAmend != null -> {
+            val event = message.objectDetailsAmend
+            checkNotNull(event)
+            ParsedSubEvent(
+                event = SubscriptionEvent.Amend(
+                    target = event.id,
+                    diff = event.details.associate { it.key to it.value_ },
+                    subscriptions = event.subIds
+                ),
+                keys = event.subIds,
+                dep = true
+            )
+        }
+        message.objectDetailsUnset != null -> {
+            val event = message.objectDetailsUnset
+            checkNotNull(event)
+            ParsedSubEvent(
+                event = SubscriptionEvent.Unset(
+                    target = event.id,
+                    keys = event.keys,
+                    subscriptions = event.subIds
+                ),
+                keys = event.subIds,
+                dep = true
+            )
+        }
+        message.objectDetailsSet != null -> {
+            val event = message.objectDetailsSet
+            checkNotNull(event)
+            val data = event.details
+            if (data != null) {
+                ParsedSubEvent(
+                    event = SubscriptionEvent.Set(
+                        target = event.id,
+                        data = data,
+                        subscriptions = event.subIds
+                    ),
+                    keys = event.subIds,
+                    dep = true
+                )
+            } else {
+                null
+            }
+        }
+        message.subscriptionRemove != null -> {
+            val event = message.subscriptionRemove
+            checkNotNull(event)
+            ParsedSubEvent(
+                event = SubscriptionEvent.Remove(
+                    target = event.id,
+                    subscription = event.subId
+                ),
+                keys = listOf(event.subId),
+                dep = true
+            )
+        }
+        message.subscriptionAdd != null -> {
+            val event = message.subscriptionAdd
+            checkNotNull(event)
+            ParsedSubEvent(
+                event = SubscriptionEvent.Add(
+                    target = event.id,
+                    afterId = event.afterId,
+                    subscription = event.subId
+                ),
+                keys = listOf(event.subId),
+                dep = true
+            )
+        }
+        message.subscriptionPosition != null -> {
+            val event = message.subscriptionPosition
+            checkNotNull(event)
+            ParsedSubEvent(
+                event = SubscriptionEvent.Position(
+                    target = event.id,
+                    afterId = event.afterId
+                ),
+                keys = listOf(event.subId),
+                dep = false
+            )
+        }
+        message.subscriptionCounters != null -> {
+            val event = message.subscriptionCounters
+            checkNotNull(event)
+            ParsedSubEvent(
+                event = SubscriptionEvent.Counter(
+                    counter = event.parse()
+                ),
+                keys = listOf(event.subId),
+                dep = false
+            )
+        }
+        message.subscriptionGroups != null -> {
+            val event = message.subscriptionGroups
+            checkNotNull(event)
+            val group = event.group
+            if (group != null) {
+                ParsedSubEvent(
+                    event = SubscriptionEvent.Group(
+                        group = group.toCoreModelsGroup(),
+                        remove = event.remove,
+                        subscription = event.subId
+                    ),
+                    keys = listOf(event.subId),
+                    dep = false
+                )
+            } else {
+                null
+            }
+        }
+        else -> null
+    }
+
+    private data class ParsedSubEvent(
+        val event: SubscriptionEvent,
+        val keys: List<Id>,
+        val dep: Boolean
+    )
+
+    companion object {
+        const val DEPENDENT_SUBSCRIPTION_POST_FIX = "/dep"
+    }
+}

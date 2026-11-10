@@ -1,0 +1,274 @@
+package com.chronoio.chrono.core_ui.features.editor.slash
+
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationCheckboxBinding
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationDateBinding
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationDefaultBinding
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationFileBinding
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationObjectBinding
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationStatusBinding
+import com.chronoio.chrono.core_ui.databinding.ItemRelationListRelationTagBinding
+import com.chronoio.chrono.core_ui.databinding.ItemSlashWidgetSubheaderBinding
+import com.chronoio.chrono.core_ui.databinding.ItemSlashWidgetSubheaderLeftBinding
+import com.chronoio.chrono.core_ui.features.editor.holders.relations.ListRelationViewHolder
+import com.chronoio.chrono.core_ui.features.editor.slash.holders.RelationNewHolder
+import com.chronoio.chrono.core_ui.features.editor.slash.holders.RelationsSubheaderMenuHolder
+import com.chronoio.chrono.core_ui.features.editor.slash.holders.RelationsSubheaderOnlyMenuHolder
+import com.chronoio.chrono.core_utils.diff.DefaultDiffUtil
+import com.chronoio.chrono.core_utils.ext.dimen
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashItem
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashPropertyView
+import com.chronoio.chrono.presentation.relations.ObjectRelationView
+import timber.log.Timber
+
+class SlashPropertiesAdapter(
+    private var items: List<SlashPropertyView>,
+    private val clicks: (SlashItem) -> Unit
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val defaultPadding = parent.context.dimen(R.dimen.dp_20).toInt()
+        val inflater = LayoutInflater.from(parent.context)
+        return when (viewType) {
+            R.layout.item_relation_list_relation_default -> {
+                val binding =
+                    ItemRelationListRelationDefaultBinding.inflate(inflater, parent, false)
+                ListRelationViewHolder.Default(binding).apply {
+                    updateHeight(binding.root)
+                    updatePadding(binding.root, defaultPadding)
+                    binding.divider.visible()
+                    itemView.setOnClickListener {
+                        onItemClicked(bindingAdapterPosition)
+                    }
+                }
+            }
+            R.layout.item_relation_list_relation_date -> {
+                val binding =
+                    ItemRelationListRelationDateBinding.inflate(inflater, parent, false)
+                ListRelationViewHolder.Date(binding).apply {
+                    updateHeight(binding.root)
+                    updatePadding(binding.root, defaultPadding)
+                    binding.divider.visible()
+                    itemView.setOnClickListener {
+                        onItemClicked(bindingAdapterPosition)
+                    }
+                }
+            }
+            R.layout.item_relation_list_relation_checkbox -> {
+                val binding =
+                    ItemRelationListRelationCheckboxBinding.inflate(inflater, parent, false)
+                ListRelationViewHolder.Checkbox(binding)
+                    .apply {
+                        updateHeight(binding.root)
+                        updatePadding(binding.root, defaultPadding)
+                        binding.divider.visible()
+                        itemView.setOnClickListener {
+                            onItemClicked(bindingAdapterPosition)
+                        }
+                    }
+            }
+            R.layout.item_relation_list_relation_object -> {
+                val binding = ItemRelationListRelationObjectBinding.inflate(
+                    inflater, parent, false
+                )
+                ListRelationViewHolder.Object(binding).apply {
+                    updateHeight(binding.root)
+                    updatePadding(binding.root, defaultPadding)
+                    binding.divider.visible()
+                    itemView.setOnClickListener {
+                        onItemClicked(bindingAdapterPosition)
+                    }
+                }
+            }
+            R.layout.item_relation_list_relation_status -> {
+                val binding = ItemRelationListRelationStatusBinding.inflate(inflater, parent, false)
+                ListRelationViewHolder.Status(binding).apply {
+                    updateHeight(binding.root)
+                    updatePadding(binding.root, defaultPadding)
+                    binding.divider.visible()
+                    itemView.setOnClickListener {
+                        onItemClicked(bindingAdapterPosition)
+                    }
+                }
+            }
+            R.layout.item_relation_list_relation_tag -> {
+                val binding = ItemRelationListRelationTagBinding.inflate(
+                    inflater, parent, false
+                )
+                ListRelationViewHolder.Tags(binding).apply {
+                    updateHeight(binding.root)
+                    updatePadding(binding.root, defaultPadding)
+                    binding.divider.visible()
+                    itemView.setOnClickListener {
+                        onItemClicked(bindingAdapterPosition)
+                    }
+                }
+            }
+            R.layout.item_relation_list_relation_file -> {
+                val binding = ItemRelationListRelationFileBinding.inflate(
+                    inflater, parent, false
+                )
+                ListRelationViewHolder.File(binding).apply {
+                    updateHeight(binding.root)
+                    updatePadding(binding.root, defaultPadding)
+                    binding.divider.visible()
+                    itemView.setOnClickListener {
+                        onItemClicked(bindingAdapterPosition)
+                    }
+                }
+            }
+            R.layout.item_slash_widget_subheader -> {
+                RelationsSubheaderMenuHolder(
+                    binding = ItemSlashWidgetSubheaderBinding.inflate(
+                        inflater, parent, false
+                    )
+                ).apply {
+                    itemView.findViewById<View>(R.id.flBack).setOnClickListener {
+                        clicks(SlashItem.Back)
+                    }
+                }
+            }
+            R.layout.item_relation_add_new -> {
+                RelationNewHolder(
+                    view = inflater.inflate(viewType, parent, false)
+                ).apply {
+                    updatePadding(this.itemView, defaultPadding)
+                    itemView.setOnClickListener {
+                        clicks(SlashItem.PropertyNew)
+                    }
+                }
+            }
+            R.layout.item_slash_widget_subheader_left -> {
+                RelationsSubheaderOnlyMenuHolder(
+                    binding = ItemSlashWidgetSubheaderLeftBinding.inflate(
+                        inflater, parent, false
+                    )
+                )
+            }
+            else -> throw IllegalStateException("Unexpected view type: $viewType")
+        }
+    }
+
+    private fun onItemClicked(position: Int) {
+        if (position != RecyclerView.NO_POSITION) {
+            val view = items[position]
+            check(view is SlashPropertyView.Item)
+            clicks(SlashItem.Property(view))
+        }
+    }
+
+    private fun updateHeight(root: View) {
+        root.updateLayoutParams {
+            height =
+                root.resources.getDimensionPixelSize(R.dimen.object_slash_menu_relations_item_height)
+        }
+    }
+
+    private fun updatePadding(root: View, padding: Int) {
+        root.updatePadding(
+            left = padding,
+            right = padding
+        )
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        val item = items[position]
+        when (holder) {
+            is ListRelationViewHolder.Status -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.Status)
+                holder.bind(view)
+            }
+            is ListRelationViewHolder.Checkbox -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.Checkbox)
+                holder.bind(view)
+            }
+            is ListRelationViewHolder.Tags -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.Tags)
+                holder.bind(view)
+            }
+            is ListRelationViewHolder.Object -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.Object)
+                holder.bind(view)
+            }
+            is ListRelationViewHolder.File -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.File)
+                holder.bind(view)
+            }
+            is ListRelationViewHolder.Default -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.Default)
+                holder.bind(view)
+            }
+            is ListRelationViewHolder.Date -> {
+                check(item is SlashPropertyView.Item)
+                val view = item.view
+                check(view is ObjectRelationView.Date)
+                holder.bind(view)
+            }
+            is RelationsSubheaderMenuHolder -> {
+                check(item is SlashPropertyView.Section)
+                holder.bind(item)
+            }
+            is RelationsSubheaderOnlyMenuHolder -> {
+                holder.bind()
+            }
+            else -> {
+                Timber.d("Skipping binding for: $holder")
+            }
+        }
+    }
+
+    override fun getItemCount(): Int = items.size
+
+    override fun getItemViewType(position: Int): Int = when (val item = items[position]) {
+        is SlashPropertyView.Item -> {
+            when (item.view) {
+                is ObjectRelationView.Checkbox -> R.layout.item_relation_list_relation_checkbox
+                is ObjectRelationView.Object -> R.layout.item_relation_list_relation_object
+                is ObjectRelationView.Status -> R.layout.item_relation_list_relation_status
+                is ObjectRelationView.Tags -> R.layout.item_relation_list_relation_tag
+                is ObjectRelationView.File -> R.layout.item_relation_list_relation_file
+                is ObjectRelationView.Date -> R.layout.item_relation_list_relation_date
+                else -> R.layout.item_relation_list_relation_default
+            }
+        }
+        is SlashPropertyView.Section.SubheaderWithBack -> R.layout.item_slash_widget_subheader
+        SlashPropertyView.Section.Subheader -> R.layout.item_slash_widget_subheader_left
+        SlashPropertyView.PropertyNew -> R.layout.item_relation_add_new
+    }
+
+    fun update(update: List<SlashPropertyView>) {
+        Timber.d("Updating adapter: $update")
+        val differ = DefaultDiffUtil(old = items, new = update)
+        val result = DiffUtil.calculateDiff(differ, false)
+        items = update
+        result.dispatchUpdatesTo(this)
+    }
+
+    fun clear() {
+        val size = items.size
+        if (size > 0) {
+            items = listOf()
+            notifyItemRangeRemoved(0, size)
+        }
+    }
+}

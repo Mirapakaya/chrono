@@ -1,0 +1,37 @@
+plugins {
+    id "com.android.library"
+    id "kotlin-android"
+}
+
+android {
+
+    buildTypes {
+        debug {
+            buildConfigField ANYTYPE_CLIPBOARD_URI_TYPE, ANYTYPE_CLIPBOARD_URI, ANYTYPE_CLIPBOARD_URI_VALUE
+            buildConfigField ANYTYPE_CLIPBOARD_LABEL_TYPE, ANYTYPE_CLIPBOARD_LABEL, ANYTYPE_CLIPBOARD_LABEL_VALUE
+        }
+        release {
+            buildConfigField ANYTYPE_CLIPBOARD_URI_TYPE, ANYTYPE_CLIPBOARD_URI, ANYTYPE_CLIPBOARD_URI_VALUE
+            buildConfigField ANYTYPE_CLIPBOARD_LABEL_TYPE, ANYTYPE_CLIPBOARD_LABEL, ANYTYPE_CLIPBOARD_LABEL_VALUE
+        }
+    }
+
+    namespace 'com.chronoio.chrono.clipboard'
+}
+
+dependencies {
+
+    implementation project(':data')
+    implementation project(':core-models')
+
+    implementation libs.kotlin
+    implementation libs.coroutinesAndroid
+    implementation libs.timber
+
+    testImplementation project(":test:utils")
+    testImplementation libs.junit
+    testImplementation libs.kotlinTest
+    testImplementation libs.androidXTestCore
+    testImplementation libs.robolectric
+    testImplementation libs.coroutineTesting
+}

@@ -1,0 +1,150 @@
+package com.chronoio.chrono.ui.onboarding
+
+import android.app.Activity
+import android.content.Intent
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.material.MaterialTheme
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.NetworkModeConstants
+import com.chronoio.chrono.core_utils.const.FileConstants
+import com.chronoio.chrono.core_utils.ext.Mimetype
+import com.chronoio.chrono.core_utils.ext.shareFileFromPath
+import com.chronoio.chrono.core_utils.ext.subscribe
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.presentation.settings.PreferencesViewModel
+import com.chronoio.chrono.ui.editor.PickerDelegate
+import com.chronoio.chrono.ui.onboarding.screens.signin.NetworkSetupScreen
+import com.chronoio.chrono.ui.settings.typography
+import javax.inject.Inject
+import timber.log.Timber
+
+class OnboardingNetworkSetupDialog : BaseBottomSheetComposeFragment() {
+
+    private lateinit var pickerDelegate: PickerDelegate
+
+    @Inject
+    lateinit var factory: PreferencesViewModel.Factory
+    private val vm by viewModels<PreferencesViewModel> { factory }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setup()
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View =  ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            MaterialTheme(
+                typography = typography
+            ) {
+                NetworkSetupScreen(
+                    config = vm.networkModeState.collectAsStateWithLifecycle().value,
+                    onSelfHostNetworkClicked = {
+                        vm.proceedWithNetworkMode(NetworkModeConstants.NETWORK_MODE_CUSTOM)
+                    },
+                    onSetSelfHostConfigConfigClicked = {
+                        proceedWithFilePicker()
+                    },
+                    onLocalOnlyClicked = {
+                        vm.proceedWithNetworkMode(NetworkModeConstants.NETWORK_MODE_LOCAL)
+                    },
+                    onAnytypeNetworkClicked = {
+                        vm.proceedWithNetworkMode(NetworkModeConstants.NETWORK_MODE_DEFAULT)
+                    },
+                    onExportLogsClick = vm::onExportLogsClick,
+                    onUseYamuxToggled = vm::onChangeQuickLibraryState
+                )
+            }
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        subscribe(vm.commands) { command ->
+            when (command) {
+                is PreferencesViewModel.Command.ShareDebugLogs -> {
+                    try {
+                        shareFileFromPath(
+                            path = command.path,
+                            uriFileProvider = command.uriFileProvider
+                        )
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error while share debug logs").also {
+                            toast("Error while share debug logs. Please try again later.")
+                        }
+                    }
+                }
+                is PreferencesViewModel.Command.ShowToast -> {
+                    toast(command.message)
+                }
+            }
+        }
+    }
+
+    private fun setup() {
+        pickerDelegate = PickerDelegate.Impl(this) { actions ->
+            when (actions) {
+                is PickerDelegate.Actions.OnProceedWithFilePath -> {
+                    vm.onProceedWithFilePath(actions.filePath)
+                }
+                PickerDelegate.Actions.OnCancelCopyFileToCacheDir -> {
+                    vm.onCancelCopyFileToCacheDir()
+                }
+                is PickerDelegate.Actions.OnPickedDocImageFromDevice -> {
+                    vm.onPickedDocImageFromDevice(actions.ctx, actions.filePath)
+                }
+                is PickerDelegate.Actions.OnStartCopyFileToCacheDir -> {
+                    vm.onStartCopyFileToCacheDir(actions.uri)
+                }
+            }
+        }
+        pickerDelegate.initPicker("")
+    }
+
+    private fun proceedWithFilePicker() {
+        pickerDelegate.openFilePicker(
+            Mimetype.MIME_YAML,
+            FileConstants.REQUEST_NETWORK_MODE_CODE
+        )
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.onStart()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode == Activity.RESULT_OK) {
+            pickerDelegate.resolveActivityResult(requestCode, resultCode, data)
+        } else {
+            super.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        pickerDelegate.clearPickit()
+    }
+
+    override fun injectDependencies() {
+        componentManager().appPreferencesComponent.get().inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().appPreferencesComponent.release()
+    }
+}

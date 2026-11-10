@@ -1,0 +1,43 @@
+package com.chronoio.chrono.presentation.editor.render
+
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.restrictions.ObjectRestriction
+import com.chronoio.chrono.domain.editor.Editor
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.Editor.Mode as EditorMode
+
+/**
+ * Converts business tree-like data structures to flattened view data structures.
+ */
+interface BlockViewRenderer {
+
+    /**
+     * Ext. function for recursively converting map to flattened view data structure.
+     * @param context object id
+     * @param root root block, from which rendering starts
+     * @param focus id of the current focus
+     * @param anchor id of the current anchor (current rendering node)
+     * @param indent current indent at this rendering node.
+     */
+    suspend fun Map<Id, List<Block>>.render(
+        context: Id,
+        mode: EditorMode = EditorMode.Edit,
+        root: Block,
+        focus: Editor.Focus,
+        anchor: Id,
+        indent: Int,
+        details: ObjectViewDetails,
+        restrictions: List<ObjectRestriction>,
+        selection: Set<Id>,
+        count: Int = 0,
+        parentScheme: NestedDecorationData = emptyList(),
+        participantCanEdit: Boolean = false,
+        onRenderFlag: (RenderFlag) -> Unit = {},
+    ): List<BlockView>
+
+    sealed class RenderFlag {
+        object ContainsTableOfContents: RenderFlag()
+    }
+}

@@ -1,0 +1,949 @@
+package com.chronoio.chrono.ui.chats
+
+import android.Manifest
+import android.content.Intent
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.core.os.bundleOf
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
+import androidx.fragment.compose.content
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.misc.OpenObjectNavigation
+import com.chronoio.chrono.core_models.primitives.Space
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeKey
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.core_ui.extensions.contentWidthDp
+import com.chronoio.chrono.feature_create_object.presentation.CreateObjectAction
+import com.chronoio.chrono.feature_create_object.presentation.CreateObjectViewModelFactory
+import com.chronoio.chrono.feature_create_object.presentation.NewCreateObjectViewModel
+import com.chronoio.chrono.feature_create_object.ui.CreateObjectPopup
+import com.chronoio.chrono.core_ui.features.multiplayer.ShareSpaceQrCodeScreen
+import com.chronoio.chrono.core_ui.foundation.AlertConfig
+import com.chronoio.chrono.core_ui.foundation.BUTTON_SECONDARY
+import com.chronoio.chrono.core_ui.foundation.BUTTON_WARNING
+import com.chronoio.chrono.core_ui.foundation.GenericAlert
+import com.chronoio.chrono.core_ui.views.BaseAlertDialog
+import com.chronoio.chrono.core_utils.clipboard.copyPlainTextToClipboard
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.argOrNull
+import com.chronoio.chrono.core_utils.ext.openAppSettings
+import com.chronoio.chrono.core_utils.ext.parseImagePath
+import com.chronoio.chrono.core_utils.ext.safeNavigate
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.intents.SystemAction
+import com.chronoio.chrono.core_utils.intents.SystemAction.OpenUrl
+import com.chronoio.chrono.core_utils.intents.proceedWithAction
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.ext.FragmentResultContract
+import com.chronoio.chrono.ext.daggerViewModel
+import com.chronoio.chrono.feature_chats.presentation.ChatObjectIcon
+import com.chronoio.chrono.feature_chats.presentation.ChatViewModel
+import com.chronoio.chrono.feature_chats.presentation.ChatViewModelFactory
+import com.chronoio.chrono.presentation.main.MainViewModel
+import com.chronoio.chrono.feature_chats.tools.LinkDetector.ANYTYPE_PREFIX
+import com.chronoio.chrono.feature_chats.tools.LinkDetector.FILE_PREFIX
+import com.chronoio.chrono.feature_chats.tools.LinkDetector.MAILTO_PREFIX
+import com.chronoio.chrono.feature_chats.tools.LinkDetector.TEL_PREFIX
+import com.chronoio.chrono.feature_chats.ui.ChatInfoScreenState
+import com.chronoio.chrono.feature_chats.ui.ChatScreenWrapper
+import com.chronoio.chrono.feature_chats.ui.ChatTopToolbar
+import com.chronoio.chrono.feature_chats.ui.EditChatInfoScreen
+import com.chronoio.chrono.feature_chats.ui.NotificationPermissionContent
+import com.chronoio.chrono.feature_vault.ui.AlertScreenModals
+import com.chronoio.chrono.ui.base.navigation
+import com.chronoio.chrono.ui.editor.EditorFragment
+import com.chronoio.chrono.ui.home.WidgetOverlayFragment
+import com.chronoio.chrono.ui.home.WidgetsScreenFragment
+import com.chronoio.chrono.ui.media.MediaActivity
+import com.chronoio.chrono.ui.multiplayer.ShareSpaceFragment
+import com.chronoio.chrono.ui.primitives.ObjectTypeFragment
+import com.chronoio.chrono.ui.profile.ParticipantFragment
+import com.chronoio.chrono.ui.settings.space.SpaceSettingsFragment
+import com.chronoio.chrono.feature_search.presentation.SearchNavigation
+import com.chronoio.chrono.feature_search.presentation.SearchPurpose
+import com.chronoio.chrono.feature_search.presentation.SearchViewModel
+import com.chronoio.chrono.feature_search.ui.SearchScreen
+import com.chronoio.chrono.ui.search.v2.SearchV2Fragment
+import com.chronoio.chrono.ui.sets.ObjectSetFragment
+import com.chronoio.chrono.ui.settings.typography
+import javax.inject.Inject
+import timber.log.Timber
+
+class ChatFragment : Fragment() {
+
+    @Inject
+    lateinit var factory: ChatViewModelFactory
+
+    private val vm by viewModels<ChatViewModel> { factory }
+
+    private lateinit var createObjectFactory: CreateObjectViewModelFactory
+
+    private val createObjectVm by viewModels<NewCreateObjectViewModel> { createObjectFactory }
+
+    private val mainVm: MainViewModel by activityViewModels()
+
+    val ctx get() = arg<Id>(CTX_KEY)
+    private val space get() = arg<Id>(SPACE_KEY)
+
+    private fun createObjectComponentKey(): String = "chat-create-object:$ctx"
+
+    private val triggeredByPush get() = arg<Boolean>(TRIGGERED_BY_PUSH_KEY)
+    private val popUpToVault get() = arg<Boolean>(POP_UP_TO_VAULT_KEY)
+    private val startAtMessage get() = argOrNull<Id>(START_AT_MESSAGE_KEY)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        injectDependencies()
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onDestroy() {
+        releaseDependencies()
+        super.onDestroy()
+    }
+
+    // Rendering
+    @OptIn(ExperimentalMaterial3Api::class)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = content {
+        MaterialTheme(typography = typography) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val notificationsSheetState =
+                rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val moveToBinSheetState =
+                rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val chatInfoSheetState =
+                rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            var showGlobalSearchBottomSheet by remember { mutableStateOf(false) }
+            var showChatInfoScreen by remember { mutableStateOf(false) }
+            var chatInfoData by remember { mutableStateOf<Pair<String, ObjectIcon>?>(null) }
+            val showNotificationPermissionDialog =
+                vm.showNotificationPermissionDialog.collectAsStateWithLifecycle().value
+            val showMoveToBinDialog =
+                vm.showMoveToBinDialog.collectAsStateWithLifecycle().value
+
+            ErrorScreen()
+
+            Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets(0.dp)
+            ) { paddingValues ->
+                ChatScreenWrapper(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = paddingValues.calculateBottomPadding())
+                        .navigationBarsPadding(),
+                    vm = vm,
+                    onAttachObjectClicked = { showGlobalSearchBottomSheet = true },
+                    onMarkupLinkClicked = { url ->
+                        val handled = when {
+                            url.startsWith(MAILTO_PREFIX) -> {
+                                val action = SystemAction.MailTo(url.removePrefix(MAILTO_PREFIX))
+                                proceedWithAction(action)
+                            }
+
+                            url.startsWith(TEL_PREFIX) -> {
+                                val action = SystemAction.Dial(url.removePrefix(TEL_PREFIX))
+                                proceedWithAction(action)
+                            }
+
+                            url.startsWith(ANYTYPE_PREFIX) || url.startsWith(FILE_PREFIX) -> {
+                                // Unsupported schemes - copy to clipboard directly
+                                proceedWithAction(
+                                    SystemAction.CopyToClipboard(
+                                        plain = url,
+                                        label = "link"
+                                    )
+                                )
+                            }
+
+                            else -> {
+                                val action = OpenUrl(url)
+                                proceedWithAction(action)
+                            }
+                        }
+
+                        // If the primary action failed, fallback to copying to clipboard
+                        if (!handled && !url.startsWith(ANYTYPE_PREFIX)
+                            && !url.startsWith(FILE_PREFIX)
+                        ) {
+                            proceedWithAction(
+                                SystemAction.CopyToClipboard(
+                                    plain = url,
+                                    label = "link"
+                                )
+                            )
+                        }
+                    },
+                    onRequestOpenFullScreenImageGallery = { objects, index ->
+                        vm.onMediaPreview(objects, index)
+                                                          },
+                    onSelectChatReaction = vm::onSelectChatReaction,
+                    onViewChatReaction = { msg, emoji ->
+                        vm.onViewChatReaction(msg = msg, emoji = emoji)
+                    },
+                    onRequestVideoPlayer = { attachment ->
+                        MediaActivity.start(
+                            context = requireContext(),
+                            mediaType = MediaActivity.TYPE_VIDEO,
+                            obj = attachment.obj,
+                            space = space
+                        )
+                    }
+                )
+            }
+
+            // Floating top toolbar overlay — pills float above the messages so
+            // the message list can scroll behind them.
+            ChatTopToolbar(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+                header = vm.header.collectAsStateWithLifecycle().value,
+                onBackButtonClicked = {
+                    vm.onBackButtonPressed(isExitingVault = popUpToVault)
+                },
+                onTitleClick = {
+                    WidgetOverlayFragment.show(parentFragmentManager, space)
+                },
+                onSpaceIconClicked = vm::onSpaceIconClicked,
+                onInviteMembersClicked = vm::onInviteMembersClicked,
+                onEditInfo = vm::onEditInfo,
+                onPin = vm::onPinChatAsWidget,
+                onCopyLink = vm::onCopyChatLink,
+                onMoveToBin = vm::onMoveToBin,
+                onNotificationSettingChanged = vm::onNotificationSettingChanged,
+                onSearchClick = {
+                    // Unified search: in-chat entry seeds the space scope AND
+                    // a chat filter token; removing the chat token widens to
+                    // the space's messages, then to global. safeNavigate: a
+                    // double tap must not push the screen twice.
+                    runCatching {
+                        findNavController().safeNavigate(
+                            R.id.chatScreen,
+                            R.id.searchV2Screen,
+                            SearchV2Fragment.args(space = space, chat = ctx)
+                        )
+                    }.onFailure {
+                        Timber.e(it, "Error opening unified search from chat")
+                    }
+                },
+                onSpaceSettingsClicked = vm::onOpenSpaceSettings,
+                backHistoryMenu = vm.backHistoryMenu.collectAsStateWithLifecycle().value,
+                onBackButtonLongClicked = vm::onBackButtonLongClicked,
+                onBackHistoryItemClicked = vm::onBackHistoryItemClicked,
+                onBackHistoryChannelsClicked = vm::onBackHistoryChannelsClicked,
+                onBackHistoryHomeClicked = vm::onBackHistoryHomeClicked,
+                onBackHistoryMenuDismissed = vm::onBackHistoryMenuDismissed
+            )
+            } // close Box
+
+            if (showNotificationPermissionDialog) {
+                val launcher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { isGranted: Boolean ->
+                    Timber.d("Permission granted: $isGranted")
+                    if (isGranted) {
+                        vm.onNotificationPermissionGranted()
+                    } else {
+                        vm.onNotificationPermissionDenied()
+                    }
+                }
+                ModalBottomSheet(
+                    onDismissRequest = { vm.onNotificationPermissionDismissed() },
+                    sheetState = notificationsSheetState,
+                    containerColor = colorResource(id = R.color.background_secondary),
+                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                    dragHandle = null
+                ) {
+                    NotificationPermissionContent(
+                        onCancelClicked = { vm.onNotificationPermissionDismissed() },
+                        onEnableNotifications = {
+                            vm.onNotificationPermissionRequested()
+                            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    )
+                }
+            }
+
+            if (showMoveToBinDialog) {
+                ModalBottomSheet(
+                    onDismissRequest = { vm.onMoveToBinCancelled() },
+                    sheetState = moveToBinSheetState,
+                    containerColor = colorResource(id = R.color.background_secondary),
+                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                    dragHandle = null
+                ) {
+                    GenericAlert(
+                        config = AlertConfig.WithTwoButtons(
+                            title = stringResource(R.string.move_chat_to_bin_warning_title),
+                            description = stringResource(R.string.chat_move_to_bin_warning_description),
+                            firstButtonText = stringResource(R.string.cancel),
+                            secondButtonText = stringResource(R.string.chat_move_to_bin),
+                            firstButtonType = BUTTON_SECONDARY,
+                            secondButtonType = BUTTON_WARNING,
+                            icon = R.drawable.ic_popup_question_56
+                        ),
+                        onFirstButtonClicked = { vm.onMoveToBinCancelled() },
+                        onSecondButtonClicked = { vm.onMoveToBinConfirmed() }
+                    )
+                }
+            }
+
+            // "See all" create-object popup for the chat attachment menu.
+            val seeAllCreateSheetVisible =
+                vm.seeAllCreateSheetVisible.collectAsStateWithLifecycle().value
+            val createObjectState =
+                createObjectVm.state.collectAsStateWithLifecycle().value
+            LaunchedEffect(seeAllCreateSheetVisible) {
+                if (seeAllCreateSheetVisible) createObjectVm.onOpen()
+            }
+            CreateObjectPopup(
+                expanded = seeAllCreateSheetVisible,
+                onDismissRequest = { vm.onSeeAllCreateSheetDismissed() },
+                state = createObjectState,
+                onAction = { action ->
+                    when (action) {
+                        is CreateObjectAction.CreateObjectOfType ->
+                            vm.onCreateAndAttachObjectOfType(TypeKey(action.typeKey))
+                        is CreateObjectAction.UpdateSearch,
+                        is CreateObjectAction.Retry ->
+                            createObjectVm.onAction(action)
+                        CreateObjectAction.SelectPhotos,
+                        CreateObjectAction.TakePhoto,
+                        CreateObjectAction.SelectFiles,
+                        CreateObjectAction.AttachExistingObject -> {
+                            // Not reachable: showMediaSection/showAttachObject = false.
+                            Timber.d("ChatFragment see-all popup unexpected action: $action")
+                            vm.onSeeAllCreateSheetDismissed()
+                        }
+                    }
+                },
+                onBack = { vm.onSeeAllBackToAttachmentMenu() }
+            )
+
+            if (showGlobalSearchBottomSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        showGlobalSearchBottomSheet = false
+                    },
+                    sheetState = sheetState,
+                    containerColor = colorResource(id = R.color.background_secondary),
+                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                    dragHandle = null
+                ) {
+                    // Unified search in picker purpose: the space scope is
+                    // seeded but hidden and non-removable — an attach picker
+                    // must never return cross-space objects. new(), never
+                    // get(): the holder is shared with the full-screen search
+                    // and a cached instance would carry the WRONG purpose.
+                    val component = componentManager().searchV2Component
+                    val searchViewModel = daggerViewModel {
+                        component.new(
+                            params = SearchViewModel.VmParams(
+                                entrySpace = SpaceId(space),
+                                purpose = SearchPurpose.ATTACH_TO_CHAT
+                            )
+                        ).searchViewModel()
+                    }
+                    SearchScreen(
+                        viewModel = searchViewModel,
+                        onBackClicked = { showGlobalSearchBottomSheet = false },
+                        focusOnStart = false
+                    )
+                    LaunchedEffect(Unit) {
+                        searchViewModel.commands.collect { command ->
+                            if (command is SearchNavigation.ObjectSelected) {
+                                vm.onAttachObject(target = command.id)
+                                showGlobalSearchBottomSheet = false
+                            }
+                        }
+                    }
+                    // A proper disposal hook, not a bare else-branch side
+                    // effect in the composition body — Compose may skip or
+                    // abandon compositions.
+                    DisposableEffect(Unit) {
+                        onDispose { componentManager().searchV2Component.release() }
+                    }
+                }
+            }
+
+            if (showChatInfoScreen && chatInfoData != null) {
+                val (name, icon) = chatInfoData!!
+
+                // Track selected icon state for preview and save
+                var selectedIcon by remember { mutableStateOf<ChatObjectIcon>(ChatObjectIcon.None) }
+                var showEmojiPicker by remember { mutableStateOf(false) }
+
+                val imagePickerLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.PickVisualMedia(),
+                    onResult = { uri ->
+                        if (uri != null) {
+                            context?.let {
+                                val path = uri.parseImagePath(it)
+                                if (!path.isNullOrEmpty()) {
+                                    selectedIcon = ChatObjectIcon.Image(uri = path)
+                                }
+                            }
+                        }
+                    }
+                )
+                
+                ModalBottomSheet(
+                    sheetMaxWidth = contentWidthDp(),
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.statusBars),
+                    onDismissRequest = { 
+                        showChatInfoScreen = false
+                        chatInfoData = null
+                    },
+                    sheetState = chatInfoSheetState,
+                    containerColor = colorResource(id = R.color.background_primary),
+                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                    dragHandle = null
+                ) {
+                    EditChatInfoScreen(
+                        state = ChatInfoScreenState.Edit(
+                            currentName = name,
+                            currentIcon = icon
+                        ),
+                        icon = icon,
+                        selectedIcon = selectedIcon,
+                        onSave = { update ->
+                            vm.onUpdateChatObjectInfoRequested(
+                                originalName = name,
+                                originalIcon = icon,
+                                update = update
+                            )
+                            showChatInfoScreen = false
+                            chatInfoData = null
+                        },
+                        onCreate = { _ ->
+                            // Not used in edit mode
+                        },
+                        onIconUploadClicked = {
+                            imagePickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        onIconRemoveClicked = {
+                            // Mark as removed (explicit empty state)
+                            selectedIcon = ChatObjectIcon.Removed
+                        },
+                        onEmojiIconClicked = {
+                            showEmojiPicker = true
+                        },
+                        isLoading = false
+                    )
+                }
+                
+                if (showEmojiPicker) {
+                    val emojiPickerFragment = SelectChatIconFragment.new()
+                    emojiPickerFragment.show(childFragmentManager, "emoji_picker")
+                    
+                    // Listen for emoji selection
+                    LaunchedEffect(Unit) {
+                        childFragmentManager.setFragmentResultListener(
+                            SelectChatIconFragment.REQUEST_KEY,
+                            viewLifecycleOwner
+                        ) { _, bundle ->
+                            val emoji = bundle.getString(SelectChatIconFragment.RESULT_EMOJI_KEY)
+                            if (emoji != null) {
+                                selectedIcon = ChatObjectIcon.Emoji(unicode = emoji)
+                                showEmojiPicker = false
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Upload-success snackbar is intentionally muted on the chat
+            // screen: the uploaded file already appears inline as a chat
+            // message, so the "Open <type>" navigation is redundant here.
+            // ChatViewModel still emits on `uploadSnackbar`; we just don't
+            // surface it from this Fragment.
+
+            LaunchedEffect(Unit) {
+                vm.commands.collect { command ->
+                    Timber.d("Command: $command")
+                    when (command) {
+                        is ChatViewModel.ViewModelCommand.Exit -> {
+                            runCatching {
+                                if (popUpToVault) {
+                                    findNavController().navigate(R.id.action_back_on_vault)
+                                } else {
+                                    findNavController().popBackStack()
+                                }
+                            }.onFailure {
+                                Timber.e(it, "Error while back on vault from chat screen")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.ExitToVault -> {
+                            runCatching {
+                                navigation().exitToVault()
+                            }.onFailure {
+                                Timber.e(it, "Error while exiting to vault from chat screen")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.PopToBackStackEntry -> {
+                            runCatching {
+                                navigation().popToBackStackEntry(command.entryId)
+                            }.onFailure {
+                                Timber.e(it, "Error while popping to back-history entry from chat screen")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.OpenWidgets -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.actionOpenWidgetsFromChat,
+                                    args = WidgetsScreenFragment.args(
+                                        space = space,
+                                        deeplink = null
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening widgets from chats")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.MediaPreview -> {
+                            runCatching {
+                                MediaActivity.start(
+                                    context = requireContext(),
+                                    mediaType = MediaActivity.TYPE_IMAGE,
+                                    objects = command.objects,
+                                    index = command.index,
+                                    space = space
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while launching media image viewer")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.SelectChatReaction -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.selectChatReactionScreen,
+                                    SelectChatReactionFragment.args(
+                                        space = Space(space),
+                                        chat = ctx,
+                                        msg = command.msg
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening chat-reaction picker")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.ViewChatReaction -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.chatReactionScreen,
+                                    ChatReactionFragment.args(
+                                        space = Space(space),
+                                        chat = ctx,
+                                        msg = command.msg,
+                                        emoji = command.emoji
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening a chat reaction")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.ViewMemberCard -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.participantScreen,
+                                    ParticipantFragment.args(
+                                        space = command.space.id,
+                                        objectId = command.member
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening space member card")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.Browse -> {
+                            runCatching {
+                                proceedWithAction(
+                                    OpenUrl(
+                                        command.url
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening bookmark from chat")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.PlayAudio -> {
+                            runCatching {
+                                MediaActivity.start(
+                                    context = requireContext(),
+                                    mediaType = MediaActivity.TYPE_AUDIO,
+                                    obj = command.obj,
+                                    name = command.name,
+                                    space = space
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while launching audio player")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.ShareInviteLink -> {
+                            runCatching {
+                                val intent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_TEXT, command.link)
+                                    type = "text/plain"
+                                }
+                                startActivity(Intent.createChooser(intent, null))
+                            }.onFailure {
+                                Timber.e(it, "Error while sharing invite link")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.ShareQrCode -> {
+                            runCatching {
+                                Timber.d("ShareQrCode command received with link: ${command.link}")
+                                toast("QR Code sharing - to be implemented")
+                            }.onFailure {
+                                Timber.e(it, "Error while opening QR code")
+                            }
+                        }
+
+                        is ChatViewModel.ViewModelCommand.OpenSpaceMembers -> {
+                            findNavController().safeNavigate(
+                                currentDestinationId = R.id.chatScreen,
+                                id = R.id.shareSpaceScreen,
+                                args = ShareSpaceFragment.args(command.space),
+                                errorMessage = "Error while opening share screen"
+                            )
+                        }
+
+                        is ChatViewModel.ViewModelCommand.OpenChatInfo -> {
+                            chatInfoData = command.name to command.icon
+                            showChatInfoScreen = true
+                        }
+                        is ChatViewModel.ViewModelCommand.Toast.PinnedChatAsWidget -> {
+                            toast(
+                                getString(R.string.chat_pinned_as_widget_success)
+                            )
+                        }
+
+                        is ChatViewModel.ViewModelCommand.CopyLinkToClipboard -> {
+                            requireContext().copyPlainTextToClipboard(
+                                plainText = command.link,
+                                label = "Object link",
+                                successToast = getString(R.string.link_copied)
+                            )
+                        }
+
+                        is ChatViewModel.ViewModelCommand.OpenSpaceSettings -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.action_open_space_settings_from_chat,
+                                    SpaceSettingsFragment.args(space = command.space)
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening space settings from chat")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        LaunchedEffect(Unit) {
+            vm.navigation.collect { nav ->
+                when (nav) {
+                    is OpenObjectNavigation.OpenEditor -> {
+                        runCatching {
+                            findNavController().navigate(
+                                R.id.objectNavigation,
+                                EditorFragment.args(
+                                    ctx = nav.target,
+                                    space = nav.space,
+                                    effect = nav.effect
+                                )
+                            )
+                        }.onFailure {
+                            Timber.w("Error while opening editor from chat.")
+                        }
+                    }
+
+                    is OpenObjectNavigation.OpenDataView -> {
+                        runCatching {
+                            findNavController().navigate(
+                                R.id.dataViewNavigation,
+                                ObjectSetFragment.args(
+                                    ctx = nav.target,
+                                    space = nav.space
+                                )
+                            )
+                        }.onFailure {
+                            Timber.w("Error while opening set from chat.")
+                        }
+                    }
+
+                    is OpenObjectNavigation.OpenType -> {
+                        runCatching {
+                            findNavController().navigate(
+                                resId = R.id.objectTypeNavigation,
+                                args = ObjectTypeFragment.args(
+                                    objectId = nav.target,
+                                    space = nav.space
+                                )
+                            )
+                        }.onFailure {
+                            Timber.w("Error while opening type from chat: ${it.message}")
+                        }
+                    }
+                    is OpenObjectNavigation.OpenChat -> {
+                        runCatching {
+                            findNavController().navigate(
+                                R.id.chatScreen,
+                                ChatFragment.args(
+                                    space = nav.space,
+                                    ctx = nav.target
+                                )
+                            )
+                        }.onFailure {
+                            Timber.w("Error while opening chat from chat.")
+                        }
+                    }
+
+                    is OpenObjectNavigation.OpenParticipant -> {
+                        runCatching {
+                            findNavController().navigate(
+                                R.id.participantScreen,
+                                ParticipantFragment.args(
+                                    space = nav.space,
+                                    objectId = nav.target
+                                )
+                            )
+                        }.onFailure {
+                            Timber.w("Error while opening participant from chat.")
+                        }
+                    }
+
+                    is OpenObjectNavigation.OpenBookmarkUrl -> {
+                        runCatching {
+                            proceedWithAction(OpenUrl(nav.url))
+                        }.onFailure {
+                            Timber.w("Error while opening bookmark URL from chat.")
+                        }
+                    }
+
+                    is OpenObjectNavigation.OpenDateObject -> {
+                        runCatching {
+                            findNavController().navigate(
+                                R.id.objectNavigation,
+                                EditorFragment.args(
+                                    ctx = nav.target,
+                                    space = nav.space
+                                )
+                            )
+                        }.onFailure {
+                            Timber.w("Error while opening date object from chat.")
+                        }
+                    }
+
+                    is OpenObjectNavigation.UnexpectedLayoutError -> {
+                        toast("Cannot open object: unexpected layout")
+                        Timber.w("Unexpected layout error: ${nav.layout}")
+                    }
+
+                    OpenObjectNavigation.NonValidObject -> {
+                        toast("Cannot open invalid object")
+                        Timber.w("Attempted to open non-valid object")
+                    }
+                }
+            }
+        }
+        ShareSpaceQrCodeScreen(
+            qrCodeState = vm.uiQrCodeState.collectAsStateWithLifecycle().value,
+            onShareLinkClicked = vm::onShareInviteLink,
+            onHideQrCodeScreen = vm::onHideQRCodeScreen
+        )
+        BackHandler {
+            vm.onBackButtonPressed(isExitingVault = popUpToVault)
+        }
+        //DROID-3943 Temporarily disabled
+//        LaunchedEffect(Unit) {
+//            vm.checkNotificationPermissionDialogState()
+//        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        parentFragmentManager.setFragmentResultListener(
+            FragmentResultContract.ATTACH_TO_CHAT_CONTRACT_KEY,
+            viewLifecycleOwner
+        ) { key, bundle ->
+            val target = bundle.getString(FragmentResultContract.ATTACH_TO_CHAT_TARGET_ID_KEY)
+            val space = bundle.getString(FragmentResultContract.ATTACH_TO_CHAT_SPACE_ID_KEY)
+            val chat = bundle.getString(FragmentResultContract.ATTACH_TO_CHAT_CHAT_ID_KEY)
+            if (target != null && space != null && chat != null) {
+                if (this.space == space && this.ctx == chat) {
+                    vm.onAttachObject(target)
+                } else {
+                    Timber.w("DROID-2966 Skipping attach to chat command")
+                }
+            } else {
+                Timber.w("DROID-2966 Attach-to-chat-data is not complete")
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.onResume()
+    }
+
+    // DI
+
+    private fun injectDependencies() {
+        val chatParams = ChatViewModel.Params.Default(
+            ctx = ctx,
+            space = SpaceId(space),
+            triggeredByPush = triggeredByPush,
+            startAtMessage = startAtMessage
+        )
+        // The keyed holder ignores params on a cache hit — a chat already on
+        // the back stack (opened, then searched, then reopened via a search
+        // result) would silently drop startAtMessage. Force a rebuild when a
+        // target message is requested.
+        val chatComponent = componentManager().chatComponent
+        val component = if (startAtMessage != null) {
+            chatComponent.new(ctx, chatParams)
+        } else {
+            chatComponent.get(ctx, chatParams)
+        }
+        component.inject(this)
+        // One-shot: the target message must not re-apply after process death
+        // (the args bundle is what gets persisted).
+        arguments?.remove(START_AT_MESSAGE_KEY)
+        // See-all popup: full type list, no media rows, no attach-existing row.
+        createObjectFactory = componentManager()
+            .createObjectFeatureComponent
+            .get(
+                key = createObjectComponentKey(),
+                param = NewCreateObjectViewModel.VmParams(
+                    spaceId = SpaceId(space),
+                    showAttachObject = false,
+                    showMediaSection = false
+                )
+            )
+            .viewModelFactory()
+    }
+
+    private fun releaseDependencies() {
+        componentManager().createObjectFeatureComponent.release(createObjectComponentKey())
+        componentManager().chatComponent.release(ctx)
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun ErrorScreen() {
+        val errorStateScreen = vm.errorState.collectAsStateWithLifecycle()
+        when (val state = errorStateScreen.value) {
+            ChatViewModel.UiErrorState.Hidden -> {
+                // Do nothing
+            }
+
+            is ChatViewModel.UiErrorState.Show -> {
+                BaseAlertDialog(
+                    dialogText = state.msg,
+                    buttonText = stringResource(id = R.string.membership_error_button_text_dismiss),
+                    onButtonClick = vm::hideError,
+                    onDismissRequest = vm::hideError
+                )
+            }
+
+            ChatViewModel.UiErrorState.CameraPermissionDenied -> {
+                AlertScreenModals(
+                    title = getString(R.string.camera_permission_required_title),
+                    description = getString(R.string.camera_permission_settings_message),
+                    firstButtonText = getString(R.string.open_settings),
+                    secondButtonText = getString(R.string.cancel),
+                    onAction = {
+                        requireContext().openAppSettings()
+                        vm.hideError()
+                    },
+                    onDismiss = vm::hideError
+                )
+            }
+        }
+    }
+
+    companion object {
+        internal const val CTX_KEY = "arg.discussion.ctx"
+        internal const val SPACE_KEY = "arg.discussion.space"
+        private const val TRIGGERED_BY_PUSH_KEY = "arg.discussion.triggered-by-push"
+        private const val POP_UP_TO_VAULT_KEY = "arg.discussion.pop-up-to-vault"
+        private const val START_AT_MESSAGE_KEY = "arg.discussion.start-at-message"
+        const val PERMISSIONS_REQUEST_CODE = 100
+        fun args(
+            space: Id,
+            ctx: Id,
+            triggeredByPush: Boolean = false,
+            popUpToVault: Boolean = true,
+            startAtMessage: Id? = null
+        ) = bundleOf(
+            CTX_KEY to ctx,
+            SPACE_KEY to space,
+            TRIGGERED_BY_PUSH_KEY to triggeredByPush,
+            POP_UP_TO_VAULT_KEY to popUpToVault,
+            START_AT_MESSAGE_KEY to startAtMessage
+        )
+    }
+}

@@ -1,0 +1,305 @@
+package com.chronoio.chrono.ui.relations
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.TextView
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.ConcatAdapter
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.features.relations.RelationActionAdapter
+import com.chronoio.chrono.core_ui.features.relations.RelationTextValueAdapter
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.argOrNull
+import com.chronoio.chrono.core_utils.ext.drawable
+import com.chronoio.chrono.core_utils.ext.hideKeyboard
+import com.chronoio.chrono.core_utils.ext.subscribe
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ext.withParent
+import com.chronoio.chrono.core_utils.intents.proceedWithAction
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetImeOffsetFragment
+import com.chronoio.chrono.databinding.FragmentRelationTextValueBinding
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.di.feature.DefaultComponentParam
+import com.chronoio.chrono.presentation.sets.RelationTextValueView
+import com.chronoio.chrono.presentation.sets.RelationTextValueViewModel
+import com.chronoio.chrono.presentation.sets.RelationValueAction
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import javax.inject.Inject
+import timber.log.Timber
+import com.google.android.material.R.id.design_bottom_sheet as BOTTOM_SHEET_ID
+
+open class RelationTextValueFragment :
+    BaseBottomSheetImeOffsetFragment<FragmentRelationTextValueBinding>() {
+
+    @Inject
+    lateinit var factory: RelationTextValueViewModel.Factory
+
+    private val vm: RelationTextValueViewModel by viewModels { factory }
+
+    private val ctx get() = arg<String>(CONTEXT_ID)
+    private val space get() = arg<String>(SPACE_KEY)
+    private val relationKey get() = arg<Key>(RELATION_KEY)
+    private val objectId get() = arg<String>(OBJECT_ID)
+    private val flow get() = arg<Int>(FLOW_KEY)
+    private val isLocked get() = arg<Boolean>(LOCKED_KEY)
+    private val value get() = argOrNull<Long?>(KEY_VALUE)
+    private val name get() = arg<String>(KEY_NAME)
+
+    private val relationValueAdapter by lazy {
+        RelationTextValueAdapter(
+            items = emptyList(),
+            onEditCompleted = { view, txt ->
+                if (view is RelationTextValueView.Number) {
+                    try {
+                        if (txt.isBlank()) {
+                            dispatchNumberResultAndExit(null)
+                        } else {
+                            dispatchNumberResultAndExit(txt.toDouble())
+                        }
+                    } catch (e: NumberFormatException) {
+                        toast("Invalid number format. Please try again.")
+                    }
+                } else {
+                    dispatchTextResultAndExit(txt)
+                }
+            },
+            focusListener = vm::onUrlEditEvent
+        )
+    }
+
+    private val relationValueActionAdapter by lazy {
+        RelationActionAdapter { action ->
+            val input = binding.recycler.findViewById<TextView?>(R.id.textInputField)
+            val parsed = input?.text?.toString().orEmpty()
+            // Workaround for updating relation value when before reloading content
+            if (action is RelationValueAction.Url.Reload) {
+                withParent<TextValueEditReceiver> {
+                    onTextValueChanged(
+                        ctx = ctx,
+                        relationKey = relationKey,
+                        objectId = objectId,
+                        text = parsed
+                    )
+                }
+                vm.onAction(
+                    target = objectId,
+                    action = action.copy(url = parsed)
+                )
+            } else {
+                vm.onAction(
+                    target = objectId,
+                    action = action
+                )
+            }
+        }
+    }
+
+    private val concatAdapter by lazy {
+        ConcatAdapter(relationValueAdapter, relationValueActionAdapter)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        binding.recycler.apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = concatAdapter
+            addItemDecoration(
+                DividerItemDecoration(context, DividerItemDecoration.VERTICAL).apply {
+                    setDrawable(
+                        drawable(R.drawable.default_divider_offset_20_dp)
+                    )
+                }
+            )
+        }
+        onHideKeyboardWhenBottomSheetHidden()
+
+        jobs += lifecycleScope.subscribe(vm.views) { relationValueAdapter.update(it) }
+        jobs += lifecycleScope.subscribe(vm.actions) { relationValueActionAdapter.submitList(it) }
+        jobs += lifecycleScope.subscribe(vm.title) { binding.tvRelationHeader.text = it }
+
+        if (flow == FLOW_CHANGE_DATE) {
+            vm.onDateStart(
+                name = name, value = value
+            )
+        } else {
+            Timber.d("object id: $objectId, context: $ctx")
+            vm.onStart(
+                ctx = ctx,
+                relationKey = relationKey,
+                objectId = objectId,
+                isLocked = isLocked,
+            )
+        }
+    }
+
+    override fun onStart() {
+        jobs += lifecycleScope.subscribe(vm.intents) { proceedWithAction(it) }
+        jobs += lifecycleScope.subscribe(vm.isDismissed) { isDismissed ->
+            if (isDismissed) dismiss()
+        }
+        super.onStart()
+    }
+
+    private fun dispatchTextResultAndExit(txt: String) {
+        binding.recycler.hideKeyboard()
+        withParent<TextValueEditReceiver> {
+            onTextValueChanged(
+                ctx = ctx, relationKey = relationKey, objectId = objectId, text = txt
+            )
+        }
+
+        // Check if this is SOURCE relation for BOOKMARK - trigger reload after updating
+        if (vm.shouldReloadOnUrlEdit()) {
+            vm.onAction(
+                target = objectId,
+                action = RelationValueAction.Url.Reload(txt)
+            )
+        } else {
+            dismiss()
+        }
+    }
+
+    private fun dispatchNumberResultAndExit(number: Double?) {
+        binding.recycler.hideKeyboard()
+        withParent<TextValueEditReceiver> {
+            onNumberValueChanged(
+                ctx = ctx, relationKey = relationKey, objectId = objectId, number = number
+            )
+        }
+        dismiss()
+    }
+
+    private fun onHideKeyboardWhenBottomSheetHidden() {
+        dialog?.findViewById<FrameLayout>(BOTTOM_SHEET_ID)?.let { sheet ->
+            BottomSheetBehavior.from(sheet).apply {
+                state = BottomSheetBehavior.STATE_EXPANDED
+                isHideable = true
+                addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
+                    override fun onSlide(bottomSheet: View, slideOffset: Float) {
+                        if (slideOffset == -1F) {
+                            bottomSheet.hideKeyboard()
+                        }
+                    }
+
+                    override fun onStateChanged(bottomSheet: View, newState: Int) {}
+                })
+            }
+        }
+    }
+
+    override fun injectDependencies() {
+        val param = DefaultComponentParam(
+            ctx = ctx,
+            space = SpaceId(space)
+        )
+        when (flow) {
+            FLOW_DATAVIEW, FLOW_CHANGE_DATE -> {
+                componentManager().dataViewRelationTextValueComponent
+                    .get(param)
+                    .inject(this)
+            }
+            FLOW_SET_OR_COLLECTION -> {
+                componentManager().setOrCollectionRelationTextValueComponent
+                    .get(param)
+                    .inject(this)
+            }
+            else -> {
+                componentManager().relationTextValueComponent
+                    .get(param)
+                    .inject(this)
+            }
+        }
+    }
+
+    override fun releaseDependencies() {
+        when (flow) {
+            FLOW_DATAVIEW, FLOW_CHANGE_DATE -> {
+                componentManager().dataViewRelationTextValueComponent.release()
+            }
+            FLOW_SET_OR_COLLECTION -> {
+                componentManager().setOrCollectionRelationTextValueComponent.release()
+            }
+            else -> {
+                componentManager().relationTextValueComponent.release()
+            }
+        }
+    }
+
+    override fun inflateBinding(
+        inflater: LayoutInflater, container: ViewGroup?
+    ): FragmentRelationTextValueBinding = FragmentRelationTextValueBinding.inflate(
+        inflater, container, false
+    )
+
+    companion object {
+        fun new(
+            ctx: Id,
+            space: Id,
+            relationKey: Key,
+            objectId: Id,
+            flow: Int = FLOW_DEFAULT,
+            isLocked: Boolean = false,
+        ) = RelationTextValueFragment().apply {
+            arguments = bundleOf(
+                CONTEXT_ID to ctx,
+                SPACE_KEY to space,
+                RELATION_KEY to relationKey,
+                OBJECT_ID to objectId,
+                FLOW_KEY to flow,
+                LOCKED_KEY to isLocked
+            )
+        }
+
+        fun new(
+            ctx: Id,
+            space: Id,
+            name: String = "",
+            value: Long? = null
+        ) = new(
+            ctx = ctx,
+            space = space,
+            relationKey = "",
+            objectId = "",
+            flow = FLOW_CHANGE_DATE
+        ).apply {
+            arguments?.apply {
+                putString(KEY_NAME, name)
+                value?.let { putLong(KEY_VALUE, it) }
+            }
+        }
+
+        const val CONTEXT_ID = "arg.edit-relation-value.context"
+        const val SPACE_KEY = "arg.edit-relation-value.space"
+        const val RELATION_KEY = "arg.edit-relation-value.relation.key"
+        const val OBJECT_ID = "arg.edit-relation-value.object.id"
+        const val FLOW_KEY = "arg.edit-relation-value.flow"
+        const val LOCKED_KEY = "arg.edit-relation-value.locked"
+        const val KEY_VALUE = "arg.edit-relation-value.value"
+        const val KEY_NAME = "arg.edit-relation-value.name"
+
+        const val FLOW_DEFAULT = 0
+        const val FLOW_DATAVIEW = 1
+        const val FLOW_SET_OR_COLLECTION = 2
+        const val FLOW_CHANGE_DATE = 3
+    }
+
+    interface TextValueEditReceiver {
+        fun onTextValueChanged(
+            ctx: Id, text: String, objectId: Id, relationKey: Key
+        )
+
+        fun onNumberValueChanged(
+            ctx: Id, number: Double?, objectId: Id, relationKey: Key
+        )
+    }
+}

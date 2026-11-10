@@ -1,0 +1,1165 @@
+package com.chronoio.chrono.persistence.repo
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.datastore.core.DataStore
+import androidx.datastore.dataStore
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.DEFAULT_RELATIVE_DATES
+import com.chronoio.chrono.core_models.DEFAULT_SHOW_INTRODUCE_VAULT
+import com.chronoio.chrono.core_models.FileDownloadLimit
+import com.chronoio.chrono.core_models.GlobalSearchHistory
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.NO_VALUE
+import com.chronoio.chrono.core_models.WidgetSections
+import com.chronoio.chrono.core_models.ThemeMode
+import com.chronoio.chrono.core_models.Wallpaper
+import com.chronoio.chrono.core_models.WidgetSession
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeId
+import com.chronoio.chrono.core_models.settings.VaultSettings
+import com.chronoio.chrono.data.auth.repo.UserSettingsCache
+import com.chronoio.chrono.device.providers.AppDefaultDateFormatProvider
+import com.chronoio.chrono.domain.widgets.OsWidgetDataCleaner
+import com.chronoio.chrono.persistence.AllContentSettings
+import com.chronoio.chrono.persistence.GlobalSearchHistoryProto
+import com.chronoio.chrono.persistence.SpacePreference
+import com.chronoio.chrono.persistence.SpacePreferences
+import com.chronoio.chrono.persistence.VaultPreference
+import com.chronoio.chrono.persistence.VaultPreferences
+import com.chronoio.chrono.persistence.WallpaperSetting
+import com.chronoio.chrono.persistence.common.toJsonString
+import com.chronoio.chrono.persistence.common.toStringMap
+import com.chronoio.chrono.persistence.model.asSettings
+import com.chronoio.chrono.persistence.model.asWallpaper
+import com.chronoio.chrono.persistence.model.toDomain
+import com.chronoio.chrono.persistence.model.toProto
+import com.chronoio.chrono.persistence.preferences.SPACE_PREFERENCE_FILENAME
+import com.chronoio.chrono.persistence.preferences.SpacePrefSerializer
+import com.chronoio.chrono.persistence.preferences.VAULT_PREFERENCE_FILENAME
+import com.chronoio.chrono.persistence.preferences.VaultPrefsSerializer
+import com.chronoio.chrono.persistence.preferences.WallpaperMigration
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import timber.log.Timber
+
+class DefaultUserSettingsCache(
+    private val prefs: SharedPreferences,
+    private val context: Context,
+    private val appDefaultDateFormatProvider: AppDefaultDateFormatProvider,
+    private val osWidgetDataCleaner: OsWidgetDataCleaner = OsWidgetDataCleaner.NoOp
+) : UserSettingsCache {
+
+    private val _compactModeFlow = MutableStateFlow(
+        prefs.getBoolean(COMPACT_MODE_ENABLED_KEY, true)
+    )
+
+    private val _kanbanFlow = MutableStateFlow(
+        prefs.getBoolean(KANBAN_ENABLED_KEY, true)
+    )
+
+    private val _fileDownloadLimitFlow = MutableStateFlow(
+        FileDownloadLimit.fromStorageKey(prefs.getString(FILE_DOWNLOAD_LIMIT_KEY, null))
+    )
+
+    // Default ON: quick capture is no longer opt-in. The stored value still wins, so anyone
+    // who explicitly turned it off keeps it off.
+    private val _quickCaptureFlow = MutableStateFlow(
+        prefs.getBoolean(QUICK_CAPTURE_ENABLED_KEY, true)
+    )
+
+    private val _quickCaptureAiFlow = MutableStateFlow(
+        prefs.getBoolean(QUICK_CAPTURE_AI_ENABLED_KEY, false)
+    )
+
+    //region Vault default settings
+    fun initialVaultSettings(): VaultPreference {
+        return VaultPreference(
+            showIntroduceVault = DEFAULT_SHOW_INTRODUCE_VAULT,
+            isRelativeDates = DEFAULT_RELATIVE_DATES,
+            dateFormat = appDefaultDateFormatProvider.provide()
+        )
+    }
+    //endregion
+
+    private val Context.spacePrefsStore: DataStore<SpacePreferences> by dataStore(
+        fileName = SPACE_PREFERENCE_FILENAME,
+        serializer = SpacePrefSerializer,
+        produceMigrations = { context ->
+            listOf(WallpaperMigration(prefs))
+        }
+    )
+
+    private val Context.vaultPrefsStore: DataStore<VaultPreferences> by dataStore(
+        fileName = VAULT_PREFERENCE_FILENAME,
+        serializer = VaultPrefsSerializer
+    )
+
+    override suspend fun setCurrentSpace(space: SpaceId) {
+        Timber.d("Setting current space in settings: ${space.id}")
+        prefs.edit()
+            .putString(CURRENT_SPACE_KEY, space.id)
+            .apply()
+    }
+
+    override suspend fun getCurrentSpace(): SpaceId? {
+        val value = prefs.getString(CURRENT_SPACE_KEY, "")
+        return if (value.isNullOrEmpty())
+            null
+        else
+            SpaceId(value)
+    }
+
+    override suspend fun clearCurrentSpace() {
+        Timber.d("Clearing current space in settings")
+        prefs.edit()
+            .putString(CURRENT_SPACE_KEY, "")
+            .apply()
+    }
+
+    override suspend fun setLastBackgroundedAt(timeInSeconds: Long) {
+        prefs.edit()
+            .putLong(LAST_BACKGROUNDED_AT_KEY, timeInSeconds)
+            .apply()
+    }
+
+    override suspend fun getLastBackgroundedAt(): Long? {
+        val value = prefs.getLong(LAST_BACKGROUNDED_AT_KEY, NO_TIMESTAMP)
+        return if (value == NO_TIMESTAMP) null else value
+    }
+
+    override suspend fun setDefaultObjectType(space: SpaceId, type: TypeId) {
+        val curr = prefs
+            .getString(DEFAULT_OBJECT_TYPES_KEY, NO_VALUE)
+            .orEmpty()
+            .toStringMap()
+        val updated = buildMap {
+            putAll(curr)
+            put(space.id, type.id)
+        }
+        prefs
+            .edit()
+            .putString(DEFAULT_OBJECT_TYPES_KEY, updated.toJsonString())
+            .apply()
+
+        context
+            .spacePrefsStore
+            .updateData { prefs ->
+                val givenSpacePreferences = prefs.preferences.getOrDefault(
+                    space.id,
+                    SpacePreference()
+                )
+                val updatedSpacePreferences = givenSpacePreferences.copy(
+                    defaultObjectTypeKey = type.id
+                )
+
+                val result = prefs.preferences + mapOf(space.id to updatedSpacePreferences)
+
+                prefs.copy(preferences = result)
+            }
+    }
+
+    override suspend fun getDefaultObjectType(space: SpaceId): TypeId? {
+        val curr = prefs
+            .getString(DEFAULT_OBJECT_TYPES_KEY, "")
+            .orEmpty()
+            .toStringMap()
+
+        val result = curr[space.id]
+        return if (result.isNullOrEmpty())
+            null
+        else
+            TypeId(result)
+    }
+
+
+    override suspend fun setWallpaper(space: Id, wallpaper: Wallpaper) {
+        if (space.isEmpty()) return
+
+        val setting = wallpaper.asSettings()
+
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val existingSpacePref = existingPreferences.preferences.getOrDefault(
+                key = space,
+                defaultValue = SpacePreference()
+            )
+
+            val updatedSpacePref = if (setting != null) {
+                val protoWallpaperSetting = WallpaperSetting(
+                    type = setting.type,
+                    value_ = setting.value
+                )
+                existingSpacePref.copy(wallpaperSetting = protoWallpaperSetting)
+            } else {
+                existingSpacePref.copy(wallpaperSetting = null)
+            }
+
+            val updatedPreferences = buildMap {
+                putAll(existingPreferences.preferences)
+                put(space, updatedSpacePref)
+            }
+
+            SpacePreferences(preferences = updatedPreferences)
+        }
+    }
+
+    override fun observeWallpaper(space: Id): Flow<Wallpaper> {
+        return context.spacePrefsStore.data
+            .map { preferences ->
+                val spacePreference = preferences.preferences[space]
+                val wallpaperSetting = spacePreference?.wallpaperSetting
+
+                if (wallpaperSetting != null) {
+                    val setting = com.chronoio.chrono.persistence.model.WallpaperSetting(
+                        type = wallpaperSetting.type,
+                        value = wallpaperSetting.value_
+                    )
+                    setting.asWallpaper()
+                } else {
+                    Wallpaper.Default
+                }
+            }
+            .catch { e ->
+                Timber.e(e, "Error observing wallpaper for space $space, emitting default")
+                emit(Wallpaper.Default)
+            }
+    }
+
+    override suspend fun getWallpaper(space: Id): Wallpaper {
+        val spacePreferences = context.spacePrefsStore.data.first()
+        val spacePref = spacePreferences.preferences[space]
+        val wallpaperSetting = spacePref?.wallpaperSetting
+
+        return if (wallpaperSetting != null) {
+            val setting = com.chronoio.chrono.persistence.model.WallpaperSetting(
+                type = wallpaperSetting.type,
+                value = wallpaperSetting.value_
+            )
+            setting.asWallpaper()
+        } else {
+            Wallpaper.Default
+        }
+    }
+
+    override suspend fun getWallpapers(): Map<Id, Wallpaper> {
+        val spacePreferences = context.spacePrefsStore.data.first()
+        return spacePreferences.preferences
+            .mapNotNull { (spaceId, spacePref) ->
+                val wallpaperSetting = spacePref.wallpaperSetting
+                if (wallpaperSetting != null) {
+                    val setting = com.chronoio.chrono.persistence.model.WallpaperSetting(
+                        type = wallpaperSetting.type,
+                        value = wallpaperSetting.value_
+                    )
+                    spaceId to setting.asWallpaper()
+                } else {
+                    null
+                }
+            }
+            .toMap()
+    }
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        prefs
+            .edit()
+            .putInt(THEME_KEY, mode.toInt())
+            .apply()
+    }
+
+    override suspend fun getThemeMode(): ThemeMode {
+        return if (prefs.contains(THEME_KEY)) {
+            prefs.getInt(THEME_KEY, -1).toTheme()
+        } else {
+            ThemeMode.System
+        }
+    }
+
+    private fun ThemeMode.toInt() = when (this) {
+        ThemeMode.Light -> {
+            THEME_TYPE_LIGHT
+        }
+        ThemeMode.Night -> {
+            THEME_TYPE_NIGHT
+        }
+        ThemeMode.System -> {
+            THEME_TYPE_SYSTEM
+        }
+    }
+
+    private fun Int.toTheme() = when (this) {
+        THEME_TYPE_LIGHT -> {
+            ThemeMode.Light
+        }
+        THEME_TYPE_NIGHT -> {
+            ThemeMode.Night
+        }
+        THEME_TYPE_SYSTEM -> {
+            ThemeMode.System
+        }
+        else -> {
+            throw IllegalStateException("Illegal theme key!")
+        }
+    }
+
+    override suspend fun getWidgetSession(): WidgetSession = WidgetSession(
+        collapsed = if (prefs.contains(COLLAPSED_WIDGETS_KEY)) {
+            prefs.getStringSet(COLLAPSED_WIDGETS_KEY, emptySet())
+                .orEmpty()
+                .toList()
+        } else {
+            emptyList()
+        },
+        widgetsToActiveViews = if (prefs.contains(ACTIVE_WIDGETS_VIEWS_KEY)) {
+            prefs.getString(ACTIVE_WIDGETS_VIEWS_KEY, "")!!.toStringMap()
+        } else {
+            emptyMap()
+        }
+    )
+
+    override suspend fun saveWidgetSession(session: WidgetSession) {
+        prefs
+            .edit()
+            .putStringSet(COLLAPSED_WIDGETS_KEY, session.collapsed.toSet())
+            .putString(ACTIVE_WIDGETS_VIEWS_KEY, session.widgetsToActiveViews.toJsonString())
+            .apply()
+    }
+
+    override suspend fun setPinnedObjectTypes(space: SpaceId, types: List<TypeId>) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+
+            val updated = givenSpacePreference.copy(
+                pinnedObjectTypeIds = types.map { type -> type.id }
+            )
+
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+
+            SpacePreferences(
+                preferences = result
+            )
+        }
+    }
+
+    override fun getPinnedObjectTypes(space: SpaceId): Flow<List<TypeId>> {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.pinnedObjectTypeIds?.map { id -> TypeId(id) } ?: emptyList()
+            }
+            .catch { e ->
+                Timber.e(e, "Error fetching pinned object types for space ${space.id}")
+                emit(emptyList())
+            }
+    }
+
+    override suspend fun clear() {
+
+        // Clearing shared preferences
+
+        prefs.edit()
+            .remove(DEFAULT_OBJECT_TYPE_ID_KEY)
+            .remove(DEFAULT_OBJECT_TYPE_NAME_KEY)
+            .remove(COLLAPSED_WIDGETS_KEY)
+            .remove(ACTIVE_WIDGETS_VIEWS_KEY)
+            .remove(CURRENT_SPACE_KEY)
+            .apply()
+
+        // Clearing data stores
+
+        context.spacePrefsStore.updateData {
+            SpacePreferences(emptyMap())
+        }
+
+        osWidgetDataCleaner.clearAll()
+    }
+
+    override suspend fun setLastOpenedObject(id: Id, space: SpaceId) {
+        Timber.d("Setting last opened object for space: ${space.id}")
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(
+                    key = space.id,
+                    defaultValue = SpacePreference()
+                )
+            val updated = givenSpacePreference.copy(
+                lastOpenedObject = id
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun getLastOpenedObject(space: SpaceId): Id? {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.lastOpenedObject
+            }
+            .first()
+    }
+
+    override suspend fun clearLastOpenedObject(space: SpaceId) {
+        Timber.d("Clearing last opened object for space: ${space.id}")
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                lastOpenedObject = null
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(
+                preferences = result
+            )
+        }
+    }
+
+    override suspend fun setGlobalSearchHistory(globalSearchHistory: GlobalSearchHistory, space: SpaceId) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(
+                    key = space.id,
+                    defaultValue = SpacePreference()
+                )
+            val updated = givenSpacePreference.copy(
+                globalSearchHistory = GlobalSearchHistoryProto(
+                    lastSearchQuery = globalSearchHistory.query,
+                    lastSearchRelatedObjectId = globalSearchHistory.relatedObject
+                )
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun getGlobalSearchHistory(space: SpaceId): GlobalSearchHistory? {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                val result = preferences
+                    .preferences[space.id]
+                    ?.globalSearchHistory
+
+                if (result == null)  {
+                    return@map null
+                } else {
+                    GlobalSearchHistory(
+                        query = result.lastSearchQuery.orEmpty(),
+                        relatedObject = result.lastSearchRelatedObjectId
+                    )
+                }
+            }
+            .first()
+    }
+
+    override suspend fun clearGlobalSearchHistory(space: SpaceId) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                globalSearchHistory  = null
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(
+                preferences = result
+            )
+        }
+    }
+
+    override suspend fun getVaultSettings(account: Account): VaultSettings {
+        return context.vaultPrefsStore
+            .data
+            .map { prefs ->
+                val curr = prefs.preferences.getOrDefault(
+                    key = account.id,
+                    defaultValue = initialVaultSettings()
+                )
+                VaultSettings(
+                    isRelativeDates = curr.isRelativeDates,
+                    dateFormat = curr.dateFormat ?: appDefaultDateFormatProvider.provide(),
+                )
+            }
+            .first()
+    }
+
+    override suspend fun observeVaultSettings(account: Account): Flow<VaultSettings> {
+        return context.vaultPrefsStore
+            .data
+            .map { prefs ->
+                val curr = prefs.preferences.getOrDefault(
+                    key = account.id,
+                    defaultValue = initialVaultSettings()
+                )
+                VaultSettings(
+                    isRelativeDates = curr.isRelativeDates,
+                    dateFormat = curr.dateFormat ?: appDefaultDateFormatProvider.provide()
+                )
+            }
+            .catch { e ->
+                Timber.e(e, "Error observing vault settings for account ${account.id}, emitting defaults")
+                emit(VaultSettings(
+                    isRelativeDates = DEFAULT_RELATIVE_DATES,
+                    dateFormat = appDefaultDateFormatProvider.provide()
+                ))
+            }
+    }
+
+    override suspend fun setRelativeDates(account: Account, enabled: Boolean) {
+        context.vaultPrefsStore.updateData { existingPreferences ->
+            val curr = existingPreferences.preferences.getOrDefault(
+                key = account.id,
+                defaultValue = initialVaultSettings()
+            )
+            existingPreferences.copy(
+                preferences = existingPreferences.preferences + mapOf(
+                    account.id to curr.copy(
+                        isRelativeDates = enabled
+                    )
+                )
+            )
+        }
+    }
+
+    override suspend fun setRecentlyUsedChatReactions(
+        account: Account,
+        emojis: Set<String>
+    ) {
+        context.vaultPrefsStore.updateData { existingPreferences ->
+            val curr = existingPreferences.preferences.getOrDefault(
+                key = account.id,
+                defaultValue = initialVaultSettings()
+            )
+            existingPreferences.copy(
+                preferences = existingPreferences.preferences + mapOf(
+                    account.id to curr.copy(
+                        recentlyUsedChatReactions = emojis.toList()
+                    )
+                )
+            )
+        }
+    }
+
+    override fun observeRecentlyUsedChatReactions(account: Account): Flow<List<String>> {
+        return context
+            .vaultPrefsStore
+            .data
+            .map { existing ->
+                val settings = existing.preferences[account.id]
+                if (settings != null) {
+                    settings.recentlyUsedChatReactions
+                } else {
+                    emptyList()
+                }
+            }
+            .catch { e ->
+                Timber.e(e, "Error observing recently used chat reactions for account ${account.id}")
+                emit(emptyList())
+            }
+    }
+
+    override suspend fun setDateFormat(
+        account: Account,
+        format: String
+    ) {
+        context.vaultPrefsStore.updateData { existingPreferences ->
+            val curr = existingPreferences.preferences.getOrDefault(
+                key = account.id,
+                defaultValue = initialVaultSettings()
+            )
+            existingPreferences.copy(
+                preferences = existingPreferences.preferences + mapOf(
+                    account.id to curr.copy(
+                        dateFormat = format
+                    )
+                )
+            )
+        }
+    }
+
+    override suspend fun getAllContentSort(space: SpaceId): Pair<Id, Boolean>? {
+        val flow = context.spacePrefsStore.data
+        val first = flow.first()
+        val pref = first.preferences[space.id]?.allContent
+        val sortKey = pref?.sortKey ?: return null
+        val isAsc = pref.isAscending ?: true
+        return sortKey to isAsc
+    }
+
+    override suspend fun setAllContentSort(space: SpaceId, sort: Id, isAsc: Boolean) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(
+                    key = space.id,
+                    defaultValue = SpacePreference()
+                )
+            val updated = givenSpacePreference.copy(
+                allContent = AllContentSettings(
+                    sortKey = sort,
+                    isAscending = isAsc
+                )
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun setExpandedWidgetIds(space: SpaceId, widgetIds: List<Id>) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+
+            val updated = givenSpacePreference.copy(
+                expandedWidgetIds = widgetIds
+            )
+
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override fun getExpandedWidgetIds(space: SpaceId): Flow<List<Id>> {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.expandedWidgetIds
+                    ?: emptyList()
+            }.catch {
+                Timber.e("Error fetching expanded widget ids for space ${space.id}: $this")
+                emit(emptyList())
+            }
+    }
+
+    override suspend fun setCollapsedSectionIds(space: SpaceId, sectionIds: List<Id>) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+
+            val updated = givenSpacePreference.copy(
+                collapsedSectionIds = sectionIds
+            )
+
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override fun getCollapsedSectionIds(space: SpaceId): Flow<List<Id>> {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.collapsedSectionIds
+                    ?: emptyList()
+            }.catch {
+                Timber.e("Error fetching collapsed section ids for space ${space.id}: $this")
+                emit(emptyList())
+            }
+    }
+
+    //region Homepage & temporary widget dismissal flags
+
+    override suspend fun setHomepagePickerDismissed(space: SpaceId, dismissed: Boolean) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                homepagePickerDismissed = dismissed
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun getHomepagePickerDismissed(space: SpaceId): Boolean {
+        return context.spacePrefsStore.data.first()
+            .preferences[space.id]
+            ?.homepagePickerDismissed ?: false
+    }
+
+    override suspend fun setInviteMembersDismissed(space: SpaceId, dismissed: Boolean) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                inviteMembersDismissed = dismissed
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override fun observeInviteMembersDismissed(space: SpaceId): Flow<Boolean> {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences.preferences[space.id]?.inviteMembersDismissed ?: false
+            }.catch {
+                Timber.e("Error observing inviteMembersDismissed for space ${space.id}: $this")
+                emit(false)
+            }
+    }
+
+    //endregion
+
+    //region Quick capture
+
+    override suspend fun setQuickCaptureDraft(space: SpaceId, obj: Id) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                quickCaptureDraftObjectId = obj
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun getQuickCaptureDraft(space: SpaceId): Id? {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.quickCaptureDraftObjectId
+                    ?.ifEmpty { null }
+            }
+            .first()
+    }
+
+    override suspend fun getQuickCaptureDrafts(): Map<Id, Id> {
+        val spacePreferences = context.spacePrefsStore.data.first()
+        return spacePreferences.preferences
+            .mapNotNull { (spaceId, spacePref) ->
+                val draft = spacePref.quickCaptureDraftObjectId
+                if (!draft.isNullOrEmpty()) spaceId to draft else null
+            }
+            .toMap()
+    }
+
+    override suspend fun clearQuickCaptureDraft(space: SpaceId) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                quickCaptureDraftObjectId = null
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun setQuickCaptureLastSpace(space: Id) {
+        prefs.edit()
+            .putString(QUICK_CAPTURE_LAST_SPACE_KEY, space)
+            .apply()
+    }
+
+    override suspend fun getQuickCaptureLastSpace(): Id? {
+        val value = prefs.getString(QUICK_CAPTURE_LAST_SPACE_KEY, "")
+        return if (value.isNullOrEmpty()) null else value
+    }
+
+    override suspend fun setSpaceLastInteraction(space: SpaceId, timestamp: Long) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+            val updated = givenSpacePreference.copy(
+                lastInteractionTimestamp = timestamp
+            )
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override suspend fun getSpaceLastInteractions(): Map<Id, Long> {
+        val spacePreferences = context.spacePrefsStore.data.first()
+        return spacePreferences.preferences
+            .mapNotNull { (spaceId, spacePref) ->
+                val timestamp = spacePref.lastInteractionTimestamp
+                if (timestamp != null && timestamp > 0) {
+                    spaceId to timestamp
+                } else {
+                    null
+                }
+            }
+            .toMap()
+    }
+
+    override suspend fun getVaultSortKeys(): Map<Id, Long> {
+        val spacePreferences = context.spacePrefsStore.data.first()
+        return spacePreferences.preferences
+            .mapNotNull { (spaceId, spacePref) ->
+                val date = spacePref.vaultLastMessageDate
+                if (date != null && date > 0) spaceId to date else null
+            }
+            .toMap()
+    }
+
+    override suspend fun setVaultSortKeys(keys: Map<Id, Long>) {
+        if (keys.isEmpty()) return
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                keys.forEach { (spaceId, date) ->
+                    val given = existingPreferences
+                        .preferences
+                        .getOrDefault(key = spaceId, defaultValue = SpacePreference())
+                    put(key = spaceId, given.copy(vaultLastMessageDate = date))
+                }
+            }
+            // copy(), not the constructor: preserves top-level unknown fields written
+            // by a newer build, matching how the rest of this file mutates the store.
+            existingPreferences.copy(preferences = result)
+        }
+    }
+
+    override suspend fun getQuickCaptureEnabled(): Boolean {
+        return prefs.getBoolean(QUICK_CAPTURE_ENABLED_KEY, true)
+    }
+
+    override suspend fun setQuickCaptureEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(QUICK_CAPTURE_ENABLED_KEY, enabled)
+            .apply()
+        _quickCaptureFlow.value = enabled
+    }
+
+    override fun observeQuickCaptureEnabled(): Flow<Boolean> = _quickCaptureFlow.asStateFlow()
+
+    override suspend fun getQuickCaptureAiEnabled(): Boolean {
+        return prefs.getBoolean(QUICK_CAPTURE_AI_ENABLED_KEY, false)
+    }
+
+    override suspend fun setQuickCaptureAiEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(QUICK_CAPTURE_AI_ENABLED_KEY, enabled)
+            .apply()
+        _quickCaptureAiFlow.value = enabled
+    }
+
+    override fun observeQuickCaptureAiEnabled(): Flow<Boolean> = _quickCaptureAiFlow.asStateFlow()
+
+    //endregion
+
+    override suspend fun getHasShownSpacesIntroduction(): Boolean {
+        return prefs.getBoolean(HAS_SHOWN_SPACES_INTRODUCTION_KEY, false)
+    }
+
+    override suspend fun setHasShownSpacesIntroduction(hasShown: Boolean) {
+        prefs.edit()
+            .putBoolean(HAS_SHOWN_SPACES_INTRODUCTION_KEY, hasShown)
+            .apply()
+    }
+
+    override suspend fun getHasSeenCreateSpaceBadge(): Boolean {
+        return prefs.getBoolean(HAS_SEEN_CREATE_SPACE_BADGE_KEY, false)
+    }
+
+    override suspend fun setHasSeenCreateSpaceBadge(hasSeen: Boolean) {
+        prefs.edit()
+            .putBoolean(HAS_SEEN_CREATE_SPACE_BADGE_KEY, hasSeen)
+            .apply()
+    }
+
+    override suspend fun getHasSeenVaultSearchHighlight(): Boolean {
+        return prefs.getBoolean(HAS_SEEN_VAULT_SEARCH_HIGHLIGHT_KEY, false)
+    }
+
+    override suspend fun setHasSeenVaultSearchHighlight(hasSeen: Boolean) {
+        prefs.edit()
+            .putBoolean(HAS_SEEN_VAULT_SEARCH_HIGHLIGHT_KEY, hasSeen)
+            .apply()
+    }
+
+    override suspend fun getRunProfilerOnStartup(): Boolean {
+        return prefs.getBoolean(RUN_PROFILER_ON_STARTUP_KEY, false)
+    }
+
+    override suspend fun setRunProfilerOnStartup(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(RUN_PROFILER_ON_STARTUP_KEY, enabled)
+            .apply()
+    }
+
+    override suspend fun getDebugMenuEnabled(): Boolean {
+        return prefs.getBoolean(DEBUG_MENU_ENABLED_KEY, false)
+    }
+
+    override suspend fun setDebugMenuEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(DEBUG_MENU_ENABLED_KEY, enabled)
+            .apply()
+    }
+
+    override suspend fun getCompactModeEnabled(): Boolean {
+        return prefs.getBoolean(COMPACT_MODE_ENABLED_KEY, true)
+    }
+
+    override suspend fun setCompactModeEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(COMPACT_MODE_ENABLED_KEY, enabled)
+            .apply()
+        _compactModeFlow.value = enabled
+    }
+
+    override fun observeCompactModeEnabled(): Flow<Boolean> = _compactModeFlow.asStateFlow()
+
+    override suspend fun getKanbanEnabled(): Boolean {
+        return prefs.getBoolean(KANBAN_ENABLED_KEY, true)
+    }
+
+    override suspend fun setKanbanEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KANBAN_ENABLED_KEY, enabled)
+            .apply()
+        _kanbanFlow.value = enabled
+    }
+
+    override fun observeKanbanEnabled(): Flow<Boolean> = _kanbanFlow.asStateFlow()
+
+    override suspend fun getFileDownloadLimit(): FileDownloadLimit =
+        FileDownloadLimit.fromStorageKey(prefs.getString(FILE_DOWNLOAD_LIMIT_KEY, null))
+
+    override suspend fun setFileDownloadLimit(limit: FileDownloadLimit) {
+        prefs.edit()
+            .putString(FILE_DOWNLOAD_LIMIT_KEY, limit.storageKey)
+            .apply()
+        _fileDownloadLimitFlow.value = limit
+    }
+
+    override fun observeFileDownloadLimit(): Flow<FileDownloadLimit> =
+        _fileDownloadLimitFlow.asStateFlow()
+
+    override suspend fun getUseCellularForDownloads(): Boolean =
+        prefs.getBoolean(USE_CELLULAR_FOR_DOWNLOADS_KEY, false)
+
+    override suspend fun setUseCellularForDownloads(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(USE_CELLULAR_FOR_DOWNLOADS_KEY, enabled)
+            .apply()
+    }
+
+    override suspend fun getInstalledAtDate(account: Account): Long? {
+        return context.vaultPrefsStore
+            .data
+            .map { prefs ->
+                prefs.preferences[account.id]?.installedAtDate
+            }
+            .first()
+    }
+
+    override suspend fun setInstalledAtDate(account: Account, timestamp: Long) {
+        context.vaultPrefsStore.updateData { existingPreferences ->
+            val curr = existingPreferences.preferences.getOrDefault(
+                key = account.id,
+                defaultValue = initialVaultSettings()
+            )
+            existingPreferences.copy(
+                preferences = existingPreferences.preferences + mapOf(
+                    account.id to curr.copy(
+                        installedAtDate = timestamp
+                    )
+                )
+            )
+        }
+    }
+
+    override suspend fun getCurrentAppVersion(account: Account): String? {
+        return context.vaultPrefsStore
+            .data
+            .map { prefs ->
+                prefs.preferences[account.id]?.currentAppVersion
+            }
+            .first()
+    }
+
+    override suspend fun setCurrentAppVersion(account: Account, version: String) {
+        context.vaultPrefsStore.updateData { existingPreferences ->
+            val curr = existingPreferences.preferences.getOrDefault(
+                key = account.id,
+                defaultValue = initialVaultSettings()
+            )
+            existingPreferences.copy(
+                preferences = existingPreferences.preferences + mapOf(
+                    account.id to curr.copy(
+                        currentAppVersion = version
+                    )
+                )
+            )
+        }
+    }
+
+    override suspend fun getPreviousAppVersion(account: Account): String? {
+        return context.vaultPrefsStore
+            .data
+            .map { prefs ->
+                prefs.preferences[account.id]?.previousAppVersion
+            }
+            .first()
+    }
+
+    override suspend fun setPreviousAppVersion(account: Account, version: String) {
+        context.vaultPrefsStore.updateData { existingPreferences ->
+            val curr = existingPreferences.preferences.getOrDefault(
+                key = account.id,
+                defaultValue = initialVaultSettings()
+            )
+            existingPreferences.copy(
+                preferences = existingPreferences.preferences + mapOf(
+                    account.id to curr.copy(
+                        previousAppVersion = version
+                    )
+                )
+            )
+        }
+    }
+
+    override suspend fun getWidgetSections(space: SpaceId): WidgetSections {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.sectionSettings
+                    ?.toDomain()
+                    ?.withDefaults()   // DROID-4397: backfill section types added after
+                                       // the user's preferences were first persisted
+                                       // (e.g. MY_FAVORITES).
+                    ?: WidgetSections.default()
+            }
+            .first()
+    }
+
+    override suspend fun setWidgetSections(space: SpaceId, sections: WidgetSections) {
+        context.spacePrefsStore.updateData { existingPreferences ->
+            val givenSpacePreference = existingPreferences
+                .preferences
+                .getOrDefault(key = space.id, defaultValue = SpacePreference())
+
+            val updated = givenSpacePreference.copy(
+                sectionSettings = sections.toProto()
+            )
+
+            val result = buildMap {
+                putAll(existingPreferences.preferences)
+                put(key = space.id, updated)
+            }
+            SpacePreferences(preferences = result)
+        }
+    }
+
+    override fun observeWidgetSections(space: SpaceId): Flow<WidgetSections> {
+        return context.spacePrefsStore
+            .data
+            .map { preferences ->
+                preferences
+                    .preferences[space.id]
+                    ?.sectionSettings
+                    ?.toDomain()
+                    ?.withDefaults()   // DROID-4397: backfill section types added after
+                                       // the user's preferences were first persisted
+                                       // (e.g. MY_FAVORITES).
+                    ?: WidgetSections.default()
+            }
+            .catch { e ->
+                Timber.e(e, "Error observing widget sections for space ${space.id}, emitting defaults")
+                emit(WidgetSections.default())
+            }
+    }
+
+    companion object {
+        const val CURRENT_SPACE_KEY = "prefs.user_settings.current_space"
+        const val LAST_BACKGROUNDED_AT_KEY = "prefs.user_settings.last_backgrounded_at"
+        private const val NO_TIMESTAMP = -1L
+        const val DEFAULT_OBJECT_TYPE_ID_KEY = "prefs.user_settings.default_object_type.id"
+        const val DEFAULT_OBJECT_TYPE_NAME_KEY = "prefs.user_settings.default_object_type.name"
+
+        const val DEFAULT_OBJECT_TYPES_KEY = "prefs.user_settings.default_object_types"
+        const val WALLPAPER_SETTINGS_KEY = "prefs.user_settings.wallpaper_settings"
+
+        const val THEME_KEY = "prefs.user_settings.theme_mode"
+        const val THEME_TYPE_SYSTEM = 1
+        const val THEME_TYPE_LIGHT = 2
+        const val THEME_TYPE_NIGHT = 3
+
+        const val COLLAPSED_WIDGETS_KEY = "prefs.user_settings.collapsed-widgets"
+        const val ACTIVE_WIDGETS_VIEWS_KEY = "prefs.user_settings.active-widget-views"
+
+        const val HAS_SHOWN_SPACES_INTRODUCTION_KEY = "prefs.device.has_shown_spaces_introduction"
+        const val HAS_SEEN_CREATE_SPACE_BADGE_KEY = "prefs.device.has_seen_create_space_badge"
+        const val HAS_SEEN_VAULT_SEARCH_HIGHLIGHT_KEY = "prefs.device.has_seen_vault_search_highlight"
+        const val RUN_PROFILER_ON_STARTUP_KEY = "prefs.device.run_profiler_on_startup"
+        const val DEBUG_MENU_ENABLED_KEY = "prefs.device.debug_menu_enabled"
+        const val COMPACT_MODE_ENABLED_KEY = "prefs.device.compact_mode_enabled"
+        const val KANBAN_ENABLED_KEY = "prefs.device.kanban_enabled"
+        const val FILE_DOWNLOAD_LIMIT_KEY = "prefs.device.file_download_limit"
+        const val USE_CELLULAR_FOR_DOWNLOADS_KEY = "prefs.device.use_cellular_for_downloads"
+        const val QUICK_CAPTURE_LAST_SPACE_KEY = "prefs.device.quick_capture_last_space"
+        const val QUICK_CAPTURE_ENABLED_KEY = "prefs.device.quick_capture_enabled"
+        const val QUICK_CAPTURE_AI_ENABLED_KEY = "prefs.device.quick_capture_ai_enabled"
+    }
+}

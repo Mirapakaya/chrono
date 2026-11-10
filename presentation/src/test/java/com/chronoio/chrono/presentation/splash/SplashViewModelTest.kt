@@ -1,0 +1,591 @@
+package com.chronoio.chrono.presentation.splash
+
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import app.cash.turbine.test
+import com.chronoio.chrono.CrashReporter
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.StubConfig
+import com.chronoio.chrono.core_models.StubSpaceView
+import com.chronoio.chrono.core_models.multiplayer.SpaceUxType
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.restrictions.SpaceStatus
+import com.chronoio.chrono.domain.auth.interactor.CheckAuthorizationStatus
+import com.chronoio.chrono.domain.auth.interactor.GetLastOpenedObject
+import com.chronoio.chrono.domain.auth.interactor.LaunchAccount
+import com.chronoio.chrono.domain.auth.interactor.LaunchWallet
+import com.chronoio.chrono.domain.auth.model.AuthStatus
+import com.chronoio.chrono.domain.base.Either
+import com.chronoio.chrono.domain.base.Resultat
+import com.chronoio.chrono.domain.vault.SetVaultSearchHighlightSeen
+import com.chronoio.chrono.domain.block.repo.BlockRepository
+import com.chronoio.chrono.domain.config.UserSettingsRepository
+import com.chronoio.chrono.domain.misc.LocaleProvider
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.page.CreateObjectByTypeAndTemplate
+import com.chronoio.chrono.domain.spaces.GetLastOpenedSpace
+import com.chronoio.chrono.domain.subscriptions.GlobalSubscriptionManager
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.auth.account.MigrationHelperDelegate
+import com.chronoio.chrono.presentation.util.CoroutinesTestRule
+import java.util.Locale
+import kotlin.test.assertEquals
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.Mockito
+import org.mockito.Mockito.mock
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
+import org.mockito.kotlin.verifyNoMoreInteractions
+
+class SplashViewModelTest {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @get:Rule
+    val coroutineTestRule = CoroutinesTestRule()
+
+    @Mock
+    lateinit var checkAuthorizationStatus: CheckAuthorizationStatus
+
+    @Mock
+    lateinit var launchAccount: LaunchAccount
+
+    @Mock
+    lateinit var launchWallet: LaunchWallet
+
+    @Mock
+    lateinit var analytics: Analytics
+
+    @Mock
+    lateinit var repo: BlockRepository
+
+    @Mock
+    lateinit var settings: UserSettingsRepository
+
+    private lateinit var getLastOpenedObject: GetLastOpenedObject
+
+    @Mock
+    lateinit var globalSubscriptionManager: GlobalSubscriptionManager
+
+    @Mock
+    private lateinit var crashReporter: CrashReporter
+
+    @Mock
+    lateinit var localeProvider: LocaleProvider
+
+    @Mock
+    lateinit var spaceManager: SpaceManager
+
+    @Mock
+    lateinit var analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate
+
+    @Mock
+    lateinit var getLastOpenedSpace: GetLastOpenedSpace
+
+    @Mock
+    lateinit var createObjectByTypeAndTemplate: CreateObjectByTypeAndTemplate
+
+    @Mock
+    lateinit var spaceViewSubscriptionContainer: SpaceViewSubscriptionContainer
+
+    @Mock
+    lateinit var migrationHelperDelegate: MigrationHelperDelegate
+
+    @Mock
+    lateinit var setVaultSearchHighlightSeen: SetVaultSearchHighlightSeen
+
+    lateinit var vm: SplashViewModel
+
+    private val defaultSpaceConfig = StubConfig()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        getLastOpenedObject = GetLastOpenedObject(
+            settings = settings,
+            blockRepo = repo
+        )
+        stubSpaceManager()
+        stubAnalyticSpaceHelperDelegate()
+    }
+
+    private fun initViewModel() {
+        stubLocalProvider()
+        vm = SplashViewModel(
+            checkAuthorizationStatus = checkAuthorizationStatus,
+            launchAccount = launchAccount,
+            launchWallet = launchWallet,
+            analytics = analytics,
+            getLastOpenedObject = getLastOpenedObject,
+            crashReporter = crashReporter,
+            localeProvider = localeProvider,
+            spaceManager = spaceManager,
+            analyticSpaceHelperDelegate = analyticSpaceHelperDelegate,
+            globalSubscriptionManager = globalSubscriptionManager,
+            getLastOpenedSpace = getLastOpenedSpace,
+            createObjectByTypeAndTemplate = createObjectByTypeAndTemplate,
+            spaceViews = spaceViewSubscriptionContainer,
+            migration = migrationHelperDelegate,
+            deepLinkResolver = mock(),
+            pendingIntentStore = mock(),
+            searchObjects = mock(),
+            preferredSpaceIdHolder = mock(),
+            setVaultSearchHighlightSeen = setVaultSearchHighlightSeen
+        )
+    }
+
+    @Test
+    fun `should not execute use case when view model is created`() {
+
+        val status = AuthStatus.AUTHORIZED
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        initViewModel()
+
+        runBlocking {
+            verify(checkAuthorizationStatus, times(1)).async(any())
+            verifyNoMoreInteractions(checkAuthorizationStatus)
+        }
+    }
+
+    @Test
+    fun `should start launching wallet if user is authorized`() {
+
+        val status = AuthStatus.AUTHORIZED
+
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        initViewModel()
+
+        runBlocking {
+            verify(launchWallet, times(1)).invoke(any())
+        }
+    }
+
+    @Test
+    fun `should pre-dismiss the vault search highlight when there is no account on the device`() {
+
+        val response: Resultat.Success<Pair<AuthStatus, Account?>> =
+            Resultat.Success(Pair(AuthStatus.UNAUTHORIZED, null))
+
+        stubCheckAuthStatus(response)
+        setVaultSearchHighlightSeen.stub {
+            onBlocking { async(eq(Unit)) } doReturn Resultat.Success(Unit)
+        }
+
+        initViewModel()
+
+        runBlocking {
+            verify(setVaultSearchHighlightSeen, times(1)).async(eq(Unit))
+        }
+    }
+
+    @Test
+    fun `should leave the vault search highlight for a signed-in user`() {
+
+        val status = AuthStatus.AUTHORIZED
+
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        initViewModel()
+
+        runBlocking {
+            verifyNoInteractions(setVaultSearchHighlightSeen)
+        }
+    }
+
+    @Test
+    fun `should start launching account if wallet is launched`() {
+
+        val status = AuthStatus.AUTHORIZED
+
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        initViewModel()
+
+        runBlocking {
+            verify(launchWallet, times(1)).invoke(any())
+            verify(launchAccount, times(1)).invoke(any())
+        }
+    }
+
+    @Test
+    fun `should not lose CheckAppStartIntent when emitted before splash starts collecting`() = runTest {
+        // GIVEN — a normal authorized cold start that launches wallet + account.
+        val status = AuthStatus.AUTHORIZED
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        // WHEN — the cold-start flow runs to completion and emits CheckAppStartIntent
+        // while no collector is active. This reproduces the activity stop -> resume gap
+        // during cold start, where SplashFragment has cancelled its command collector
+        // (BaseFragment.onStop) yet the ViewModel's viewModelScope keeps running.
+        initViewModel()
+
+        // THEN — a collector subscribing afterwards must still receive the command.
+        // With a replay=0 SharedFlow the command was dropped and the app stuck on the
+        // splash screen; a buffered channel delivers it to the late subscriber.
+        vm.commands.test {
+            assertEquals(
+                expected = SplashViewModel.Command.CheckAppStartIntent,
+                actual = awaitItem()
+            )
+        }
+    }
+
+    @Test
+    fun `should navigate to vault if space view loading times out`() = runTest {
+        // GIVEN
+
+        val deeplink = "test-deeplink"
+
+        val status = AuthStatus.AUTHORIZED
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        val space = defaultSpaceConfig.space
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        getLastOpenedSpace.stub {
+            onBlocking {
+                async(Unit)
+            } doReturn Resultat.Success(
+                SpaceId(space)
+            )
+        }
+
+        initViewModel()
+
+        // WHEN
+        // simulate spaceManager.observe() never emits a valid space view (simulate timeout)
+        spaceManager.stub {
+            on { observe() } doReturn flow { /* no emission */ }
+        }
+        spaceViewSubscriptionContainer.stub {
+            on { observe() } doReturn flow { /* no emission */ }
+        }
+
+        vm.commands.test {
+            // The cold-start CheckAppStartIntent is buffered and delivered first.
+            assertEquals(SplashViewModel.Command.CheckAppStartIntent, awaitItem())
+
+            // Act: manually trigger proceedWithVaultNavigation
+            vm.onDeepLinkLaunch(deeplink)
+
+            // THEN
+            // small delay to allow the coroutine to timeout internally
+            delay(SplashViewModel.SPACE_LOADING_TIMEOUT + 100)
+
+
+            val first = awaitItem()
+            assertEquals(
+                expected = SplashViewModel.Command.NavigateToVault(deeplink),
+                actual = first
+            )
+        }
+    }
+
+    @Test
+    fun `should navigate to space view when space is restored`() = runTest {
+        // GIVEN
+
+        val deeplink = "test-deeplink"
+
+        val status = AuthStatus.AUTHORIZED
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        val space = defaultSpaceConfig.space
+
+        val spaceView = StubSpaceView(
+            targetSpaceId = space,
+            spaceLocalStatus = SpaceStatus.OK,
+            spaceAccountStatus = SpaceStatus.OK
+        )
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        getLastOpenedSpace.stub {
+            onBlocking {
+                async(Unit)
+            } doReturn Resultat.Success(
+                SpaceId(space)
+            )
+        }
+
+        initViewModel()
+
+        // WHEN
+        // simulate spaceManager.observe() never emits a valid space view (simulate timeout)
+        spaceManager.stub {
+            on { observe() } doReturn flowOf(defaultSpaceConfig)
+        }
+        spaceViewSubscriptionContainer.stub {
+            on { observe(SpaceId(defaultSpaceConfig.space)) } doReturn flowOf(spaceView)
+        }
+
+        vm.commands.test {
+            // The cold-start CheckAppStartIntent is buffered and delivered first.
+            assertEquals(SplashViewModel.Command.CheckAppStartIntent, awaitItem())
+
+            // Act: manually trigger proceedWithVaultNavigation
+            vm.onDeepLinkLaunch(deeplink)
+
+            val first = awaitItem()
+            assertEquals(
+                expected = SplashViewModel.Command.NavigateToWidgets(
+                    space = defaultSpaceConfig.space,
+                    deeplink
+                ),
+                actual = first
+            )
+        }
+    }
+
+    @Test
+    fun `should navigate to space-level chat if chat is available`() = runTest {
+        // GIVEN
+        val deeplink = "test-deeplink"
+        val status = AuthStatus.AUTHORIZED
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        val space = defaultSpaceConfig.space
+        val chatId = "chat-id"
+
+        val spaceView = StubSpaceView(
+            targetSpaceId = space,
+            spaceLocalStatus = SpaceStatus.OK,
+            spaceAccountStatus = SpaceStatus.OK,
+            chatId = chatId,
+            spaceUxType = SpaceUxType.ONE_TO_ONE
+        )
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        getLastOpenedSpace.stub {
+            onBlocking { async(Unit) } doReturn Resultat.Success(SpaceId(space))
+        }
+
+        initViewModel()
+
+        // WHEN
+        spaceManager.stub {
+            on { observe() } doReturn flowOf(defaultSpaceConfig)
+        }
+        spaceViewSubscriptionContainer.stub {
+            on { observe(SpaceId(defaultSpaceConfig.space)) } doReturn flowOf(spaceView)
+        }
+
+        vm.commands.test {
+            // The cold-start CheckAppStartIntent is buffered and delivered first.
+            assertEquals(SplashViewModel.Command.CheckAppStartIntent, awaitItem())
+
+            // Act
+            vm.onDeepLinkLaunch(deeplink)
+
+            val first = awaitItem()
+            assertEquals(
+                expected = SplashViewModel.Command.NavigateToChat(
+                    space = space,
+                    chat = chatId,
+                    deeplink = deeplink
+                ),
+                actual = first
+            )
+        }
+    }
+
+    @Test
+    fun `chat push still opens the chat when the last-space route has expired`() = runTest {
+        // DROID-4590: expiring the last-opened-space route must not divert a cold
+        // start from a chat push to the vault. The push branch takes its space and
+        // chat from the payload and never reads the stored space, which is what
+        // makes it safe — this pins that.
+        val response = Resultat.Success(Pair(AuthStatus.AUTHORIZED, Account(id = "id")))
+        val pushSpace = "push-space"
+        val pushChat = "push-chat"
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        // The route has expired, so there is no stored space at all.
+        getLastOpenedSpace.stub {
+            onBlocking { async(Unit) } doReturn Resultat.Success(null)
+        }
+
+        initViewModel()
+
+        spaceManager.stub {
+            onBlocking { set(space = pushSpace) } doReturn Result.success(defaultSpaceConfig)
+        }
+
+        vm.commands.test {
+            assertEquals(SplashViewModel.Command.CheckAppStartIntent, awaitItem())
+
+            vm.onIntentTriggeredByChatPush(space = pushSpace, chat = pushChat)
+
+            assertEquals(
+                expected = SplashViewModel.Command.NavigateToChat(
+                    space = pushSpace,
+                    chat = pushChat
+                ),
+                actual = awaitItem()
+            )
+        }
+    }
+
+    @Test
+    fun `should navigate to vault even if chat is available if given space has data ux type`() = runTest {
+        // GIVEN
+        val deeplink = "test-deeplink"
+        val status = AuthStatus.AUTHORIZED
+        val response = Resultat.Success(Pair(status, Account(id = "id")))
+
+        val space = defaultSpaceConfig.space
+        val chatId = "chat-id"
+
+        val spaceView = StubSpaceView(
+            targetSpaceId = space,
+            spaceLocalStatus = SpaceStatus.OK,
+            spaceAccountStatus = SpaceStatus.OK,
+            chatId = chatId,
+            spaceUxType = SpaceUxType.DATA
+        )
+
+        stubCheckAuthStatus(response)
+        stubLaunchWallet()
+        stubLaunchAccount()
+        stubGetLastOpenedObject()
+
+        getLastOpenedSpace.stub {
+            onBlocking { async(Unit) } doReturn Resultat.Success(SpaceId(space))
+        }
+
+        initViewModel()
+
+        // WHEN
+        spaceManager.stub {
+            on { observe() } doReturn flowOf(defaultSpaceConfig)
+        }
+        spaceViewSubscriptionContainer.stub {
+            on { observe(SpaceId(defaultSpaceConfig.space)) } doReturn flowOf(spaceView)
+        }
+
+        vm.commands.test {
+            // The cold-start CheckAppStartIntent is buffered and delivered first.
+            assertEquals(SplashViewModel.Command.CheckAppStartIntent, awaitItem())
+
+            // Act
+            vm.onDeepLinkLaunch(deeplink)
+
+            val first = awaitItem()
+            assertEquals(
+                expected = SplashViewModel.Command.NavigateToWidgets(
+                    space = space,
+                    deeplink = deeplink
+                ),
+                actual = first
+            )
+        }
+    }
+
+    private fun stubCheckAuthStatus(response: Resultat.Success<Pair<AuthStatus, Account?>>) {
+        checkAuthorizationStatus.stub {
+            onBlocking { async(eq(Unit)) } doReturn response
+        }
+    }
+
+    private fun stubLaunchWallet(
+        response: Either<Throwable, Unit> = Either.Right(Unit)
+    ) {
+        launchWallet.stub {
+            onBlocking { invoke(any()) } doReturn response
+        }
+    }
+
+    private fun stubLaunchAccount() {
+        launchAccount.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(Pair("accountId", ""))
+        }
+    }
+
+    private fun stubGetLastOpenedObject() {
+        settings.stub {
+            onBlocking {
+                getLastOpenedObject(
+                    space = SpaceId(defaultSpaceConfig.space)
+                )
+            } doReturn null
+        }
+    }
+
+    private fun stubSpaceManager() {
+        spaceManager.stub {
+            onBlocking {
+                get()
+            } doReturn defaultSpaceConfig.space
+        }
+    }
+
+    private fun stubAnalyticSpaceHelperDelegate() {
+        Mockito.`when`(analyticSpaceHelperDelegate.provideParams(""))
+            .thenReturn(AnalyticSpaceHelperDelegate.Params.EMPTY)
+    }
+
+    fun stubLocalProvider() {
+        localeProvider.stub {
+            on { locale() } doReturn Locale.getDefault()
+            on { language() } doReturn "en"
+        }
+    }
+}

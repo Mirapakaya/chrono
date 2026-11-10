@@ -1,0 +1,207 @@
+package com.chronoio.chrono.presentation.spaces
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.core_models.multiplayer.SpaceMemberPermissions
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.restrictions.SpaceStatus
+import com.chronoio.chrono.core_models.ui.SpaceIconView
+import com.chronoio.chrono.core_models.ui.spaceIcon
+import com.chronoio.chrono.core_utils.ext.msg
+import com.chronoio.chrono.core_utils.ui.ViewState
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.multiplayer.CancelJoinSpaceRequest
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.multiplayer.UserPermissionProvider
+import com.chronoio.chrono.domain.spaces.DeleteSpace
+import com.chronoio.chrono.presentation.common.BaseViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class SpaceListViewModel(
+    private val spaces: SpaceViewSubscriptionContainer,
+    private val permissions: UserPermissionProvider,
+    private val urlBuilder: UrlBuilder,
+    private val deleteSpace: DeleteSpace,
+    private val cancelJoinSpaceRequest: CancelJoinSpaceRequest
+) : BaseViewModel() {
+
+    val warning: MutableStateFlow<Warning> = MutableStateFlow(Warning.None)
+
+    val state: StateFlow<ViewState<List<SpaceListItemView>>> = flow {
+        emit(ViewState.Loading)
+        emitAll(
+            combine(
+                spaces.observe(),
+                permissions.all()
+            ) { spaceViews, permission ->
+                ViewState.Success(
+                    data = spaceViews.map { spaceView ->
+                        SpaceListItemView(
+                            space = spaceView,
+                            icon = spaceView.spaceIcon(urlBuilder),
+                            permissions = permission.getOrDefault(
+                                key = requireNotNull(spaceView.targetSpaceId),
+                                defaultValue = SpaceMemberPermissions.NO_PERMISSIONS
+                            ),
+                            actions = buildList {
+                                val space = spaceView.targetSpaceId?.let { id ->
+                                    SpaceId(id)
+                                } ?: return@buildList
+
+                                val isOwner = permissions.get(space) == SpaceMemberPermissions.OWNER
+                                if (isOwner) {
+                                    add(SpaceListItemView.Action.DeleteSpace)
+                                } else {
+                                    when (spaceView.spaceAccountStatus) {
+                                        SpaceStatus.SPACE_JOINING -> {
+                                            add(SpaceListItemView.Action.CancelJoinRequest)
+                                        }
+                                        SpaceStatus.SPACE_REMOVING -> {
+                                            add(SpaceListItemView.Action.DeleteSpace)
+                                        }
+                                        SpaceStatus.SPACE_ACTIVE, SpaceStatus.UNKNOWN -> {
+                                            add(SpaceListItemView.Action.LeaveSpace)
+                                        }
+                                        else -> {
+                                            // Do nothing.
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                )
+            }.catch { e ->
+                emit(ViewState.Error(e.msg()))
+            }
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(),
+        initialValue = ViewState.Init
+    )
+
+    fun onDeleteSpaceClicked(view: SpaceListItemView) {
+        warning.value = Warning.DeleteSpace(SpaceId(view.space.targetSpaceId!!))
+    }
+
+    fun onLeaveSpaceClicked(view: SpaceListItemView) {
+        warning.value = Warning.LeaveSpace(SpaceId(view.space.targetSpaceId!!))
+    }
+
+    fun onCancelJoinSpaceClicked(view: SpaceListItemView) {
+        warning.value = Warning.CancelSpaceJoinRequest(SpaceId(view.space.targetSpaceId!!))
+    }
+
+    fun onCancelJoinRequestAccepted(space: SpaceId) {
+        Timber.d("onCancelJoinRequestClicked")
+        viewModelScope.launch {
+            warning.update { Warning.None }
+            cancelJoinSpaceRequest.async(space).fold(
+                onSuccess = {
+                    Timber.d("Space deleted successfully")
+                },
+                onFailure = { e ->
+                    Timber.e(e, "Error while deleting space").also {
+                        sendToast(e.msg())
+                    }
+                }
+            )
+        }
+    }
+
+    fun onDeleteSpaceAccepted(space: SpaceId) {
+        Timber.d("onDeleteSpaceClicked")
+        viewModelScope.launch {
+            warning.update { Warning.None }
+            deleteSpace.async(space).fold(
+                onSuccess = {
+                    Timber.d("Space deleted successfully")
+                },
+                onFailure = { e ->
+                    Timber.e(e, "Error while deleting space").also {
+                        sendToast(e.msg())
+                    }
+                }
+            )
+        }
+    }
+
+    fun onLeaveSpaceAccepted(space: SpaceId) {
+        Timber.d("onLeaveSpaceClicked")
+        viewModelScope.launch {
+            warning.update { Warning.None }
+            deleteSpace.async(space).fold(
+                onSuccess = {
+                    Timber.d("Space deleted successfully")
+                },
+                onFailure = { e ->
+                    Timber.e(e, "Error while deleting space").also {
+                        sendToast(e.msg())
+                    }
+                }
+            )
+        }
+    }
+
+    fun onWarningDismissed() {
+        warning.value = Warning.None
+    }
+
+    data class SpaceListItemView(
+        val space: ObjectWrapper.SpaceView,
+        val icon: SpaceIconView,
+        val permissions: SpaceMemberPermissions,
+        val actions: List<Action> = listOf(
+            Action.LeaveSpace,
+            Action.DeleteSpace,
+            Action.CancelJoinRequest
+        )
+    ) {
+        sealed class Action {
+            data object CancelJoinRequest : Action()
+            data object DeleteSpace : Action()
+            data object LeaveSpace: Action()
+        }
+    }
+
+    sealed class Warning {
+        data object None: Warning()
+        data class DeleteSpace(val space: SpaceId): Warning()
+        data class LeaveSpace(val space: SpaceId): Warning()
+        data class CancelSpaceJoinRequest(val space: SpaceId): Warning()
+    }
+
+    class Factory @Inject constructor(
+        private val spaces: SpaceViewSubscriptionContainer,
+        private val permissions: UserPermissionProvider,
+        private val deleteSpace: DeleteSpace,
+        private val cancelJoinSpaceRequest: CancelJoinSpaceRequest,
+        private val urlBuilder: UrlBuilder
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(
+            modelClass: Class<T>
+        ) = SpaceListViewModel(
+            spaces = spaces,
+            deleteSpace = deleteSpace,
+            permissions = permissions,
+            urlBuilder = urlBuilder,
+            cancelJoinSpaceRequest = cancelJoinSpaceRequest
+        ) as T
+    }
+}

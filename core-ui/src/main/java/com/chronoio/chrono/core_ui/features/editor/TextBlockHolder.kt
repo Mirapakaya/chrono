@@ -1,0 +1,524 @@
+package com.chronoio.chrono.core_ui.features.editor
+
+import android.graphics.drawable.Drawable
+import android.os.Build
+import android.text.Spannable
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
+import android.widget.TextView
+import androidx.annotation.CallSuper
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.common.CheckedCheckboxColorSpan
+import com.chronoio.chrono.core_ui.common.GhostEditorSelectionSpan
+import com.chronoio.chrono.core_ui.common.SearchHighlightSpan
+import com.chronoio.chrono.core_ui.common.SearchTargetHighlightSpan
+import com.chronoio.chrono.core_ui.common.setMarkup
+import com.chronoio.chrono.core_ui.common.toSpannable
+import com.chronoio.chrono.core_ui.extensions.applyMovementMethod
+import com.chronoio.chrono.core_ui.extensions.cursorYBottomCoordinate
+import com.chronoio.chrono.core_ui.extensions.resolveThemedTextColor
+import com.chronoio.chrono.core_ui.features.editor.holders.`interface`.TextHolder
+import com.chronoio.chrono.core_ui.tools.DefaultSpannableFactory
+import com.chronoio.chrono.core_ui.tools.MentionTextWatcher
+import com.chronoio.chrono.core_ui.tools.SlashTextWatcher
+import com.chronoio.chrono.core_ui.tools.SlashTextWatcherState
+import com.chronoio.chrono.core_ui.widgets.text.MentionSpan
+import com.chronoio.chrono.core_utils.clipboard.parseUrlFromClipboard
+import com.chronoio.chrono.core_utils.ext.isCaretAt
+import com.chronoio.chrono.core_utils.ext.removeSpans
+import com.chronoio.chrono.presentation.editor.editor.Markup
+import com.chronoio.chrono.presentation.editor.editor.listener.ListenerType
+import com.chronoio.chrono.presentation.editor.editor.mention.MentionEvent
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.editor.model.Checkable
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashEvent
+import timber.log.Timber
+
+/**
+ * Provides contract and default implementation for text blocks' common behavior.
+ * @see [BlockView.Text]
+ */
+interface TextBlockHolder : TextHolder {
+
+    fun getDefaultTextColor(): Int
+
+    fun setup() {
+        with(content) {
+            setSpannableFactory(DefaultSpannableFactory())
+            setupCustomInsertionActionMode()
+        }
+    }
+
+    fun setupTableCell() {
+        with(content) {
+            setSpannableFactory(DefaultSpannableFactory())
+            setupCustomInsertionActionMode(isWithBookmark = false)
+        }
+    }
+
+    fun setBlockText(
+        text: String,
+        markup: Markup,
+        clicked: (ListenerType) -> Unit,
+        textColor: Int
+    ) {
+        content.applyMovementMethod(markup)
+        when (markup.marks.isEmpty()) {
+            // Re-setting identical text tears down the widget's composing region, which
+            // resets the IME's automaton and breaks Hangul/Kana/Pinyin composition
+            // mid-syllable. Skip when the widget already shows exactly this content and
+            // carries no leftover markup that this (mark-free) update has to clear.
+            true -> {
+                val editable = content.editableText
+                if (editable == null || editable.toString() != text || editable.marks().isNotEmpty()) {
+                    content.setText(text)
+                }
+            }
+            // The spannable path is deliberately left unguarded: [Editable.marks] cannot
+            // round-trip [Markup.Mark] faithfully — every mention subtype collapses to
+            // Mention.Base — so a marks-equality guard here would strand stale markup.
+            false -> setBlockSpannableText(markup, clicked, textColor)
+        }
+    }
+
+    private fun setBlockSpannableText(
+        markup: Markup,
+        clicked: (ListenerType) -> Unit,
+        textColor: Int
+    ) {
+        when (markup.marks.any { it is Markup.Mark.Mention || it is Markup.Mark.Object }) {
+            true -> setSpannableWithMention(markup, clicked, textColor)
+            false -> setSpannable(markup, textColor)
+        }
+    }
+
+    private fun setSpannable(markup: Markup, textColor: Int) {
+        runCatching {
+            content.setText(
+                markup.toSpannable(
+                    textColor = textColor,
+                    context = content.context,
+                    underlineHeight = getUnderlineHeight()
+                ),
+                TextView.BufferType.SPANNABLE
+            )
+        }.onFailure {
+            Timber.e(it, "Error while setting spannable")
+        }
+    }
+
+    fun getMentionIconSize(): Int
+    fun getMentionIconPadding(): Int
+    fun getMentionCheckedIcon(): Drawable?
+    fun getMentionUncheckedIcon(): Drawable?
+    fun getMentionInitialsSize(): Float
+
+    private fun setSpannableWithMention(
+        markup: Markup,
+        clicked: (ListenerType) -> Unit,
+        textColor: Int
+    ) {
+        content.dismissMentionWatchers()
+        with(content) {
+            runCatching {
+                setText(
+                    markup.toSpannable(
+                        textColor = textColor,
+                        context = context,
+                        mentionImageSize = getMentionIconSize(),
+                        mentionImagePadding = getMentionIconPadding(),
+                        mentionCheckedIcon = getMentionCheckedIcon(),
+                        mentionUncheckedIcon = getMentionUncheckedIcon(),
+                        click = { clicked(ListenerType.Mention(it)) },
+                        onImageReady = { param -> refreshMentionSpan(param) },
+                        mentionInitialsSize = getMentionInitialsSize(),
+                        underlineHeight = getUnderlineHeight()
+                    ),
+                    TextView.BufferType.SPANNABLE
+                )
+            }.onFailure {
+                Timber.e(it, "Error while setting text")
+            }
+        }
+    }
+
+    @Deprecated("Pre-nested-styling legacy.")
+    fun setBackgroundColor(background: ThemeColor = ThemeColor.DEFAULT) {
+        // Do nothing.
+    }
+
+    fun setMarkup(markup: Markup, clicked: (ListenerType) -> Unit, textColor: Int) {
+        content.applyMovementMethod(markup)
+        with(content) {
+            text?.setMarkup(
+                markup = markup,
+                context = context,
+                mentionImageSize = getMentionIconSize(),
+                mentionImagePadding = getMentionIconPadding(),
+                click = { clicked(ListenerType.Mention(it)) },
+                onImageReady = { param -> refreshMentionSpan(param) },
+                textColor = textColor,
+                mentionCheckedIcon = getMentionCheckedIcon(),
+                mentionUncheckedIcon = getMentionUncheckedIcon(),
+                mentionInitialsSize = getMentionInitialsSize(),
+                underlineHeight = getUnderlineHeight()
+            )
+        }
+    }
+
+    fun applyCheckedCheckboxColorSpan(isChecked: Boolean) {
+        content.editableText.removeSpans<CheckedCheckboxColorSpan>()
+        if (isChecked) {
+            content.editableText.setSpan(
+                CheckedCheckboxColorSpan(),
+                0,
+                content.editableText.length,
+                Spannable.SPAN_INCLUSIVE_INCLUSIVE
+            )
+        }
+    }
+
+    fun applySearchHighlight(item: BlockView.Searchable) {
+        content.editableText.removeSpans<SearchHighlightSpan>()
+        content.editableText.removeSpans<SearchTargetHighlightSpan>()
+        item.searchFields.forEach { field ->
+            field.highlights.forEach { highlight ->
+                content.editableText.setSpan(
+                    SearchHighlightSpan(),
+                    highlight.first,
+                    highlight.last,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            if (field.isTargeted) {
+                content.editableText.setSpan(
+                    SearchTargetHighlightSpan(),
+                    field.target.first,
+                    field.target.last,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+        }
+    }
+
+    fun applyGhostEditorSelection(item: BlockView.SupportGhostEditorSelection) {
+        content.editableText.removeSpans<GhostEditorSelectionSpan>()
+        item.ghostEditorSelection?.let { range ->
+            content.editableText.setSpan(
+                GhostEditorSelectionSpan(),
+                range.first,
+                range.last,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+    }
+
+    fun refreshMentionSpan(param: String) {
+        content.text?.let { editable ->
+            val spans = editable.getSpans(
+                0,
+                editable.length,
+                MentionSpan::class.java
+            )
+            spans.forEach { span ->
+                if (span.param == param) {
+                    editable.setSpan(
+                        span,
+                        editable.getSpanStart(span),
+                        editable.getSpanEnd(span),
+                        Markup.MENTION_SPANNABLE_FLAG
+                    )
+                }
+            }
+        }
+    }
+
+    fun setupMentionWatcher(
+        onMentionEvent: ((MentionEvent) -> Unit),
+        itemProvider: () -> BlockView.Text?
+    ) {
+        content.addTextChangedListener(
+            MentionTextWatcher { state ->
+                itemProvider().performInEditMode { item ->
+                    when (state) {
+                        is MentionTextWatcher.MentionTextWatcherState.Start -> {
+                            onMentionEvent.invoke(
+                                MentionEvent.MentionSuggestStart(
+                                    cursorCoordinate = content.cursorYBottomCoordinate(),
+                                    mentionStart = state.start
+                                )
+                            )
+                        }
+                        MentionTextWatcher.MentionTextWatcherState.Stop -> {
+                            onMentionEvent.invoke(MentionEvent.MentionSuggestStop)
+                        }
+
+                        is MentionTextWatcher.MentionTextWatcherState.Text -> {
+                            onMentionEvent.invoke(MentionEvent.MentionSuggestText(state.text))
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    fun setupSlashWatcher(
+        onSlashEvent: (SlashEvent) -> Unit,
+        itemProvider: () -> BlockView.Text?
+    ) {
+        content.addTextChangedListener(
+            SlashTextWatcher { state ->
+                itemProvider().performInEditMode { item ->
+                    when (state) {
+                        is SlashTextWatcherState.Start -> onSlashEvent(
+                            SlashEvent.Start(
+                                slashStart = state.start,
+                                cursorCoordinate = content.cursorYBottomCoordinate()
+                            )
+                        )
+                        SlashTextWatcherState.Stop -> onSlashEvent(SlashEvent.Stop)
+                        is SlashTextWatcherState.Filter -> onSlashEvent(
+                            SlashEvent.Filter(
+                                filter = state.text,
+                                viewType = item.getViewType()
+                            )
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    @CallSuper
+    fun processChangePayload(
+        payloads: List<BlockViewDiffUtil.Payload>,
+        item: BlockView,
+        clicked: (ListenerType) -> Unit,
+    ) = payloads.forEach { payload ->
+
+        check(item is BlockView.Text)
+
+        Timber.d("Processing $payload for new view:\n$item")
+
+        if (payload.textChanged()) {
+            content.pauseSelectionWatcher {
+                content.pauseTextWatchers {
+                    setBlockText(
+                        text = item.text,
+                        markup = item,
+                        clicked = clicked,
+                        textColor = resolveTextBlockThemedColor(item.color)
+                    )
+                }
+            }
+            if (item is Checkable) {
+                applyCheckedCheckboxColorSpan(item.isChecked)
+            }
+        } else if (payload.markupChanged()) {
+            content.pauseTextWatchers {
+                setMarkup(item, clicked, resolveTextBlockThemedColor(item.color))
+                if (item is Checkable) {
+                    applyCheckedCheckboxColorSpan(item.isChecked)
+                }
+            }
+        }
+
+        if (payload.isSearchHighlightChanged) {
+            applySearchHighlight(item)
+        }
+
+        if (payload.isGhostEditorSelectionChanged) {
+            applyGhostEditorSelection(item)
+        }
+
+        if (payload.textColorChanged()) {
+            setTextColor(resolveTextBlockThemedColor(item.color))
+            setMarkup(item, clicked, resolveTextBlockThemedColor(item.color))
+        }
+
+        if (payload.backgroundColorChanged()) {
+            setBackgroundColor(item.background)
+        }
+
+        if (payload.alignmentChanged()) {
+            item.alignment?.let { setAlignment(it) }
+        }
+
+        if (payload.readWriteModeChanged()) {
+            content.pauseSelectionWatcher {
+                content.pauseTextWatchers {
+                    if (item.mode == BlockView.Mode.EDIT) {
+                        enableEditMode()
+                        content.applyMovementMethod(item)
+                    } else {
+                        enableReadMode()
+                    }
+                }
+            }
+        }
+
+        if (payload.selectionChanged()) {
+            select(item)
+        }
+
+        if (payload.focusChanged()) {
+            setFocus(item)
+        }
+
+        try {
+            // Apply the cursor when the diff reports one, and also when the block just gained
+            // focus. A view rebuild — a rotation, for example — re-renders the focused block
+            // with the cursor already correct, so the diff reports FOCUS_CHANGED alone, the
+            // branch below never runs, and the caret falls to 0. Ordinary editing is not
+            // affected: onBlockFocusChanged stores a null cursor, so item.cursor is null on a
+            // normal tap and this block does nothing.
+            if (payload.isCursorChanged || (payload.focusChanged() && item.isFocused)) {
+                item.cursor?.let { cursor ->
+                    val textLength = content.text?.length ?: 0
+                    val validCursor = cursor.coerceIn(0, textLength)
+                    if (textLength > 0 && validCursor <= textLength) {
+                        // Moving the caret to where it already is would needlessly notify
+                        // the IME about a selection change while a composition is in
+                        // progress. See [TextHolder.setCursor].
+                        if (!content.isCaretAt(validCursor)) {
+                            content.setSelection(validCursor)
+                        }
+                    } else {
+                        Timber.w("Invalid cursor position: cursor=$cursor, textLength=$textLength")
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            Timber.w(e, "Error while setting cursor from $item")
+        }
+    }
+
+    fun resolveTextBlockThemedColor(color: ThemeColor): Int {
+        return content.context.resolveThemedTextColor(color, getDefaultTextColor())
+    }
+
+    //region CONTEXT MENU
+
+    private fun setupCustomInsertionActionMode(isWithBookmark: Boolean = true) {
+        content.customInsertionActionModeCallback = object : ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                return try {
+                    if (getLink() != null) {
+                        menu.addLink()
+                        if (isWithBookmark) {
+                            menu.add(0, R.id.menuBookmark, 3, R.string.bookmark)
+                        }
+                        menu.pasteToText()
+                    }
+                    true
+                } catch (e: Exception) {
+                    false.also {
+                        Timber.d(e, "Error while creating action mode")
+                    }
+                }
+            }
+
+            override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (getLink() != null) {
+                        if (menu.findItem(android.R.id.textAssist) != null) {
+                            menu.removeItem(android.R.id.textAssist)
+                            return true
+                        }
+                    }
+                }
+                return false
+            }
+
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                return when (item.itemId) {
+                    R.id.menuBookmark -> {
+                        content.clipboardInterceptor?.onBookmarkPasted(getLink().toString())
+                        mode.finish()
+                        true
+                    }
+                    R.id.menuLink -> {
+                        val link = getLink().toString()
+                        insertLinkContent(link)
+                        content.clipboardInterceptor?.onLinkPasted(link)
+                        mode.finish()
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            override fun onDestroyActionMode(mode: ActionMode) {}
+        }
+        content.customSelectionActionModeCallback = object : ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                return try {
+                    if (getLink() != null) {
+                        menu.addLink()
+                        menu.pasteToText()
+                    }
+                    return true
+                } catch (e: Exception) {
+                    false.also {
+                        Timber.d(e, "Error while creating action mode")
+                    }
+                }
+            }
+
+            override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+                return false
+            }
+
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                return when (item.itemId) {
+                    R.id.menuLink -> {
+                        content.clipboardInterceptor?.onLinkPasted(getLink().toString())
+                        mode.finish()
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            override fun onDestroyActionMode(mode: ActionMode) {}
+        }
+    }
+
+    private fun getUnderlineHeight(): Float =
+        content.resources.getDimensionPixelSize(R.dimen.block_text_markup_underline_height)
+            .toFloat()
+
+    private fun Menu.addLink() {
+        add(
+            0,
+            R.id.menuLink,
+            1,
+            content.resources.getString(R.string.paste_link)
+        )
+    }
+
+    private fun Menu.pasteToText() = findItem(android.R.id.paste)?.setTitle(R.string.text)
+
+    private fun getLink() = content.context.parseUrlFromClipboard()
+
+    private fun insertLinkContent(paste: String) {
+
+        content.text?.insert(content.selectionStart, paste)
+        content.setSelection(
+            content.selectionStart - paste.length,
+            content.selectionStart
+        )
+    }
+
+    //endregion
+}
+
+fun BlockView.Text?.performInEditMode(block: (BlockView.Text) -> Unit) {
+    this?.let { item ->
+        if (item.mode == BlockView.Mode.EDIT) {
+            block(item)
+        }
+    }
+}

@@ -1,0 +1,1450 @@
+package com.chronoio.chrono.presentation.spaces
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.analytics.base.EventsDictionary.clickShareSpaceCopyLink
+import com.chronoio.chrono.analytics.base.EventsDictionary.clickShareSpaceShareLink
+import com.chronoio.chrono.analytics.base.EventsDictionary.defaultTypeChanged
+import com.chronoio.chrono.analytics.base.EventsDictionary.screenQr
+import com.chronoio.chrono.analytics.base.EventsPropertiesKey
+import com.chronoio.chrono.analytics.base.sendEvent
+import com.chronoio.chrono.analytics.event.EventAnalytics
+import com.chronoio.chrono.analytics.props.Props
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.Filepath
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectTypeUniqueKeys
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.core_models.Wallpaper
+import com.chronoio.chrono.core_models.chats.NotificationState
+import com.chronoio.chrono.core_models.ext.EMPTY_STRING_VALUE
+import com.chronoio.chrono.core_models.ext.shouldShowMemberCount
+import com.chronoio.chrono.core_models.multiplayer.ParticipantStatus
+import com.chronoio.chrono.core_models.multiplayer.SpaceAccessType
+import com.chronoio.chrono.core_models.multiplayer.SpaceInviteLinkAccessLevel
+import com.chronoio.chrono.core_models.multiplayer.SpaceMemberPermissions
+import com.chronoio.chrono.core_models.multiplayer.SpaceType
+import com.chronoio.chrono.core_models.multiplayer.SpaceUxType
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeId
+import com.chronoio.chrono.core_models.primitives.TypeKey
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.core_models.ui.WallpaperColor
+import com.chronoio.chrono.core_models.ui.WallpaperView
+import com.chronoio.chrono.core_models.ui.computeWallpaperResult
+import com.chronoio.chrono.core_models.ui.getSpaceIconColor
+import com.chronoio.chrono.core_models.ui.objectIcon
+import com.chronoio.chrono.core_models.ui.spaceIcon
+import com.chronoio.chrono.core_utils.notifications.NotificationPermissionManager
+import com.chronoio.chrono.domain.auth.interactor.GetAccount
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.cover.GetCoverGradientCollection
+import com.chronoio.chrono.domain.device.DeviceTokenStoringService
+import com.chronoio.chrono.domain.invite.GetCurrentInviteAccessLevel
+import com.chronoio.chrono.domain.invite.SpaceInviteLinkStore
+import com.chronoio.chrono.domain.launch.GetDefaultObjectType
+import com.chronoio.chrono.domain.launch.SetDefaultObjectType
+import com.chronoio.chrono.domain.library.StoreSearchByIdsParams
+import com.chronoio.chrono.domain.library.StoreSearchParams
+import com.chronoio.chrono.domain.library.StorelessSubscriptionContainer
+import com.chronoio.chrono.domain.media.UploadFile
+import com.chronoio.chrono.domain.misc.AppActionManager
+import com.chronoio.chrono.domain.multiplayer.ActiveSpaceMemberSubscriptionContainer
+import com.chronoio.chrono.domain.multiplayer.CopyInviteLinkToClipboard
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.multiplayer.UserPermissionProvider
+import com.chronoio.chrono.domain.multiplayer.sharedSpaceCount
+import com.chronoio.chrono.domain.notifications.NotificationStateCalculator
+import com.chronoio.chrono.domain.notifications.ResetSpaceChatNotification
+import com.chronoio.chrono.domain.notifications.SetSpaceNotificationMode
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.objects.getTypeOfObject
+import com.chronoio.chrono.domain.search.ProfileSubscriptionManager
+import com.chronoio.chrono.domain.search.SearchObjects
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.spaces.DeleteSpace
+import com.chronoio.chrono.domain.spaces.SetHomepage
+import com.chronoio.chrono.domain.spaces.SetSpaceDetails
+import com.chronoio.chrono.domain.spaces.SetSpaceDetails.Params
+import com.chronoio.chrono.domain.wallpaper.ObserveSpaceWallpaper
+import com.chronoio.chrono.domain.wallpaper.SetWallpaper
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.BuildConfig
+import com.chronoio.chrono.presentation.common.BaseViewModel
+import com.chronoio.chrono.presentation.extension.sendAnalyticsChangeMessageNotificationState
+import com.chronoio.chrono.presentation.multiplayer.SpaceLimitsState
+import com.chronoio.chrono.presentation.multiplayer.spaceLimitsState
+import com.chronoio.chrono.presentation.home.HomepageManagementRule
+import com.chronoio.chrono.presentation.home.SpaceHomePickerDelegate
+import com.chronoio.chrono.presentation.home.SpaceHomePickerState
+import com.chronoio.chrono.presentation.home.SpaceHomepageResolver
+import com.chronoio.chrono.presentation.search.ObjectSearchConstants
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.ManageBin
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.ManageRemoteStorage
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.ManageSharedSpace
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.OpenDebugScreen
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.OpenPropertiesScreen
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.OpenTypesScreen
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.SelectDefaultObjectType
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.ShareInviteLink
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.ShowDeleteSpaceWarning
+import com.chronoio.chrono.presentation.spaces.SpaceSettingsViewModel.Command.ShowLeaveSpaceWarning
+import com.chronoio.chrono.presentation.spaces.UiSpaceQrCodeState.SpaceInvite
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.EntrySpace
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.Icon
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.InviteLink
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.Members
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.MembersSmall
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.Name
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.Notifications
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem.Spacer
+import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+
+class SpaceSettingsViewModel(
+    private val vmParams: VmParams,
+    private val analytics: Analytics,
+    private val setSpaceDetails: SetSpaceDetails,
+    private val spaceManager: SpaceManager,
+    private val urlBuilder: UrlBuilder,
+    private val deleteSpace: DeleteSpace,
+    private val spaceGradientProvider: SpaceGradientProvider,
+    private val userPermissionProvider: UserPermissionProvider,
+    private val spaceViewContainer: SpaceViewSubscriptionContainer,
+    private val activeSpaceMemberSubscriptionContainer: ActiveSpaceMemberSubscriptionContainer,
+    private val uploadFile: UploadFile,
+    private val profileContainer: ProfileSubscriptionManager,
+    private val getDefaultObjectType: GetDefaultObjectType,
+    private val setDefaultObjectType: SetDefaultObjectType,
+    private val observeSpaceWallpaper: ObserveSpaceWallpaper,
+    private val storeOfObjectTypes: StoreOfObjectTypes,
+    private val appActionManager: AppActionManager,
+    private val copyInviteLinkToClipboard: CopyInviteLinkToClipboard,
+    private val getAccount: GetAccount,
+    private val notificationPermissionManager: NotificationPermissionManager,
+    private val setSpaceNotificationMode: SetSpaceNotificationMode,
+    private val deviceTokenStoringService: DeviceTokenStoringService,
+    private val getCurrentInviteAccessLevel: GetCurrentInviteAccessLevel,
+    private val spaceInviteLinkStore: SpaceInviteLinkStore,
+    private val getGradients: GetCoverGradientCollection,
+    private val setWallpaper: SetWallpaper,
+    private val storelessSubscriptionContainer: StorelessSubscriptionContainer,
+    private val resetSpaceChatNotification: ResetSpaceChatNotification,
+    private val searchObjects: SearchObjects,
+    private val setHomepage: SetHomepage,
+    private val fieldParser: FieldParser
+) : BaseViewModel() {
+
+    val commands = MutableSharedFlow<Command>()
+    val isDismissed = MutableStateFlow(false)
+
+    private val _uiState = MutableStateFlow<UiSpaceSettingsState>(UiSpaceSettingsState.Initial)
+    val uiState: StateFlow<UiSpaceSettingsState> = _uiState.asStateFlow()
+
+    val permissions = MutableStateFlow(SpaceMemberPermissions.NO_PERMISSIONS)
+
+    val _notificationState = MutableStateFlow(NotificationState.ALL)
+
+    val uiQrCodeState = MutableStateFlow<UiSpaceQrCodeState>(UiSpaceQrCodeState.Hidden)
+
+    private val spaceInfoTitleClickCount = MutableStateFlow(0)
+    val inviteLinkAccessLevel =
+        MutableStateFlow<SpaceInviteLinkAccessLevel>(SpaceInviteLinkAccessLevel.LinkDisabled())
+
+    val spaceWallpapers = MutableStateFlow<List<WallpaperView>>(listOf())
+
+    private val selectedDefaultObjectType = MutableStateFlow<ObjectWrapper.Type?>(null)
+
+    val spaceSettingsErrors = MutableStateFlow<SpaceSettingsErrors>(SpaceSettingsErrors.Hidden)
+
+    /**
+     * StateFlow containing chats that have custom notification states different from the space default.
+     * These chats can be reset to use the space default notification setting.
+     */
+    val chatsWithCustomNotifications = MutableStateFlow<List<ChatNotificationItem>>(emptyList())
+    private var chatNotificationsJob: Job? = null
+
+    // DROID-4467: Current homepage object for the "Home" settings row. Null when homepage
+    // is null/empty, a special sentinel (e.g. "widgets"), or the object can't be resolved.
+    private val homepageObjectFlow = MutableStateFlow<ObjectWrapper.Basic?>(null)
+
+    private val spaceHomePickerDelegate: SpaceHomePickerDelegate = SpaceHomePickerDelegate(
+        space = vmParams.space,
+        setHomepage = setHomepage,
+        searchObjects = searchObjects,
+        fieldParser = fieldParser,
+        storeOfObjectTypes = storeOfObjectTypes,
+        urlBuilder = urlBuilder,
+        isOneToOneSpaceProvider = {
+            spaceViewContainer.get(vmParams.space)?.isOneToOneSpace == true
+        }
+    )
+    val spaceHomePickerState: StateFlow<SpaceHomePickerState> = spaceHomePickerDelegate.state
+
+    init {
+        Timber.d("SpaceSettingsViewModel, Init, vmParams: $vmParams")
+        viewModelScope.launch {
+            analytics.sendEvent(
+                eventName = EventsDictionary.screenSettingSpacesSpaceIndex
+            )
+        }
+        proceedWithObservingSpaceView()
+        proceedWithObservingHomepageObject()
+        subscribeToInviteLinkState()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun proceedWithObservingHomepageObject() {
+        viewModelScope.launch {
+            spaceViewContainer
+                .observe(vmParams.space)
+                .map { it.homepage }
+                .distinctUntilChanged()
+                .flatMapLatest { homepage ->
+                    if (!SpaceHomepageResolver.isExplicitObjectHomepage(homepage)) {
+                        homepageObjectFlow.value = null
+                        flowOf(null)
+                    } else {
+                        storelessSubscriptionContainer.subscribe(
+                            StoreSearchByIdsParams(
+                                space = vmParams.space,
+                                subscription = HOME_SETTINGS_OBJECT_SUBSCRIPTION,
+                                keys = ObjectSearchConstants.defaultKeys,
+                                targets = listOf(homepage!!)
+                            )
+                        ).map { results ->
+                            results.firstOrNull { it.notDeletedNorArchived }
+                        }.catch {
+                            Timber.e(it, "Failed to observe space homepage object")
+                            emit(null)
+                        }
+                    }
+                }
+                .onCompletion {
+                    withContext(NonCancellable) {
+                        kotlin.runCatching {
+                            storelessSubscriptionContainer.unsubscribe(
+                                listOf(HOME_SETTINGS_OBJECT_SUBSCRIPTION)
+                            )
+                        }.onFailure { t ->
+                            Timber.w(t, "Error unsubscribing space-settings homepage object")
+                        }
+                    }
+                }
+                .collect { obj -> homepageObjectFlow.value = obj }
+        }
+    }
+
+    fun onSpaceHomePickerDismissed() = spaceHomePickerDelegate.dismiss()
+
+    fun onSpaceHomePickerQueryChanged(query: String) =
+        spaceHomePickerDelegate.onQueryChanged(viewModelScope, query)
+
+    fun onSpaceHomePickerObjectSelected(objectId: Id) =
+        spaceHomePickerDelegate.onObjectSelected(viewModelScope, objectId)
+
+    fun onSpaceHomePickerNoHomeSelected() =
+        spaceHomePickerDelegate.onNoHomeSelected(viewModelScope)
+
+    fun onStart() {
+        chatNotificationsJob = subscribeToChatsWithCustomNotifications()
+    }
+
+    fun onStop() {
+        chatNotificationsJob?.cancel()
+        chatNotificationsJob = null
+        viewModelScope.launch {
+            storelessSubscriptionContainer.unsubscribe(
+                listOf(
+                    getSpaceChatsCustomNotificationsSubscriptionId()
+                )
+            )
+            chatsWithCustomNotifications.value = emptyList()
+        }
+    }
+
+    private fun proceedWithObservingSpaceView() {
+
+        val restrictions = combine(
+            userPermissionProvider.observe(vmParams.space),
+            spaceViewContainer.sharedSpaceCount(userPermissionProvider.all()),
+            profileContainer
+                .observe()
+                .map { wrapper ->
+                    wrapper.getValue<Double?>(Relations.SHARED_SPACES_LIMIT)?.toInt() ?: 0
+                },
+        ) { permission, sharedSpaceCount, sharedSpaceLimit ->
+            Triple(permission, sharedSpaceCount, sharedSpaceLimit)
+        }
+
+
+        val otherFlows = combine(
+            spaceViewContainer.observe(vmParams.space),
+            activeSpaceMemberSubscriptionContainer.observe(vmParams.space),
+            observeSpaceWallpaper.flow(params = ObserveSpaceWallpaper.Params(vmParams.space.id))
+        ) { spaceView, spaceMembers, wallpaper ->
+            Triple(spaceView, spaceMembers, wallpaper)
+        }
+
+        viewModelScope.launch {
+
+            // Get initial default type from backend (used as fallback)
+            val defaultObjectTypeResponse = getDefaultObjectType
+                .async(params = vmParams.space)
+                .getOrNull()
+            val initialDefaultType = if (defaultObjectTypeResponse != null) {
+                storeOfObjectTypes.get(defaultObjectTypeResponse.id.id)
+            } else {
+                null
+            }
+
+            combine(
+                restrictions,
+                otherFlows,
+                spaceInfoTitleClickCount,
+                inviteLinkAccessLevel,
+                combine(selectedDefaultObjectType, homepageObjectFlow) { selected, home ->
+                    selected to home
+                }
+            ) { (permission, sharedSpaceCount, sharedSpaceLimit), (spaceView, spaceMembers, wallpaper), clickCount, inviteLink, (selectedType, homepageObject) ->
+
+                // Use selected type if available, otherwise fall back to initial default type
+                val effectiveDefaultType = selectedType ?: initialDefaultType
+                val defaultObjectTypeSettingItem = if (effectiveDefaultType != null) {
+                    UiSpaceSettingsItem.DefaultObjectType(
+                        id = effectiveDefaultType.id,
+                        name = effectiveDefaultType.name.orEmpty(),
+                        icon = effectiveDefaultType.objectIcon()
+                    )
+                } else {
+                    UiSpaceSettingsItem.DefaultObjectType(
+                        id = null,
+                        name = EMPTY_STRING_VALUE,
+                        icon = ObjectIcon.None
+                    )
+                }
+
+                val spaceHomeSettingItem = buildSpaceHomeSettingItem(
+                    homepage = spaceView.homepage,
+                    homepageObject = homepageObject
+                )
+
+                Timber.d("Got shared space limit: $sharedSpaceLimit, shared space count: $sharedSpaceCount")
+
+                val spaceIcon = spaceView.spaceIcon(urlBuilder)
+
+                val wallpaperResult = computeWallpaperResult(
+                    wallpaper = wallpaper,
+                    icon = spaceIcon
+                )
+
+                val gradients = getGradients.provide().map { code ->
+                    WallpaperView.Gradient(
+                        code = code,
+                        isSelected = code == (wallpaper as? Wallpaper.Gradient)?.code
+                    )
+                }
+                val colors = WallpaperColor.entries.map {
+                    WallpaperView.SolidColor(
+                        code = it.code,
+                        isSelected = it.code == (wallpaper as? Wallpaper.Color)?.code
+                    )
+                }
+                val wallpaperItems = buildList {
+                    add(
+                        WallpaperView.SpaceColor(
+                            systemColor = getSpaceIconColor(spaceIcon),
+                            isSelected = wallpaper is Wallpaper.Default
+                        )
+                    )
+                    addAll(gradients)
+                    addAll(colors)
+                }
+                spaceWallpapers.value = wallpaperItems
+
+                val targetSpaceId = spaceView.targetSpaceId
+
+                val spaceCreator =
+                    if (spaceMembers is ActiveSpaceMemberSubscriptionContainer.Store.Data) {
+                        spaceMembers.members.find { it.id == spaceView.getValue<Id>(Relations.CREATOR) }
+                    } else {
+                        null
+                    }
+                val createdByNameOrId =
+                    spaceCreator?.globalName?.takeIf { it.isNotEmpty() } ?: spaceCreator?.identity
+
+                // Calculate active members count (excluding JOINING) and limits state
+                val (spaceMemberCount, spaceLimitsState) = if (spaceMembers is ActiveSpaceMemberSubscriptionContainer.Store.Data) {
+                    // Count only ACTIVE members for display
+                    val activeMemberCount =
+                        spaceMembers.members.count { it.status == ParticipantStatus.ACTIVE }
+
+                    activeMemberCount to spaceView.spaceLimitsState(
+                        spaceMembers = spaceMembers.members,
+                        isCurrentUserOwner = permission?.isOwner() == true,
+                        sharedSpaceCount = sharedSpaceCount,
+                        sharedSpaceLimit = sharedSpaceLimit
+                    )
+                } else {
+                    0 to SpaceLimitsState.Init
+                }
+
+                // Count members with JOINING status (pending join requests)
+                val requests: Int =
+                    if (spaceMembers is ActiveSpaceMemberSubscriptionContainer.Store.Data) {
+                        spaceMembers.members.count { it.status == ParticipantStatus.JOINING }
+                    } else {
+                        0
+                    }
+
+                val deviceToken = if (BuildConfig.DEBUG || clickCount >= 5) {
+                    try {
+                        deviceTokenStoringService.getToken()
+                    } catch (e: Exception) {
+                        null
+                    }
+                } else {
+                    null
+                }
+
+                val spaceTechInfo = SpaceTechInfo(
+                    spaceId = vmParams.space,
+                    createdBy = createdByNameOrId.orEmpty(),
+                    creationDateInMillis = spaceView
+                        .getValue<Double?>(Relations.CREATED_DATE)
+                        ?.let { timeInSeconds -> (timeInSeconds * 1000L).toLong() },
+                    networkId = spaceManager.getConfig(vmParams.space)?.network.orEmpty(),
+                    isDebugVisible = BuildConfig.DEBUG || clickCount >= 5,
+                    deviceToken = deviceToken,
+                    isOneToOne = spaceView.isOneToOneSpace
+                )
+
+                val items = buildList {
+                    add(
+                        UiSpaceSettingsItem.Icon(
+                            icon = spaceIcon
+                        )
+                    )
+
+                    // For ONE_TO_ONE spaces, show the other member's identity/globalName
+                    if (spaceView.isOneToOneSpace && spaceMembers is ActiveSpaceMemberSubscriptionContainer.Store.Data) {
+                        // Find the member using oneToOneIdentity - the canonical way to identify the other user
+                        val otherMember =
+                            spaceMembers.members.find { it.identity == spaceView.oneToOneIdentity }
+                        otherMember?.let {
+                            add(Spacer(id = "after-icon", height = 16))
+                            add(
+                                UiSpaceSettingsItem.ParticipantIdentity(
+                                    name = it.name.orEmpty(),
+                                    globalName = it.globalName,
+                                    identity = it.identity
+                                )
+                            )
+                            add(UiSpaceSettingsItem.Section.Collaboration)
+                        }
+                    } else {
+                        add(Spacer(id = "after-icon", height = 24))
+                        add(
+                            UiSpaceSettingsItem.Name(
+                                name = spaceView.name.orEmpty()
+                            )
+                        )
+                    }
+                    when (spaceView.spaceAccessType) {
+                        SpaceAccessType.PRIVATE, SpaceAccessType.SHARED -> {
+                            add(Spacer(id = "after-name", height = 4))
+                            if (spaceView.shouldShowMemberCount) {
+                                add(MembersSmall(count = spaceMemberCount))
+                            }
+                        }
+
+                        SpaceAccessType.DEFAULT, null -> {
+                            add(Spacer(id = "after-name-entry", height = 4))
+                            add(EntrySpace)
+                        }
+                    }
+
+                    if (spaceView.isPossibleToShare && !spaceView.isOneToOneSpace) {
+                        val isEditorLimitReached = spaceLimitsState is SpaceLimitsState.EditorsLimit
+                        val requestsCount =
+                            if (permission?.isOwner() == true && requests > 0) requests else null
+                        when (inviteLink) {
+                            is SpaceInviteLinkAccessLevel.EditorAccess -> {
+                                add(Spacer(id = "before-invite-link", height = 24))
+                                add(InviteLink(inviteLink.link))
+                                add(UiSpaceSettingsItem.Section.Collaboration)
+                                add(
+                                    Members(
+                                        count = requestsCount,
+                                        withColor = requestsCount != null,
+                                        editorLimit = isEditorLimitReached
+                                    )
+                                )
+                            }
+
+                            is SpaceInviteLinkAccessLevel.RequestAccess -> {
+                                add(Spacer(id = "before-invite-link", height = 24))
+                                add(InviteLink(inviteLink.link))
+                                add(UiSpaceSettingsItem.Section.Collaboration)
+                                add(
+                                    Members(
+                                        count = requestsCount,
+                                        withColor = requestsCount != null,
+                                        editorLimit = isEditorLimitReached
+                                    )
+                                )
+                            }
+
+                            is SpaceInviteLinkAccessLevel.ViewerAccess -> {
+                                add(Spacer(id = "before-invite-link", height = 24))
+                                add(InviteLink(inviteLink.link))
+                                add(UiSpaceSettingsItem.Section.Collaboration)
+                                add(
+                                    Members(
+                                        count = requestsCount,
+                                        withColor = requestsCount != null,
+                                        editorLimit = isEditorLimitReached
+                                    )
+                                )
+                            }
+
+                            is SpaceInviteLinkAccessLevel.LinkDisabled,
+                            is SpaceInviteLinkAccessLevel.HeldByOwner -> {
+                                // Held-by-owner: the invite exists, but this member's
+                                // device has no link to show — same as no link here.
+                                add(UiSpaceSettingsItem.Section.Collaboration)
+                                add(
+                                    Members(
+                                        count = null,
+                                        withColor = false,
+                                        editorLimit = isEditorLimitReached
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    if (spaceView.spaceType == SpaceType.REGULAR && spaceView.isShared) {
+                        add(Spacer(id = "before-notifications", height = 8))
+                        add(Notifications)
+                    }
+
+
+                    if (shouldShowChangeTypeOption(permission, spaceView)) {
+                        add(Spacer(id = "before-change-type", height = 8))
+                        when (spaceView.spaceUxType) {
+                            SpaceUxType.CHAT -> add(UiSpaceSettingsItem.ChangeType.Chat(isEnabled = true))
+                            else -> add(UiSpaceSettingsItem.ChangeType.Data(isEnabled = true))
+                        }
+                    }
+
+                    add(UiSpaceSettingsItem.Section.ContentModel)
+                    add(UiSpaceSettingsItem.ObjectTypes)
+                    add(Spacer(id = "after-object-types", height = 8))
+                    add(UiSpaceSettingsItem.Fields)
+
+                    add(UiSpaceSettingsItem.Section.Preferences)
+                    // DROID-4463: Home row only for owners of regular channels.
+                    // Editors/Viewers cannot change the homepage; 1-on-1 channels
+                    // always open on Chat and have no homepage-change UI (DROID-4469).
+                    if (HomepageManagementRule.canManageHomepage(
+                            isOneToOneSpace = spaceView.isOneToOneSpace,
+                            permission = permission
+                        )
+                    ) {
+                        add(spaceHomeSettingItem)
+                        add(Spacer(id = "after-space-home", height = 8))
+                    }
+                    add(defaultObjectTypeSettingItem)
+                    add(Spacer(id = "after-default-type", height = 8))
+                    add(
+                        UiSpaceSettingsItem.Wallpapers(
+                            wallpaper = wallpaperResult,
+                            spaceIconView = spaceIcon
+                        )
+                    )
+
+                    if (permission?.isOwnerOrEditor() == true) {
+                        add(UiSpaceSettingsItem.Section.DataManagement)
+                        add(UiSpaceSettingsItem.RemoteStorage)
+                        add(Spacer(id = "after-remote-storage", height = 8))
+                        add(UiSpaceSettingsItem.Bin)
+                    }
+
+                    add(UiSpaceSettingsItem.Section.Misc)
+                    add(UiSpaceSettingsItem.SpaceInfo)
+                    add(Spacer(id = "after-space-info", height = 8))
+                    if (permission?.isOwner() == true) {
+                        add(UiSpaceSettingsItem.DeleteSpace)
+                    } else {
+                        add(UiSpaceSettingsItem.LeaveSpace)
+                    }
+                    add(Spacer(id = "bottom", height = 32))
+                }
+
+                UiSpaceSettingsState.SpaceSettings(
+                    spaceTechInfo = spaceTechInfo,
+                    items = items,
+                    isEditEnabled = permission?.isOwnerOrEditor() == true && !spaceView.isOneToOneSpace,
+                    notificationState = spaceView.spacePushNotificationMode,
+                    targetSpaceId = targetSpaceId
+                )
+
+            }.collect { update ->
+                _uiState.value = update
+            }
+        }
+    }
+
+    fun onUiEvent(uiEvent: UiEvent) {
+        Timber.d("onUiEvent: $uiEvent")
+        when (uiEvent) {
+            UiEvent.IconMenu.OnRemoveIconClicked -> {
+                proceedWithRemovingSpaceIcon()
+            }
+
+            UiEvent.IconMenu.OnChangeIconColorClicked -> {
+                proceedWithUpdateSpaceIconColor()
+            }
+
+            UiEvent.OnBackPressed -> {
+                isDismissed.value = true
+            }
+
+            UiEvent.OnDeleteSpaceClicked -> {
+                viewModelScope.launch { commands.emit(ShowDeleteSpaceWarning) }
+            }
+
+            UiEvent.OnLeaveSpaceClicked -> {
+                viewModelScope.launch { commands.emit(ShowLeaveSpaceWarning) }
+            }
+
+            UiEvent.OnRemoteStorageClick -> {
+                viewModelScope.launch {
+                    commands.emit(ManageRemoteStorage)
+                }
+            }
+
+            UiEvent.OnBinClick -> {
+                viewModelScope.launch {
+                    commands.emit(ManageBin(vmParams.space))
+                }
+            }
+
+            UiEvent.OnInviteClicked -> {
+                viewModelScope.launch {
+                    commands.emit(
+                        ManageSharedSpace(vmParams.space)
+                    )
+                }
+            }
+
+            UiEvent.OnPersonalizationClicked -> {
+                sendToast("Coming soon")
+            }
+
+            is UiEvent.OnQrCodeClicked -> {
+                viewModelScope.launch {
+                    val (spaceName, spaceIcon) = when (val state = uiState.value) {
+                        is UiSpaceSettingsState.SpaceSettings -> {
+                            val name = state.items.filterIsInstance<Name>()
+                                .firstOrNull()?.name ?: ""
+                            val icon = state.items.filterIsInstance<Icon>()
+                                .firstOrNull()?.icon
+                            name to icon
+                        }
+
+                        else -> "" to null
+                    }
+                    uiQrCodeState.value = SpaceInvite(
+                        link = uiEvent.link,
+                        spaceName = spaceName,
+                        icon = spaceIcon
+                    )
+
+                    // Analytics Event #3: ScreenQr with route property (from space settings)
+                    analytics.sendEvent(
+                        eventName = screenQr,
+                        props = Props(
+                            mapOf(EventsPropertiesKey.route to EventsDictionary.ScreenQrRoutes.SETTINGS_SPACE)
+                        )
+                    )
+                }
+            }
+
+            is UiEvent.OnSaveDescriptionClicked -> {
+                viewModelScope.launch {
+                    setSpaceDetails.async(
+                        params = Params(
+                            space = vmParams.space,
+                            details = mapOf(
+                                Relations.DESCRIPTION to uiEvent.description
+                            )
+                        )
+                    )
+                }
+            }
+
+            is UiEvent.OnSaveTitleClicked -> {
+                viewModelScope.launch {
+                    setSpaceDetails.async(
+                        params = Params(
+                            space = vmParams.space,
+                            details = mapOf(
+                                Relations.NAME to uiEvent.title
+                            )
+                        )
+                    )
+                }
+            }
+
+            is UiEvent.OnSpaceImagePicked -> {
+                proceedWithSettingSpaceImage(uiEvent.uri)
+            }
+
+            is UiEvent.OnSpaceMembersClicked -> {
+                viewModelScope.launch {
+                    commands.emit(ManageSharedSpace(vmParams.space))
+                }
+            }
+
+            is UiEvent.OnDefaultObjectTypeClicked -> {
+                viewModelScope.launch {
+                    commands.emit(
+                        SelectDefaultObjectType(space = vmParams.space)
+                    )
+                }
+            }
+
+            UiEvent.OnSpaceHomeClicked -> {
+                spaceHomePickerDelegate.show(
+                    scope = viewModelScope,
+                    currentHomepageObjectId = homepageObjectFlow.value?.id
+                )
+            }
+
+            UiEvent.OnObjectTypesClicked -> {
+                viewModelScope.launch {
+                    commands.emit(OpenTypesScreen(vmParams.space))
+                }
+            }
+
+            UiEvent.OnPropertiesClicked -> {
+                viewModelScope.launch {
+                    commands.emit(OpenPropertiesScreen(vmParams.space))
+                }
+            }
+
+            is UiEvent.OnNotificationsSetting -> {
+                setNotificationState(
+                    targetSpaceId = uiEvent.targetSpaceId,
+                    newState = when (uiEvent) {
+                        is UiEvent.OnNotificationsSetting.All -> NotificationState.ALL
+                        is UiEvent.OnNotificationsSetting.Mentions -> NotificationState.MENTIONS
+                        is UiEvent.OnNotificationsSetting.None -> NotificationState.DISABLE
+                    }
+                )
+            }
+
+            UiEvent.OnDebugClicked -> {
+                viewModelScope.launch {
+                    commands.emit(OpenDebugScreen(vmParams.space.id))
+                }
+            }
+
+            UiEvent.OnSpaceInfoTitleClicked -> {
+                val currentCount = spaceInfoTitleClickCount.value
+                spaceInfoTitleClickCount.value = currentCount + 1
+            }
+
+            is UiEvent.OnCopyLinkClicked -> {
+                viewModelScope.launch {
+                    val params = CopyInviteLinkToClipboard.Params(uiEvent.link)
+                    copyInviteLinkToClipboard.invoke(params)
+                        .proceed(
+                            failure = {
+                                Timber.e(it, "Failed to copy invite link to clipboard")
+                                sendToast("Failed to copy invite link")
+                            },
+                            success = {
+                                Timber.d("Invite link copied to clipboard: ${uiEvent.link}")
+
+                                // Analytics Event #4: ClickShareSpaceCopyLink with route property (from menu)
+                                analytics.sendEvent(
+                                    eventName = clickShareSpaceCopyLink,
+                                    props = Props(
+                                        mapOf(EventsPropertiesKey.route to EventsDictionary.CopyLinkRoutes.BUTTON)
+                                    )
+                                )
+
+                                sendToast("Invite link copied to clipboard")
+                            }
+                        )
+                }
+            }
+
+            is UiEvent.OnShareLinkClicked -> {
+                viewModelScope.launch {
+                    // Analytics Event #6: ClickShareSpaceShareLink
+                    analytics.sendEvent(eventName = clickShareSpaceShareLink)
+
+                    commands.emit(
+                        ShareInviteLink(uiEvent.link)
+                    )
+                }
+            }
+
+            is UiEvent.OnUpdateWallpaperClicked -> {
+                proceedWithWallpaperUpdate(uiEvent)
+            }
+
+            UiEvent.OnAddMoreSpacesClicked -> {
+                viewModelScope.launch {
+                    commands.emit(Command.NavigateToMembership)
+                }
+            }
+
+            UiEvent.OnChangeTypeClicked -> {
+                // This event opens the bottom sheet, no action needed in ViewModel
+            }
+
+            is UiEvent.OnChangeSpaceType -> {
+                when (uiEvent) {
+                    is UiEvent.OnChangeSpaceType.ToChat -> {
+                        proceedWithChangingSpaceType(SpaceUxType.CHAT)
+                    }
+
+                    is UiEvent.OnChangeSpaceType.ToSpace -> {
+                        proceedWithChangingSpaceType(SpaceUxType.DATA)
+                    }
+                }
+            }
+
+            is UiEvent.OnResetChatNotification -> {
+                onResetChatNotification(uiEvent.chatId)
+            }
+        }
+    }
+
+    private fun proceedWithChangingSpaceType(newType: SpaceUxType) {
+        Timber.d("Changing space type to: $newType")
+        viewModelScope.launch {
+            setSpaceDetails.async(
+                params = Params(
+                    space = vmParams.space,
+                    details = mapOf(
+                        Relations.SPACE_UX_TYPE to newType.code.toDouble()
+                    )
+                )
+            ).fold(
+                onSuccess = {
+                    Timber.d("Successfully changed space type to: $newType")
+                    spaceSettingsErrors.value = SpaceSettingsErrors.Hidden
+                },
+                onFailure = { error ->
+                    Timber.e(error, "Error while changing space type")
+                    spaceSettingsErrors.value = SpaceSettingsErrors.ChangeSpaceTypeFailed
+                }
+            )
+        }
+    }
+
+    private fun proceedWithWallpaperUpdate(uiEvent: UiEvent.OnUpdateWallpaperClicked) {
+        viewModelScope.launch {
+            val params = when (val newWallpaper = uiEvent.wallpaperView) {
+                is WallpaperView.Gradient -> {
+                    SetWallpaper.Params.Gradient(
+                        space = vmParams.space.id,
+                        code = newWallpaper.code
+                    )
+                }
+
+                is WallpaperView.SolidColor -> {
+                    SetWallpaper.Params.SolidColor(
+                        space = vmParams.space.id,
+                        code = newWallpaper.code
+                    )
+                }
+
+                is WallpaperView.SpaceColor -> {
+                    SetWallpaper.Params.Clear(
+                        space = vmParams.space.id
+                    )
+                }
+            }
+            setWallpaper.async(params).fold(
+                onSuccess = {
+                    Timber.d("Wallpaper updated")
+                    spaceSettingsErrors.value = SpaceSettingsErrors.Hidden
+                },
+                onFailure = { error ->
+                    Timber.w(error, "Failed to update wallpaper")
+                    spaceSettingsErrors.value = SpaceSettingsErrors.WallpaperUpdateFailed
+                }
+            )
+        }
+    }
+
+    private fun proceedWithRemovingSpaceIcon() {
+        viewModelScope.launch {
+            setSpaceDetails.async(
+                SetSpaceDetails.Params(
+                    space = vmParams.space,
+                    details = mapOf(
+                        Relations.ICON_IMAGE to "",
+                    )
+                )
+            )
+        }
+    }
+
+    private fun proceedWithUpdateSpaceIconColor() {
+        viewModelScope.launch {
+            setSpaceDetails.async(
+                SetSpaceDetails.Params(
+                    space = vmParams.space,
+                    details = mapOf(
+                        Relations.ICON_OPTION to spaceGradientProvider.randomId().toDouble(),
+                    )
+                )
+            )
+        }
+    }
+
+    fun onDeleteSpaceWarningCancelled() {
+        viewModelScope.launch {
+            analytics.sendEvent(
+                eventName = EventsDictionary.clickDeleteSpaceWarning,
+                props = Props(
+                    mapOf(
+                        EventsPropertiesKey.type to "Cancel"
+                    )
+                )
+            )
+        }
+    }
+
+    fun onDeleteSpaceAcceptedClicked() {
+        viewModelScope.launch {
+            analytics.sendEvent(
+                eventName = EventsDictionary.clickDeleteSpaceWarning,
+                props = Props(
+                    mapOf(
+                        EventsPropertiesKey.type to "Delete"
+                    )
+                )
+            )
+        }
+        proceedWithSpaceDeletion()
+    }
+
+    fun onLeaveSpaceAcceptedClicked() {
+        viewModelScope.launch {
+            analytics.sendEvent(eventName = EventsDictionary.leaveSpace)
+        }
+        proceedWithSpaceDeletion()
+    }
+
+    private fun proceedWithSpaceDeletion() {
+        viewModelScope.launch {
+            deleteSpace.async(params = vmParams.space).fold(
+                onSuccess = {
+                    analytics.sendEvent(
+                        eventName = EventsDictionary.deleteSpace,
+                        props = Props(mapOf(EventsPropertiesKey.type to "Private"))
+                    )
+                    spaceManager.clear()
+                    commands.emit(Command.ExitToVault)
+                },
+                onFailure = {
+                    Timber.e(it, "Error while deleting space")
+                }
+            )
+        }
+    }
+
+    fun proceedWithSettingSpaceImage(path: String) {
+        Timber.d("onSpaceImageClicked: $path")
+        viewModelScope.launch {
+            uploadFile.async(
+                params = UploadFile.Params(
+                    path = path,
+                    space = vmParams.space,
+                    type = Block.Content.File.Type.IMAGE,
+                    createdInContext = vmParams.space.id,
+                    createdInContextRef = Relations.ICON_IMAGE
+                )
+            ).fold(
+                onSuccess = { file ->
+                    proceedWithSettingSpaceIconImage(file)
+                },
+                onFailure = {
+                    Timber.e(it, "Error while uploading image as space icon")
+                }
+            )
+        }
+    }
+
+    private suspend fun proceedWithSettingSpaceIconImage(file: ObjectWrapper.File) {
+        setSpaceDetails.async(
+            SetSpaceDetails.Params(
+                space = vmParams.space,
+                details = mapOf(
+                    Relations.ICON_IMAGE to file.id,
+                    Relations.ICON_OPTION to null,
+                    Relations.ICON_EMOJI to ""
+                )
+            )
+        ).fold(
+            onSuccess = {
+                Timber.d("Successfully set image as space icon.")
+            },
+            onFailure = { e ->
+                Timber.e(e, "Error while setting image as space icon")
+            }
+        )
+    }
+
+    fun onSelectObjectType(type: ObjectWrapper.Type) {
+        Timber.d("onSelectObjectType: $type")
+        // Update local state FIRST for immediate UI feedback
+        selectedDefaultObjectType.value = type
+
+        // Then save to backend
+        viewModelScope.launch {
+            val params = SetDefaultObjectType.Params(
+                space = vmParams.space,
+                type = TypeId(type.id)
+            )
+            setDefaultObjectType.async(params).fold(
+                onFailure = {
+                    Timber.e(it, "Error while setting default object type")
+                    // Revert local state on failure
+                    selectedDefaultObjectType.value = null
+                },
+                onSuccess = {
+                    analytics.registerEvent(
+                        EventAnalytics.Anytype(
+                            name = defaultTypeChanged,
+                            props = Props(
+                                mapOf(
+                                    EventsPropertiesKey.objectType to type.uniqueKey,
+                                    EventsPropertiesKey.route to "Settings"
+                                )
+                            ),
+                            duration = null
+                        )
+                    )
+                }
+            )
+        }
+        // Updating app actions (app shortcuts):
+        viewModelScope.launch {
+            val types = buildList<ObjectWrapper.Type> {
+                add(type)
+                val note = storeOfObjectTypes.getByKey(
+                    ObjectTypeUniqueKeys.NOTE
+                )
+                val page = storeOfObjectTypes.getByKey(
+                    ObjectTypeUniqueKeys.PAGE
+                )
+                val task = storeOfObjectTypes.getByKey(
+                    ObjectTypeUniqueKeys.TASK
+                )
+                if (note != null) add(note)
+                if (page != null) add(page)
+                if (task != null) add(task)
+            }
+            val actions = types.map { type ->
+                AppActionManager.Action.CreateNew(
+                    type = TypeKey(type.uniqueKey),
+                    name = type.name.orEmpty()
+                )
+            }
+            appActionManager.setup(actions = actions)
+        }
+    }
+
+
+
+    fun updateNotificationState() {
+        viewModelScope.launch {
+            // Check if notifications are enabled system-wide
+            if (!notificationPermissionManager.shouldShowPermissionDialog()) {
+                // Permissions are granted
+                //todo update UI accordingly
+            } else {
+                // Permissions not granted, show disabled state
+                //todo update UI accordingly
+                Timber.d("Notification permissions not granted")
+            }
+        }
+    }
+
+    fun setNotificationState(targetSpaceId: Id?, newState: NotificationState) {
+        if (targetSpaceId == null) {
+            Timber.e("Cannot set notification state: space ID is null")
+            return
+        }
+        viewModelScope.launch {
+            // Check if trying to enable notifications without system permission
+            if (newState != NotificationState.DISABLE && notificationPermissionManager.shouldShowPermissionDialog()) {
+                // Need to request permission first
+                commands.emit(Command.RequestNotificationPermission)
+                return@launch
+            }
+
+            // Call backend to set notification state
+            setSpaceNotificationMode.async(
+                SetSpaceNotificationMode.Params(
+                    spaceViewId = targetSpaceId,
+                    mode = newState
+                )
+            ).fold(
+                onSuccess = {
+                    _notificationState.value = newState
+                    Timber.d("Successfully set notification state to: $newState for space: $targetSpaceId")
+                    // Fire analytics event for space-level notification change
+                    val spaceView = spaceViewContainer.get(vmParams.space)
+                    if (spaceView != null) {
+                        analytics.sendAnalyticsChangeMessageNotificationState(
+                            spaceUxType = spaceView.spaceUxType,
+                            notificationState = newState
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    Timber.e("Failed to set notification state: $error")
+                    sendToast("Failed to update notification settings")
+                    // Don't update the state on failure to show the user the actual current state
+                }
+            )
+        }
+    }
+
+    // Notification permission handling methods
+    fun onNotificationPermissionGranted() {
+        viewModelScope.launch {
+            notificationPermissionManager.onPermissionGranted()
+            updateNotificationState() // Refresh notification state
+            Timber.d("Notification permission granted")
+        }
+    }
+
+    fun onNotificationPermissionDenied() {
+        viewModelScope.launch {
+            notificationPermissionManager.onPermissionDenied()
+            _notificationState.value = NotificationState.DISABLE
+            Timber.d("Notification permission denied")
+        }
+    }
+
+    fun onNotificationPermissionRequested() {
+        notificationPermissionManager.onPermissionRequested()
+        Timber.d("Notification permission requested")
+    }
+
+    fun onNotificationPermissionDismissed() {
+        notificationPermissionManager.onPermissionDismissed()
+        Timber.d("Notification permission dialog dismissed")
+    }
+
+    fun onHideQrCodeScreen() {
+        uiQrCodeState.value = UiSpaceQrCodeState.Hidden
+    }
+
+    private fun subscribeToInviteLinkState() {
+        viewModelScope.launch {
+            spaceInviteLinkStore
+                .observe(vmParams.space)
+                .onStart {
+                    val params = GetCurrentInviteAccessLevel.Params(space = vmParams.space)
+                    getCurrentInviteAccessLevel.async(params).getOrNull()
+                }
+                .catch {
+                    Timber.e(it, "Error observing invite link access level")
+                    // Emit default value on error
+                    inviteLinkAccessLevel.value = SpaceInviteLinkAccessLevel.LinkDisabled()
+                }
+                .collect { accessLevel ->
+                    Timber.d("Invite link access level updated: $accessLevel")
+                    inviteLinkAccessLevel.value = accessLevel
+                }
+        }
+    }
+
+    private fun getSpaceChatsCustomNotificationsSubscriptionId(): String {
+        return "space-chats-custom-notifications-${vmParams.space.id}"
+    }
+
+    private suspend fun buildSpaceHomeSettingItem(
+        homepage: String?,
+        homepageObject: ObjectWrapper.Basic?
+    ): UiSpaceSettingsItem.SpaceHome {
+        if (!SpaceHomepageResolver.isExplicitObjectHomepage(homepage) || homepageObject == null) {
+            return UiSpaceSettingsItem.SpaceHome(
+                name = EMPTY_STRING_VALUE,
+                icon = ObjectIcon.None,
+                isNoHome = true
+            )
+        }
+        val objType = storeOfObjectTypes.getTypeOfObject(homepageObject)
+        return UiSpaceSettingsItem.SpaceHome(
+            name = fieldParser.getObjectName(homepageObject),
+            icon = homepageObject.objectIcon(builder = urlBuilder, objType = objType),
+            isNoHome = false
+        )
+    }
+
+    companion object {
+        private const val HOME_SETTINGS_OBJECT_SUBSCRIPTION = "subscription.space-settings.home-object"
+    }
+
+    /**
+     * Subscribes to chats with custom notification states and filters them to show only those
+     * with notification states different from the space default.
+     */
+    private fun subscribeToChatsWithCustomNotifications(): Job {
+        return viewModelScope.launch {
+            // Observe all chat objects in the space
+            val searchParams = StoreSearchParams(
+                space = vmParams.space,
+                subscription = getSpaceChatsCustomNotificationsSubscriptionId(),
+                filters = listOf(
+                    DVFilter(
+                        relation = Relations.LAYOUT,
+                        condition = DVFilterCondition.EQUAL,
+                        value = ObjectType.Layout.CHAT_DERIVED.code.toDouble()
+                    )
+                ),
+                keys = ObjectSearchConstants.defaultKeys
+            )
+
+            // Combine chats with space view to filter by custom notification states
+            combine(
+                storelessSubscriptionContainer.subscribe(searchParams = searchParams),
+                spaceViewContainer.observe(vmParams.space)
+            ) { chats, spaceView ->
+
+                // Show chats that are present in any of the notification override lists
+                chats.mapNotNull { chat ->
+                    // Check if chat is in any of the force notification lists
+                    val isInForceAllList = chat.id in spaceView.spacePushNotificationForceAllIds
+                    val isInForceMuteList = chat.id in spaceView.spacePushNotificationForceMuteIds
+                    val isInForceMentionList = chat.id in spaceView.spacePushNotificationForceMentionIds
+
+                    if (isInForceAllList || isInForceMuteList || isInForceMentionList) {
+                        val chatState = NotificationStateCalculator.calculateChatNotificationState(
+                            chatSpace = spaceView,
+                            chatId = chat.id
+                        )
+                        val objectType = storeOfObjectTypes.getTypeOfObject(chat)
+                        ChatNotificationItem(
+                            id = chat.id,
+                            name = chat.name.orEmpty(),
+                            customState = chatState,
+                            icon = chat.objectIcon(builder = urlBuilder, objType = objectType)
+                        )
+                    } else null
+                }
+            }.catch { error ->
+                Timber.e(error, "Error observing chats with custom notifications")
+                emit(emptyList())
+            }.collect { filteredChats ->
+                chatsWithCustomNotifications.value = filteredChats
+                Timber.d("Chats with custom notifications updated: ${filteredChats.size} chats")
+            }
+        }
+    }
+
+    /**
+     * Resets a chat's notification state to the space default by removing it from all
+     * force notification lists.
+     */
+    fun onResetChatNotification(chatId: Id) {
+        viewModelScope.launch {
+            resetSpaceChatNotification.async(
+                ResetSpaceChatNotification.Params(
+                    space = vmParams.space,
+                    chatId = chatId
+                )
+            ).fold(
+                onSuccess = {
+                    Timber.d("Successfully reset notification state for chat: $chatId")
+                },
+                onFailure = { error ->
+                    Timber.e(error, "Failed to reset notification state for chat: $chatId")
+                    sendToast("Failed to reset notification settings")
+                }
+            )
+        }
+    }
+
+    /**
+     * Determines whether the "Change Type" option should be shown in space settings.
+     *
+     * The change type option is only available when:
+     * 1. The current user is the owner of the space
+     * 2. The space has a defined UX type (Chat or Data)
+     * 3. The space is shared (not private or default)
+     * 4. The space has a valid chat ID (not null or empty)
+     * 5. The space is not a ONE_TO_ONE space (cannot change type for 1-1 chats)
+     *
+     * @param permission The current user's permissions in the space
+     * @param spaceView The space view data containing space configuration
+     * @return true if the change type option should be shown, false otherwise
+     *
+     * upd. 23.10.25 DROID-4088: Disabled for now
+     */
+    internal fun shouldShowChangeTypeOption(
+        permission: SpaceMemberPermissions?,
+        spaceView: ObjectWrapper.SpaceView
+    ): Boolean {
+        //DROID-4088: Disable changing space type for now
+        return false
+
+        return permission?.isOwner() == true
+                && spaceView.spaceUxType != null
+                && spaceView.spaceUxType != SpaceUxType.ONE_TO_ONE
+                && spaceView.spaceAccessType == SpaceAccessType.SHARED
+                && !spaceView.chatId.isNullOrEmpty()
+    }
+
+    data class ShareLimitsState(
+        val shareLimitReached: Boolean = false,
+        val sharedSpacesLimit: Int = 0
+    )
+
+    sealed class Command {
+        data class ShareSpaceDebug(val filepath: Filepath) : Command()
+        data class SharePrivateSpace(val space: SpaceId) : Command()
+        data class ManageSharedSpace(val space: SpaceId) : Command()
+        data class ShareInviteLink(val link: String) : Command()
+        data class ManageBin(val space: SpaceId) : Command()
+        data class SelectDefaultObjectType(val space: SpaceId) :
+            Command()
+
+        data object ExitToVault : Command()
+        data object ShowDeleteSpaceWarning : Command()
+        data object ShowLeaveSpaceWarning : Command()
+        data object ShowShareLimitReachedError : Command()
+        data object NavigateToMembership : Command()
+        data object OpenWallpaperPicker : Command()
+        data object ManageRemoteStorage : Command()
+        data class OpenPropertiesScreen(val spaceId: SpaceId) : Command()
+        data class OpenTypesScreen(val spaceId: SpaceId) : Command()
+        data class OpenDebugScreen(val spaceId: String) : Command()
+        data object RequestNotificationPermission : Command()
+    }
+
+    sealed class SpaceSettingsErrors {
+        data object Hidden : SpaceSettingsErrors()
+        data object ChangeSpaceTypeFailed : SpaceSettingsErrors()
+        data object WallpaperUpdateFailed : SpaceSettingsErrors()
+        data object NameUpdateFailed : SpaceSettingsErrors()
+        data object IconUpdateFailed : SpaceSettingsErrors()
+        data class GenericError(val message: String) : SpaceSettingsErrors()
+    }
+
+    fun clearSpaceSettingsError() {
+        spaceSettingsErrors.value = SpaceSettingsErrors.Hidden
+    }
+
+    class Factory @Inject constructor(
+        private val params: VmParams,
+        private val analytics: Analytics,
+        private val container: SpaceViewSubscriptionContainer,
+        private val urlBuilder: UrlBuilder,
+        private val setSpaceDetails: SetSpaceDetails,
+        private val spaceManager: SpaceManager,
+        private val deleteSpace: DeleteSpace,
+        private val spaceGradientProvider: SpaceGradientProvider,
+        private val userPermissionProvider: UserPermissionProvider,
+        private val activeSpaceMemberSubscriptionContainer: ActiveSpaceMemberSubscriptionContainer,
+        private val uploadFile: UploadFile,
+        private val profileContainer: ProfileSubscriptionManager,
+        private val getDefaultObjectType: GetDefaultObjectType,
+        private val setDefaultObjectType: SetDefaultObjectType,
+        private val observeSpaceWallpaper: ObserveSpaceWallpaper,
+        private val appActionManager: AppActionManager,
+        private val storeOfObjectTypes: StoreOfObjectTypes,
+        private val copyInviteLinkToClipboard: CopyInviteLinkToClipboard,
+        private val getAccount: GetAccount,
+        private val notificationPermissionManager: NotificationPermissionManager,
+        private val setSpaceNotificationMode: SetSpaceNotificationMode,
+        private val deviceTokenStoreService: DeviceTokenStoringService,
+        private val getCurrentInviteAccessLevel: GetCurrentInviteAccessLevel,
+        private val spaceInviteLinkStore: SpaceInviteLinkStore,
+        private val getGradients: GetCoverGradientCollection,
+        private val setWallpaper: SetWallpaper,
+        private val storelessSubscriptionContainer: StorelessSubscriptionContainer,
+        private val resetSpaceChatNotification: ResetSpaceChatNotification,
+        private val searchObjects: SearchObjects,
+        private val setHomepage: SetHomepage,
+        private val fieldParser: FieldParser
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(
+            modelClass: Class<T>
+        ): T = SpaceSettingsViewModel(
+            spaceViewContainer = container,
+            urlBuilder = urlBuilder,
+            spaceManager = spaceManager,
+            setSpaceDetails = setSpaceDetails,
+            analytics = analytics,
+            deleteSpace = deleteSpace,
+            spaceGradientProvider = spaceGradientProvider,
+            vmParams = params,
+            userPermissionProvider = userPermissionProvider,
+            activeSpaceMemberSubscriptionContainer = activeSpaceMemberSubscriptionContainer,
+            uploadFile = uploadFile,
+            profileContainer = profileContainer,
+            getDefaultObjectType = getDefaultObjectType,
+            setDefaultObjectType = setDefaultObjectType,
+            observeSpaceWallpaper = observeSpaceWallpaper,
+            appActionManager = appActionManager,
+            storeOfObjectTypes = storeOfObjectTypes,
+            copyInviteLinkToClipboard = copyInviteLinkToClipboard,
+            getAccount = getAccount,
+            notificationPermissionManager = notificationPermissionManager,
+            setSpaceNotificationMode = setSpaceNotificationMode,
+            deviceTokenStoringService = deviceTokenStoreService,
+            getCurrentInviteAccessLevel = getCurrentInviteAccessLevel,
+            spaceInviteLinkStore = spaceInviteLinkStore,
+            getGradients = getGradients,
+            setWallpaper = setWallpaper,
+            storelessSubscriptionContainer = storelessSubscriptionContainer,
+            resetSpaceChatNotification = resetSpaceChatNotification,
+            searchObjects = searchObjects,
+            setHomepage = setHomepage,
+            fieldParser = fieldParser
+        ) as T
+    }
+
+    data class VmParams(val space: SpaceId)
+}

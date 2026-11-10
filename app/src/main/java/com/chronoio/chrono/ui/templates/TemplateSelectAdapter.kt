@@ -1,0 +1,35 @@
+package com.chronoio.chrono.ui.templates
+
+import androidx.fragment.app.Fragment
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import com.chronoio.chrono.presentation.templates.TemplateSelectView
+
+class TemplateSelectAdapter(
+    private var items: List<TemplateSelectView>,
+    fragment: Fragment
+) : FragmentStateAdapter(fragment) {
+
+    fun update(newItems: List<TemplateSelectView>) {
+        items = newItems
+        notifyDataSetChanged()
+    }
+
+    override fun getItemCount(): Int = items.size
+
+    override fun createFragment(position: Int): Fragment {
+        return when (val templateView = items[position]) {
+            is TemplateSelectView.Blank -> TemplateBlankFragment.new(
+                typeId = templateView.typeId,
+                typeName = templateView.typeName,
+                layout = templateView.layout
+            )
+            is TemplateSelectView.Template -> EditorTemplateFragment.newInstance(
+                targetTemplateId = templateView.id,
+                targetTypeId = templateView.typeId,
+                targetTypeKey = templateView.typeKey,
+                screenType = EditorTemplateFragment.TYPE_TEMPLATE_MULTIPLE,
+                space = templateView.space
+            )
+        }
+    }
+}

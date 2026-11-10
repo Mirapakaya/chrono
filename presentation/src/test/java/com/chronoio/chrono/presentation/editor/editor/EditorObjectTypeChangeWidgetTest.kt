@@ -1,0 +1,286 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import android.util.Log
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectTypeIds
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.presentation.util.CoroutinesTestRule
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import net.lachlanmckee.timberjunit.TimberTestRule
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+
+class EditorObjectTypeChangeWidgetTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val timberTestRule: TimberTestRule = TimberTestRule.builder()
+        .minPriority(Log.DEBUG)
+        .showThread(true)
+        .showTimestamp(false)
+        .onlyLogWhenTestFails(true)
+        .build()
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = CoroutinesTestRule()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @After
+    fun after() {
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun `should show widget on object with select type internal flag`() {
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.TITLE
+            )
+        )
+
+        val featuredBlock = Block(
+            id = "featuredRelations",
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.FeaturedRelations
+        )
+
+        val header = Block(
+            id = "header",
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id, featuredBlock.id)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, title.id, paragraph.id)
+        )
+
+        val doc = listOf(page, header, title, paragraph, featuredBlock)
+
+        val objectDetails =
+            mapOf(
+                Relations.SPACE_ID to defaultSpace,
+                Relations.TYPE to ObjectTypeIds.NOTE,
+                Relations.LAYOUT to ObjectType.Layout.NOTE.code.toDouble(),
+                Relations.INTERNAL_FLAGS to listOf(1.0)
+            )
+
+        val detailsList = ObjectViewDetails(details = mapOf(root to objectDetails))
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubGetDefaultObjectType(type = ObjectTypeIds.NOTE)
+        stubOpenDocument(
+            document = doc,
+            details = detailsList
+        )
+        stubGetObjectTypes(listOf())
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val objectTypesWidget = vm.typesWidgetState.value
+
+        assertNotNull(objectTypesWidget)
+        assertTrue(objectTypesWidget.visible)
+    }
+
+    @Test
+    fun `should not show widget on note object with empty internal flags`() {
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "F",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val featuredBlock = Block(
+            id = "featuredRelations",
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.FeaturedRelations
+        )
+
+        val header = Block(
+            id = "header",
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(featuredBlock.id)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, paragraph.id)
+        )
+
+        val doc = listOf(page, header, paragraph, featuredBlock)
+
+        val objectDetails =
+            mapOf(
+                "type" to ObjectTypeIds.NOTE,
+                Relations.LAYOUT to ObjectType.Layout.NOTE.code.toDouble()
+            )
+
+        val detailsList = ObjectViewDetails(details = mapOf(root to objectDetails))
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubGetDefaultObjectType(type = ObjectTypeIds.NOTE)
+        stubOpenDocument(
+            document = doc,
+            details = detailsList
+        )
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val objectTypesWidget = vm.typesWidgetState.value
+
+        assertNotNull(objectTypesWidget)
+        assertFalse(objectTypesWidget.visible)
+    }
+
+    /**
+     * Quick capture: the type bar is the sheet's permanent type UI. It must show even for
+     * a restored draft whose ShouldSelectType flag heart has already cleared and whose
+     * title/body has text — the exact conditions under which the base editor hides it.
+     */
+    @Test
+    fun `quick capture - should show expanded widget without done button despite cleared flags and non-empty text`() {
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "Buy milk",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "Groceries",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.TITLE
+            )
+        )
+
+        val featuredBlock = Block(
+            id = "featuredRelations",
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.FeaturedRelations
+        )
+
+        val header = Block(
+            id = "header",
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id, featuredBlock.id)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, title.id, paragraph.id)
+        )
+
+        val doc = listOf(page, header, title, paragraph, featuredBlock)
+
+        val objectDetails =
+            mapOf(
+                Relations.SPACE_ID to defaultSpace,
+                Relations.TYPE to ObjectTypeIds.PAGE,
+                Relations.LAYOUT to ObjectType.Layout.BASIC.code.toDouble()
+                // no internal flags: heart cleared them when content appeared
+            )
+
+        val detailsList = ObjectViewDetails(details = mapOf(root to objectDetails))
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubGetDefaultObjectType(type = ObjectTypeIds.PAGE)
+        stubOpenDocument(
+            document = doc,
+            details = detailsList
+        )
+        stubGetObjectTypes(listOf())
+
+        val vm = buildViewModel()
+
+        vm.enableQuickCaptureMode()
+        vm.onStart(id = root, space = defaultSpace)
+
+        val objectTypesWidget = vm.typesWidgetState.value
+
+        assertNotNull(objectTypesWidget)
+        assertTrue(objectTypesWidget.visible, "type bar must be visible in quick capture")
+        assertTrue(objectTypesWidget.expanded, "type bar must be expanded in quick capture")
+        assertFalse(objectTypesWidget.showDoneButton, "no Done button in quick capture")
+    }
+}

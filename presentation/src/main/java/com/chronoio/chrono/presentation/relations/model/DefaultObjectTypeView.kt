@@ -1,0 +1,18 @@
+package com.chronoio.chrono.presentation.relations.model
+
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+
+data class DefaultObjectTypeView(
+    val id: Id,
+    val title: String,
+    val subtitle: String?,
+    val icon: ObjectIcon
+)
+
+data class SelectLimitObjectTypeView(
+    val item: DefaultObjectTypeView,
+    val isSelected: Boolean
+)
+
+data class LimitObjectTypeValueView(val types: List<DefaultObjectTypeView>)

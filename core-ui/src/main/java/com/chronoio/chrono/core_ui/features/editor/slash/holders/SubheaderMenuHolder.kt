@@ -1,0 +1,122 @@
+package com.chronoio.chrono.core_ui.features.editor.slash.holders
+
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemSlashWidgetSubheaderBinding
+import com.chronoio.chrono.core_ui.databinding.ItemSlashWidgetSubheaderLeftBinding
+import com.chronoio.chrono.core_utils.ext.invisible
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashItem
+
+class SubheaderMenuHolder(
+    val binding: ItemSlashWidgetSubheaderBinding
+) : RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(item: SlashItem.Subheader) = with(binding) {
+        val text = when (item) {
+            SlashItem.Subheader.Style -> {
+                flBack.invisible()
+                R.string.slash_widget_main_style
+            }
+            SlashItem.Subheader.StyleWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_style
+            }
+            SlashItem.Subheader.Media -> {
+                flBack.invisible()
+                R.string.slash_widget_main_media
+            }
+            SlashItem.Subheader.MediaWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_media
+            }
+            SlashItem.Subheader.ObjectType -> {
+                flBack.invisible()
+                R.string.slash_widget_main_objects_subheader
+            }
+            SlashItem.Subheader.ObjectTypeWithBlack -> {
+                flBack.visible()
+                R.string.slash_widget_main_objects_subheader
+            }
+            SlashItem.Subheader.Other -> {
+                flBack.invisible()
+                R.string.slash_widget_main_other
+            }
+            SlashItem.Subheader.OtherWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_other
+            }
+            SlashItem.Subheader.Actions -> {
+                flBack.invisible()
+                R.string.slash_widget_main_actions
+            }
+            SlashItem.Subheader.ActionsWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_actions
+            }
+            SlashItem.Subheader.Alignment -> {
+                flBack.invisible()
+                R.string.slash_widget_main_alignment
+            }
+            SlashItem.Subheader.AlignmentWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_alignment
+            }
+            SlashItem.Subheader.Color -> {
+                flBack.invisible()
+                R.string.slash_widget_main_color
+            }
+            SlashItem.Subheader.ColorWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_color
+            }
+            SlashItem.Subheader.Background -> {
+                flBack.invisible()
+                R.string.slash_widget_main_background
+            }
+            SlashItem.Subheader.BackgroundWithBack -> {
+                flBack.visible()
+                R.string.slash_widget_main_background
+            }
+        }
+        subheader.setText(text)
+    }
+}
+
+class SubheaderOnlyMenuHolder(
+    val binding: ItemSlashWidgetSubheaderLeftBinding
+) : RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(item: SlashItem.Subheader) = with(binding) {
+        val text = when (item) {
+            SlashItem.Subheader.Style -> {
+                R.string.slash_widget_main_style
+            }
+            SlashItem.Subheader.Media -> {
+                R.string.slash_widget_main_media
+            }
+            SlashItem.Subheader.ObjectType -> {
+                R.string.slash_widget_main_objects_subheader
+            }
+            SlashItem.Subheader.Other -> {
+                R.string.slash_widget_main_other
+            }
+            SlashItem.Subheader.Actions -> {
+                R.string.slash_widget_main_actions
+            }
+            SlashItem.Subheader.Alignment -> {
+                R.string.slash_widget_main_alignment
+            }
+            SlashItem.Subheader.Color -> {
+                R.string.slash_widget_main_color
+            }
+            SlashItem.Subheader.Background -> {
+                R.string.slash_widget_main_background
+            }
+            else -> {
+                0
+            }
+        }
+        subheader.setText(text)
+    }
+}

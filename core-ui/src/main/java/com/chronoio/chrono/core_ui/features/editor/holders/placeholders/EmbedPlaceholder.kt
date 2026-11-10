@@ -1,0 +1,123 @@
+package com.chronoio.chrono.core_ui.features.editor.holders.placeholders
+
+import android.view.View
+import android.view.ViewConfiguration
+import android.widget.FrameLayout
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemBlockEmbedBinding
+import com.chronoio.chrono.core_ui.extensions.canOpenEmbedExternally
+import com.chronoio.chrono.core_ui.extensions.toEmbedIconResource
+import com.chronoio.chrono.core_ui.extensions.light
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil
+import com.chronoio.chrono.core_ui.features.editor.BlockViewHolder
+import com.chronoio.chrono.core_ui.features.editor.EditorTouchProcessor
+import com.chronoio.chrono.core_ui.features.editor.SupportCustomTouchProcessor
+import com.chronoio.chrono.core_ui.features.editor.decoration.DecoratableCardViewHolder
+import com.chronoio.chrono.core_ui.features.editor.decoration.EditorDecorationContainer
+import com.chronoio.chrono.core_ui.features.editor.decoration.applySelectorOffset
+import com.chronoio.chrono.core_utils.ext.gone
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.presentation.editor.editor.listener.ListenerType
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.google.android.material.card.MaterialCardView
+
+class EmbedPlaceholder(
+    val binding: ItemBlockEmbedBinding
+) : BlockViewHolder(binding.root),
+    BlockViewHolder.DragAndDropHolder,
+    BlockViewHolder.IndentableHolder,
+    SupportCustomTouchProcessor,
+    DecoratableCardViewHolder {
+
+    private val card: MaterialCardView = binding.card
+
+    override val decoratableContainer: EditorDecorationContainer
+        get() = binding.decorationContainer
+
+    override val decoratableCard: View
+        get() = binding.card
+
+    override val editorTouchProcessor = EditorTouchProcessor(
+        touchSlop = ViewConfiguration.get(itemView.context).scaledTouchSlop,
+        fallback = { e -> itemView.onTouchEvent(e) }
+    )
+
+    init {
+        itemView.setOnTouchListener { v, e -> editorTouchProcessor.process(v, e) }
+    }
+
+    fun bind(item: BlockView.Embed, clicked: (ListenerType) -> Unit) {
+        select(item.isSelected)
+
+        // Note: for processors not usable on mobile (Excalidraw, Mermaid, etc.),
+        // item.text may be a short non-empty marker instead of the original content,
+        // to avoid expensive main-thread string operations on large data blobs.
+        // The empty vs non-empty distinction is preserved for the UI logic below.
+        val trimmedText = item.text.trim()
+        val canOpen = item.processor.canOpenEmbedExternally() && trimmedText.isNotEmpty()
+
+        // Determine the appropriate message based on state
+        binding.embedTitle.text = when {
+            trimmedText.isEmpty() -> {
+                // No URL provided - embed is empty
+                binding.root.context.getString(R.string.embed_is_empty, item.processor)
+            }
+            item.processor.canOpenEmbedExternally() -> {
+                // Can be opened in external app or browser
+                binding.root.context.getString(R.string.embed_opens_externally, item.processor)
+            }
+            else -> {
+                // Not available on mobile (e.g., Mermaid, Chart, etc.)
+                binding.root.context.getString(R.string.embed_content_not_available, item.processor)
+            }
+        }
+
+        // Set the embed icon based on processor type
+        binding.embedIcon.setImageResource(item.processor.toEmbedIconResource())
+
+        // Show/hide Open button based on whether embed can be opened
+        if (canOpen) {
+            binding.openButton.visible()
+            binding.openButton.setOnClickListener {
+                clicked(ListenerType.Embed.Click(item))
+            }
+        } else {
+            binding.openButton.gone()
+        }
+
+        // Keep root clickable for selection mode
+        binding.root.setOnClickListener {
+            clicked(ListenerType.Embed.Click(item))
+        }
+    }
+
+    fun processChangePayload(
+        payloads: List<BlockViewDiffUtil.Payload>,
+        item: BlockView.Embed,
+        clicked: (ListenerType) -> Unit
+    ) {
+        payloads.forEach { payload ->
+            if (payload.isSelectionChanged) {
+                select(item.isSelected)
+            }
+        }
+    }
+
+    private fun select(isSelected: Boolean) {
+        card.isSelected = isSelected
+        // Force refresh the selectors
+        card.refreshDrawableState()
+    }
+
+    @Deprecated("Pre-nested-styling legacy.")
+    override fun indentize(item: BlockView.Indentable) {
+        // Do nothing.
+    }
+
+    override fun applyDecorations(decorations: List<BlockView.Decoration>) {
+        super.applyDecorations(decorations)
+        binding.containerWithBackground.setBackgroundColor(
+            binding.containerWithBackground.resources.light(decorations.last().background, 0)
+        )
+    }
+}

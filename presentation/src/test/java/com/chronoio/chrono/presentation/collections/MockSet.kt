@@ -1,0 +1,266 @@
+package com.chronoio.chrono.presentation.collections
+
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVViewerType
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectTypeIds
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relation
+import com.chronoio.chrono.core_models.RelationFormat
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.StubDataView
+import com.chronoio.chrono.core_models.StubDataViewView
+import com.chronoio.chrono.core_models.StubDataViewViewRelation
+import com.chronoio.chrono.core_models.StubHeader
+import com.chronoio.chrono.core_models.StubObject
+import com.chronoio.chrono.core_models.StubRelationLink
+import com.chronoio.chrono.core_models.StubRelationObject
+import com.chronoio.chrono.core_models.StubTitle
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.presentation.sets.subscription.DefaultDataViewSubscription
+import com.chronoio.chrono.test_utils.MockDataFactory
+import net.bytebuddy.utility.RandomString
+
+class MockSet(
+    context: String,
+    val space: Id,
+    val setOfValue: String = "setOf-${RandomString.make()}",
+    val setOfKey: String = "setOfKey-${RandomString.make()}"
+) {
+
+    val root = context
+    val title =
+        StubTitle(id = "title-${RandomString.make()}", text = "title-name-${RandomString.make()}")
+    val header = StubHeader(id = "header-${RandomString.make()}", children = listOf(title.id))
+    val emoji = MockDataFactory.randomString()
+    val headerWithEmoji = StubHeader(
+        id = "headerWithEmoji-${RandomString.make()}",
+        children = listOf(title.id),
+        fields = Block.Fields(mapOf(Relations.ICON_EMOJI to emoji))
+    )
+    val spaceId = space
+    val subscriptionId = DefaultDataViewSubscription.getDataViewSubscriptionId(context)
+    val setOf get() = setOfValue
+
+    // RELATION OBJECTS
+    val relationObject1 = StubRelationObject(
+        key = "relationText-${RandomString.make()}",
+        isReadOnlyValue = false,
+        format = Relation.Format.LONG_TEXT
+    )
+    val relationObject2 = StubRelationObject(
+        key = "relationTextReadOnly-${RandomString.make()}",
+        isReadOnlyValue = true,
+        format = Relation.Format.LONG_TEXT
+    )
+    val relationObject3 = StubRelationObject(
+        key = "relationTag-${RandomString.make()}",
+        isReadOnlyValue = false,
+        format = Relation.Format.TAG
+    )
+    val relationObject4 = StubRelationObject(
+        key = "relationObject-${RandomString.make()}",
+        isReadOnlyValue = false,
+        format = Relation.Format.OBJECT
+    )
+    val relationObject5 = StubRelationObject(
+        key = "relationObjectReadOnly-${RandomString.make()}",
+        isReadOnlyValue = true,
+        format = Relation.Format.OBJECT
+    )
+
+    val createdDateRelation = StubRelationObject(
+        key = Relations.CREATED_DATE,
+        uniqueKey = Relations.CREATED_DATE,
+        isReadOnlyValue = true,
+        format = Relation.Format.DATE
+    )
+
+    // VIEW RELATIONS
+    private val dvViewerRelation1 =
+        StubDataViewViewRelation(key = relationObject1.key, isVisible = true)
+    private val dvViewerRelation2 =
+        StubDataViewViewRelation(key = relationObject2.key, isVisible = true)
+    val dvViewerRelation3 =
+        StubDataViewViewRelation(key = relationObject3.key, isVisible = true)
+    private val dvViewerRelation4 =
+        StubDataViewViewRelation(key = relationObject4.key, isVisible = true)
+    private val dvViewerRelation5 =
+        StubDataViewViewRelation(key = relationObject5.key, isVisible = true)
+
+    // RELATION LINKS
+    val relationLink1 = StubRelationLink(relationObject1.key)
+    val relationLink2 = StubRelationLink(relationObject2.key)
+    val relationLink3 = StubRelationLink(relationObject3.key)
+    val relationLink4 = StubRelationLink(relationObject4.key)
+    val relationLink5 = StubRelationLink(relationObject5.key)
+
+    val relationLinks = listOf(relationLink1, relationLink2, relationLink3, relationLink4, relationLink5)
+
+    // SEARCH OBJECTS COMMAND, RELATION KEYS
+    val dvKeys = listOf(
+        relationObject1.key,
+        relationObject2.key,
+        relationObject3.key,
+        relationObject4.key,
+        relationObject5.key
+    )
+
+    // VIEW FILTERS
+    val filters = listOf(
+        DVFilter(
+            id = "dvFilter-${RandomString.make()}",
+            relation = relationObject1.key,
+            relationFormat = RelationFormat.LONG_TEXT,
+            condition = Block.Content.DataView.Filter.Condition.EQUAL,
+            value = "dvFilterValue-${RandomString.make()}"
+        ),
+        DVFilter(
+            id = "dvFilter-${RandomString.make()}",
+            relation = relationObject3.key,
+            relationFormat = RelationFormat.TAG,
+            condition = Block.Content.DataView.Filter.Condition.IN,
+            value = "dvFilterValue-${RandomString.make()}"
+        )
+    )
+
+    // VIEWS
+    val viewerList =
+        StubDataViewView(
+            id = "dvViewerList-${RandomString.make()}",
+            viewerRelations = listOf(
+                dvViewerRelation1,
+                dvViewerRelation2,
+                dvViewerRelation3,
+                dvViewerRelation4,
+                dvViewerRelation5
+            ),
+            type = DVViewerType.LIST
+        )
+    val viewerGrid =
+        StubDataViewView(
+            id = "dvViewerGrid-${RandomString.make()}",
+            viewerRelations = listOf(
+                dvViewerRelation1,
+                dvViewerRelation2,
+                dvViewerRelation3,
+                dvViewerRelation4,
+                dvViewerRelation5
+            ),
+            type = DVViewerType.GRID,
+            filters = filters
+        )
+    val viewerGallery =
+        StubDataViewView(
+            id = "dvViewerGallery-${RandomString.make()}",
+            viewerRelations = listOf(
+                dvViewerRelation1,
+                dvViewerRelation2,
+                dvViewerRelation3,
+                dvViewerRelation4,
+                dvViewerRelation5
+            ),
+            type = DVViewerType.GALLERY
+        )
+
+    var viewer = viewerGrid
+
+    // DATA VIEW BLOCK
+    val dataView = StubDataView(
+        id = "dv-${RandomString.make()}",
+        views = listOf(viewer),
+        relationLinks = listOf(relationLink1, relationLink2, relationLink3, relationLink4, relationLink5, StubRelationLink(Relations.CREATED_DATE, RelationFormat.DATE))
+    )
+    val dataViewNoViews = StubDataView(
+        id = "dvNoViews-${RandomString.make()}",
+        views = listOf(),
+        relationLinks = listOf()
+    )
+
+    // RECORDS
+    val obj1 = StubObject(
+        id = "object-${RandomString.make()}",
+        name = "object1-name-${RandomString.make()}",
+        space = spaceId
+    )
+    val obj2 = StubObject(
+        id = "object-${RandomString.make()}",
+        name = "object2-name-${RandomString.make()}",
+        space = spaceId
+    )
+
+    // SET OBJECT DETAILS
+    val details = ObjectViewDetails(
+        details = mapOf(
+            root to
+                mapOf(
+                    Relations.ID to root,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.LAYOUT to ObjectType.Layout.SET.code.toDouble(),
+                    Relations.SET_OF to listOf(setOf)
+            ),
+            setOf to mapOf(
+                    Relations.ID to setOf,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.UNIQUE_KEY to setOfKey,
+                    Relations.TYPE to ObjectTypeIds.OBJECT_TYPE,
+                    Relations.RECOMMENDED_LAYOUT to ObjectType.Layout.BASIC.code.toDouble(),
+                    Relations.LAYOUT to ObjectType.Layout.OBJECT_TYPE.code.toDouble(),
+                )
+        )
+    )
+
+    val detailsEmptySetOf = ObjectViewDetails(
+        details = mapOf(
+            root to
+                mapOf(
+                    Relations.ID to root,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.LAYOUT to ObjectType.Layout.SET.code.toDouble(),
+                    Relations.SET_OF to listOf<String>()
+                )
+            )
+    )
+
+    val detailsSetByRelation = ObjectViewDetails(
+        details = mapOf(
+            root to
+                mapOf(
+                    Relations.ID to root,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.LAYOUT to ObjectType.Layout.SET.code.toDouble(),
+                    Relations.SET_OF to relationObject3.id
+                ),
+            relationObject3.id to
+                mapOf(
+                    Relations.ID to relationObject3.id,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.RELATION_KEY to relationObject3.key,
+                    Relations.LAYOUT to ObjectType.Layout.RELATION.code.toDouble()
+                )
+        )
+    )
+
+    fun detailsSetByRelation(relationSetBy: ObjectWrapper.Relation) = ObjectViewDetails(
+        details = mapOf(
+            root to
+                mapOf(
+                    Relations.ID to root,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.LAYOUT to ObjectType.Layout.SET.code.toDouble(),
+                    Relations.SET_OF to relationSetBy.id
+            ),
+            relationSetBy.id to
+                mapOf(
+                    Relations.ID to relationSetBy.id,
+                    Relations.SPACE_ID to spaceId,
+                    Relations.RELATION_KEY to relationSetBy.key,
+                    Relations.UNIQUE_KEY to relationSetBy.uniqueKey,
+                    Relations.LAYOUT to ObjectType.Layout.RELATION.code.toDouble(),
+                )
+
+        )
+    )
+}

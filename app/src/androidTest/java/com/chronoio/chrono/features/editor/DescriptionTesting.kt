@@ -1,0 +1,164 @@
+package com.chronoio.chrono.features.editor
+
+import android.os.Bundle
+import androidx.core.os.bundleOf
+import androidx.fragment.app.testing.FragmentScenario
+import androidx.fragment.app.testing.launchFragmentInContainer
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.emojifier.data.DefaultDocumentEmojiIconProvider
+import com.chronoio.chrono.features.editor.base.EditorTestSetup
+import com.chronoio.chrono.features.editor.base.TestEditorFragment
+import com.chronoio.chrono.presentation.MockBlockContentFactory
+import com.chronoio.chrono.presentation.MockBlockFactory
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.chronoio.chrono.test_utils.utils.checkHasText
+import com.chronoio.chrono.test_utils.utils.checkIsRecyclerSize
+import com.chronoio.chrono.test_utils.utils.onItemView
+import com.chronoio.chrono.test_utils.utils.rVMatcher
+import com.chronoio.chrono.ui.editor.EditorFragment
+import com.bartoszlipinski.disableanimationsrule.DisableAnimationsRule
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+@LargeTest
+class DescriptionTesting : EditorTestSetup() {
+
+    @get:Rule
+    val animationsRule = DisableAnimationsRule()
+
+    private val args = bundleOf(EditorFragment.CTX_KEY to root)
+
+    private val title = MockBlockFactory.text(
+        content = MockBlockContentFactory.StubTextContent(
+            style = Block.Content.Text.Style.TITLE,
+            text = "Description in Editor.",
+            marks = emptyList()
+        )
+    )
+
+    private val description = MockBlockFactory.text(
+        content = MockBlockContentFactory.StubTextContent(
+            text = "A lighthouse is a tower, building, or another type of structure designed to emit light from a system of lamps and lenses and to serve as a navigational aid for maritime pilots at sea or on inland waterways.",
+            marks = emptyList(),
+            style = Block.Content.Text.Style.DESCRIPTION
+        )
+    )
+
+    @Before
+    override fun setup() {
+        super.setup()
+    }
+
+    @Test
+    fun shouldNotRenderDescriptionAfterTitleBecauseDescriptionIsNotFeatured() {
+
+        // SETUP
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id, description.id)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val document = listOf(page, header, title, description)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubOpenDocument(document)
+        stubAnalytics()
+
+        launchFragment(args)
+
+        // TESTING
+
+        R.id.recycler.rVMatcher().apply {
+            onItemView(0, R.id.title).checkHasText(
+                title.content<Block.Content.Text>().text
+            )
+            checkIsRecyclerSize(1)
+        }
+    }
+
+    @Test
+    fun shouldRenderDescriptionAfterTitleBecauseDescriptionIsFeatured() {
+
+        // SETUP
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id, description.id)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val document = listOf(page, header, title, description)
+
+        val details = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        "featuredRelations" to listOf(Relations.DESCRIPTION),
+                        "description" to description.content<Block.Content.Text>().text
+                    )
+                )
+        )
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubOpenDocument(
+            document = document,
+            details = details
+        )
+        stubAnalytics()
+
+        launchFragment(args)
+
+        // TESTING
+
+        R.id.recycler.rVMatcher().apply {
+            checkIsRecyclerSize(2)
+            onItemView(0, R.id.title).checkHasText(
+                title.content<Block.Content.Text>().text
+            )
+            onItemView(1, R.id.tvBlockDescription).checkHasText(
+                description.content<Block.Content.Text>().text
+            )
+        }
+    }
+
+    private fun launchFragment(args: Bundle): FragmentScenario<TestEditorFragment> {
+        return launchFragmentInContainer(
+            fragmentArgs = args,
+            themeResId = R.style.AppTheme
+        )
+    }
+}

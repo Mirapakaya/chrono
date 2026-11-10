@@ -1,0 +1,235 @@
+package com.chronoio.chrono.feature_allcontent.models
+
+import androidx.compose.runtime.Immutable
+import com.chronoio.chrono.core_models.DVSortType
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.MarketplaceObjectTypeIds
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectTypeUniqueKeys
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.core_models.ext.DateParser
+import com.chronoio.chrono.core_models.multiplayer.SpaceSyncAndP2PStatusState
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.core_models.ui.objectIcon
+import com.chronoio.chrono.domain.all_content.RestoreAllContentState
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.objects.getTypeOfObject
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.feature_allcontent.presentation.AllContentViewModel.Companion.DEFAULT_INITIAL_TAB
+import com.chronoio.chrono.presentation.objects.MenuSortsItem
+import com.chronoio.chrono.presentation.objects.ObjectsListSort
+import com.chronoio.chrono.presentation.objects.getDescriptionOrSnippet
+import com.chronoio.chrono.presentation.objects.getProperType
+
+//region STATE
+@Immutable
+enum class AllContentTab {
+    PAGES, LISTS, MEDIA, BOOKMARKS, FILES
+}
+
+sealed class AllContentMenuMode {
+    abstract val isSelected: Boolean
+
+    data class AllContent(
+        override val isSelected: Boolean = false
+    ) : AllContentMenuMode()
+
+    data class Unlinked(
+        override val isSelected: Boolean = false
+    ) : AllContentMenuMode()
+}
+//endregion
+
+//region VIEW STATES
+
+//TITLE
+sealed class UiTitleState {
+    data object AllContent : UiTitleState()
+    data object OnlyUnlinked : UiTitleState()
+}
+
+// SYNC STATUS BADGE
+sealed class UiSyncStatusBadgeState {
+    data object Hidden : UiSyncStatusBadgeState()
+    data class Visible(val status: SpaceSyncAndP2PStatusState) : UiSyncStatusBadgeState()
+}
+
+// TABS
+@Immutable
+data class UiTabsState(
+    val tabs: List<AllContentTab> = AllContentTab.entries,
+    val selectedTab: AllContentTab = DEFAULT_INITIAL_TAB
+)
+
+// CONTENT
+sealed class UiContentState {
+    data class Idle(val scrollToTop: Boolean = false) : UiContentState()
+    data object InitLoading : UiContentState()
+    data object Paging : UiContentState()
+    data object Empty : UiContentState()
+    data class Error(
+        val message: String,
+    ) : UiContentState()
+}
+
+sealed class UiItemsState{
+    data object Empty : UiItemsState()
+    data class Content(val items: List<UiContentItem>) : UiItemsState()
+}
+
+// ITEMS
+sealed class UiContentItem {
+    abstract val id: String
+
+    sealed class Group : UiContentItem() {
+        data class Today(override val id: String = TODAY_ID) : Group()
+        data class Yesterday(override val id: String = YESTERDAY_ID) : Group()
+        data class Previous7Days(override val id: String = PREVIOUS_7_DAYS_ID) : Group()
+        data class Previous14Days(override val id: String = PREVIOUS_14_DAYS_ID) : Group()
+        data class Month(override val id: String, val title: String) : Group()
+        data class MonthAndYear(override val id: String, val title: String) : Group()
+    }
+
+    data class Item(
+        override val id: Id,
+        val obj: ObjectWrapper.Basic,
+        val space: SpaceId,
+        val name: String = "",
+        val description: String? = null,
+        val type: Id? = null,
+        val typeName: String? = null,
+        val layout: ObjectType.Layout? = null,
+        val icon: ObjectIcon = ObjectIcon.None,
+        val lastModifiedDate: Long = 0L,
+        val createdDate: Long = 0L,
+        val isPossibleToDelete: Boolean = false
+    ) : UiContentItem()
+
+    data object UnlinkedDescription : UiContentItem() {
+        override val id: String = "UnlinkedDescription"
+    }
+
+    companion object {
+        const val TODAY_ID = "TodayId"
+        const val YESTERDAY_ID = "YesterdayId"
+        const val PREVIOUS_7_DAYS_ID = "Previous7DaysId"
+        const val PREVIOUS_14_DAYS_ID = "Previous14DaysId"
+    }
+}
+
+// MENU
+@Immutable
+sealed class UiMenuState {
+
+    data object Hidden : UiMenuState()
+
+    @Immutable
+    data class Visible(
+        val mode: List<AllContentMenuMode>,
+        val container: MenuSortsItem.Container,
+        val sorts: List<MenuSortsItem.Sort>,
+        val types: List<MenuSortsItem.SortType>,
+        val showBin: Boolean = true
+    ) : UiMenuState()
+}
+//endregion
+
+//region BOTTOM_MENU
+data class AllContentBottomMenu(val isOwnerOrEditor: Boolean = true)
+//endregion
+
+//region SNACKBAR
+sealed class UiSnackbarState {
+    data object Hidden : UiSnackbarState()
+    data class Visible(val message: String, val objId: Id) : UiSnackbarState()
+}
+//endregion
+
+//region MAPPING
+
+fun RestoreAllContentState.Response.Success.mapToSort(): ObjectsListSort {
+    val sortType = if (isAsc) DVSortType.ASC else DVSortType.DESC
+    return when (activeSort) {
+        Relations.CREATED_DATE -> ObjectsListSort.ByDateCreated(sortType = sortType)
+        Relations.LAST_MODIFIED_DATE -> ObjectsListSort.ByDateUpdated(sortType = sortType)
+        Relations.NAME -> ObjectsListSort.ByName(sortType = sortType)
+        Relations.LAST_USED_DATE -> ObjectsListSort.ByDateUsed(sortType = sortType)
+        else -> ObjectsListSort.ByName(sortType = DVSortType.ASC)
+    }
+}
+
+suspend fun ObjectWrapper.Basic.toAllContentItem(
+    space: SpaceId,
+    urlBuilder: UrlBuilder,
+    objectTypes: List<ObjectWrapper.Type>,
+    isOwnerOrEditor: Boolean,
+    fieldParser: FieldParser,
+    storeOfObjectTypes: StoreOfObjectTypes
+): UiContentItem.Item {
+    val obj = this
+    val typeUrl = obj.getProperType()
+    val isProfile = typeUrl == MarketplaceObjectTypeIds.PROFILE
+    val layout = obj.layout ?: ObjectType.Layout.BASIC
+    val isType = obj.layout == ObjectType.Layout.OBJECT_TYPE
+    return UiContentItem.Item(
+        id = obj.id,
+        space = space,
+        obj = obj,
+        name = fieldParser.getObjectNameOrPluralsForTypes(obj),
+        description = getDescriptionOrSnippet(),
+        type = typeUrl,
+        typeName = objectTypes.firstOrNull { type ->
+            if (isProfile) {
+                type.uniqueKey == ObjectTypeUniqueKeys.PROFILE
+            } else {
+                type.id == typeUrl
+            }
+        }?.name,
+        layout = layout,
+        icon = obj.objectIcon(
+            builder = urlBuilder,
+            objType = storeOfObjectTypes.getTypeOfObject(obj)
+        ),
+        lastModifiedDate = DateParser.parse(obj.getValue(Relations.LAST_MODIFIED_DATE)) ?: 0L,
+        createdDate = DateParser.parse(obj.getValue(Relations.CREATED_DATE)) ?: 0L,
+        isPossibleToDelete = isOwnerOrEditor && !isType
+    )
+}
+
+fun ObjectsListSort.toAnalyticsSortType(): Pair<String, String> {
+    return when (this) {
+        is ObjectsListSort.ByName -> "Name" to sortType.toAnalyticsSortType()
+        is ObjectsListSort.ByDateUpdated -> "Updated" to sortType.toAnalyticsSortType()
+        is ObjectsListSort.ByDateCreated -> "Created" to sortType.toAnalyticsSortType()
+        is ObjectsListSort.ByDateUsed -> "Used" to sortType.toAnalyticsSortType()
+    }
+}
+
+fun DVSortType.toAnalyticsSortType(): String {
+    return when (this) {
+        DVSortType.ASC -> "Asc"
+        DVSortType.DESC -> "Desc"
+        DVSortType.CUSTOM -> "Custom"
+    }
+}
+
+fun AllContentTab.toAnalyticsTabType(): String {
+    return when (this) {
+        AllContentTab.PAGES -> "Pages"
+        AllContentTab.LISTS -> "Lists"
+        AllContentTab.MEDIA -> "Media"
+        AllContentTab.BOOKMARKS -> "Bookmarks"
+        AllContentTab.FILES -> "Files"
+    }
+}
+
+fun AllContentMenuMode.toAnalyticsModeType(): String {
+    return when (this) {
+        is AllContentMenuMode.AllContent -> "All"
+        is AllContentMenuMode.Unlinked -> "Unlinked"
+    }
+}
+//endregion

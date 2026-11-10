@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="12dp"
+    android:paddingBottom="20dp">
+
+    <EditText
+        android:id="@+id/textInputField"
+        style="@style/TextView.UXStyle.Body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@null"
+        android:gravity="start|center_vertical"
+        android:hint="@string/dv_cell_description_hint"
+        android:imeOptions="actionDone"
+        android:textColorHint="@color/text_tertiary"
+        app:layout_goneMarginEnd="@dimen/dp_20"
+        tools:text="Anytype is a next generation software that breaks down barriers between applications, gives back privacy and data ownership to users."
+        tools:visibility="visible" />
+
+</FrameLayout>

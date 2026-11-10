@@ -1,0 +1,333 @@
+package com.chronoio.chrono.ui.multiplayer
+
+import android.content.Intent
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.core_models.multiplayer.MultiplayerError
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.features.multiplayer.QrCodeScreen
+import com.chronoio.chrono.core_ui.features.multiplayer.ShareSpaceScreen
+import com.chronoio.chrono.core_ui.views.BaseAlertDialog
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.presentation.multiplayer.ShareSpaceErrors
+import com.chronoio.chrono.presentation.multiplayer.ShareSpaceViewModel
+import com.chronoio.chrono.presentation.multiplayer.ShareSpaceViewModel.Command
+import com.chronoio.chrono.presentation.spaces.UiSpaceQrCodeState
+import com.chronoio.chrono.ui.profile.ParticipantFragment
+import javax.inject.Inject
+import timber.log.Timber
+
+class ShareSpaceFragment : BaseBottomSheetComposeFragment() {
+
+    private val space get() = arg<String>(SPACE_ID_KEY)
+
+    @Inject
+    lateinit var factory: ShareSpaceViewModel.Factory
+
+    private val vm by viewModels<ShareSpaceViewModel> { factory }
+
+    private var removeMemberWarning: RemoveMemberWarning? = null
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        return ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                ShareSpaceScreen(
+                    onShareInviteLinkClicked = vm::onShareInviteLinkClicked,
+                    members = vm.members.collectAsStateWithLifecycle().value,
+                    onContextActionClicked = vm::onContextActionClicked,
+                    onShareQrCodeClicked = vm::onShareQrCodeClicked,
+                    incentiveState = vm.spaceLimitsState.collectAsStateWithLifecycle().value,
+                    onIncentiveClicked = vm::onIncentiveClicked,
+                    onManageSpacesClicked = vm::onManageSpacesClicked,
+                    isLoadingInProgress = vm.isLoadingInProgress.collectAsStateWithLifecycle().value,
+                    onMemberClicked = vm::onMemberClicked,
+                    inviteLinkAccessLevel = vm.inviteLinkAccessLevel.collectAsStateWithLifecycle().value,
+                    inviteLinkAccessLoading = vm.inviteLinkAccessLoading.collectAsStateWithLifecycle().value,
+                    confirmationDialogLevel = vm.inviteLinkConfirmationDialog.collectAsStateWithLifecycle().value,
+                    makeAdminConfirmation = vm.makeAdminConfirmation.collectAsStateWithLifecycle().value,
+                    makeAdminLoading = vm.makeAdminLoading.collectAsStateWithLifecycle().value,
+                    onMakeAdminConfirmed = vm::onMakeAdminAccepted,
+                    onMakeAdminCancelled = vm::onMakeAdminDismissed,
+                    onInviteLinkAccessLevelSelected = vm::onInviteLinkAccessLevelSelected,
+                    onInviteLinkAccessChangeConfirmed = vm::onInviteLinkAccessChangeConfirmed,
+                    onInviteLinkAccessChangeCancel = vm::onInviteLinkAccessChangeCancel,
+                    shareInviteConfirmationDialog = vm.shareInviteConfirmationDialog.collectAsStateWithLifecycle().value,
+                    onShareWithinSpaceClicked = vm::onShareWithinSpaceClicked,
+                    onShareWithinSpaceConfirmed = vm::onShareWithinSpaceConfirmed,
+                    onShareWithinSpaceCancelled = vm::onShareWithinSpaceCancelled,
+                    resetLinkConfirmationDialog = vm.resetLinkConfirmationDialog.collectAsStateWithLifecycle().value,
+                    onResetLinkClicked = vm::onResetLinkClicked,
+                    onResetLinkConfirmed = vm::onResetLinkConfirmed,
+                    onResetLinkCancelled = vm::onResetLinkCancelled,
+                    onCopyInviteLinkClicked = vm::onCopyInviteLinkClicked,
+                    isCurrentUserOwner = vm.isCurrentUserOwner.collectAsStateWithLifecycle().value,
+                    onMakePrivateClicked = vm::onMakePrivateClicked,
+                    spaceAccessType = vm.spaceAccessType.collectAsStateWithLifecycle().value,
+                    isMakePrivateEnabled = vm.isMakePrivateEnabled.collectAsStateWithLifecycle().value
+                )
+                LaunchedEffect(Unit) {
+                    vm.commands.collect { command ->
+                        proceedWithCommand(command)
+                    }
+                }
+                when (val qrCodeState = vm.uiQrCodeState.collectAsStateWithLifecycle().value) {
+                    is UiSpaceQrCodeState.SpaceInvite -> {
+                        QrCodeScreen(
+                            spaceName = qrCodeState.spaceName,
+                            link = qrCodeState.link,
+                            icon = qrCodeState.icon,
+                            onShare = vm::onShareInviteLinkClicked,
+                            onDismiss = { vm.onHideQrCodeScreen() }
+                        )
+                    }
+                    else -> {}
+                }
+                LaunchedEffect(Unit) {
+                    vm.toasts.collect { toast(it) }
+                }
+                val errors = vm.shareSpaceErrors.collectAsStateWithLifecycle().value
+                when (errors) {
+                    is ShareSpaceErrors.Error -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_generic, errors.msg),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.Hidden -> {
+                        // Hidden errors should not show a dialog
+                    }
+                    ShareSpaceErrors.LimitReached -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_limit_reached),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.NotShareable -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_not_shareable),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.RequestFailed -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_request_failed),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.SpaceIsDeleted -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_space_deleted),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+
+                    ShareSpaceErrors.IncorrectPermissions -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_incorrect_permissions),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.NoSuchSpace -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_no_such_space),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.MakePrivateFailed -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_make_private_failed),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.InviteAlreadyShared -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_invite_already_shared),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                    ShareSpaceErrors.InviteNotShareable -> {
+                        BaseAlertDialog(
+                            dialogText = stringResource(R.string.share_space_error_invite_not_shareable),
+                            buttonText = stringResource(R.string.button_ok),
+                            onButtonClick = { vm.dismissShareSpaceErrors() },
+                            onDismissRequest = { vm.dismissShareSpaceErrors() }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        skipCollapsed()
+        expand()
+    }
+
+    private fun proceedWithCommand(command: Command) {
+        when (command) {
+            is Command.ShareInviteLink -> {
+                val intent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, command.link)
+                    type = "text/plain"
+                }
+                startActivity(Intent.createChooser(intent, null))
+            }
+            is Command.ViewJoinRequest -> {
+                runCatching {
+                    findNavController().navigate(
+                        resId = R.id.spaceJoinRequestScreen,
+                        args = SpaceJoinRequestFragment.args(
+                            space = command.space,
+                            member = command.member,
+                            analyticsRoute = EventsDictionary.Routes.settings
+                        )
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while navigation")
+                }
+            }
+            is Command.ShowHowToShareSpace -> {
+                runCatching {
+                    findNavController().navigate(R.id.howToShareSpaceScreen)
+                }.onFailure {
+                    Timber.e(it, "Error while navigation")
+                }
+            }
+            is Command.ShowRemoveMemberWarning -> {
+                runCatching {
+                    val dialog = RemoveMemberWarning.new(name = command.name)
+                    dialog.onAccepted = {
+                        vm.onRemoveMemberAccepted(command.identity)
+                    }
+                    removeMemberWarning = dialog
+                    dialog.show(childFragmentManager, null)
+                }.onFailure {
+                    Timber.e(it, "Error while showing remove member warning")
+                }
+            }
+            is Command.DismissRemoveMemberWarning -> {
+                removeMemberWarning?.dismiss()
+                removeMemberWarning = null
+            }
+            is Command.Dismiss -> {
+                dismiss()
+            }
+            is Command.ToastPermission -> {
+                val msg = getString(R.string.multiplayer_toast_permission_not_allowed)
+                toast(msg)
+            }
+            is Command.ShowMembershipScreen -> {
+                runCatching {
+                    findNavController().navigate(R.id.paymentsScreen)
+                }.onFailure {
+                    Timber.e(it, "Error while navigation: $command")
+                }
+            }
+            is Command.ShowMultiplayerError -> {
+                when(command.error) {
+                    is MultiplayerError.Generic.LimitReached -> {
+                        toast(resources.getString(R.string.multiplayer_error_limit_reached))
+                    }
+                    is MultiplayerError.Generic.NotShareable -> {
+                        toast(resources.getString(R.string.multiplayer_error_not_shareable))
+                    }
+                    is MultiplayerError.Generic.RequestFailed -> {
+                        toast(resources.getString(R.string.multiplayer_error_request_failed))
+                    }
+                    is MultiplayerError.Generic.SpaceIsDeleted -> {
+                        toast(resources.getString(R.string.multiplayer_error_space_is_deleted))
+                    }
+                    is MultiplayerError.Generic.IncorrectPermissions -> {
+                        toast(resources.getString(R.string.share_space_error_incorrect_permissions))
+                    }
+                    is MultiplayerError.Generic.NoSuchSpace -> {
+                        toast(resources.getString(R.string.share_space_error_no_such_space))
+                    }
+                    is MultiplayerError.Generic.InviteAlreadyShared -> {
+                        toast(resources.getString(R.string.share_space_error_invite_already_shared))
+                    }
+                    is MultiplayerError.Generic.InviteNotShareable -> {
+                        toast(resources.getString(R.string.share_space_error_invite_not_shareable))
+                    }
+                }
+            }
+            is Command.OpenParticipantObject -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.participantScreen,
+                        ParticipantFragment.args(
+                            space = command.space.id,
+                            objectId = command.objectId
+                        )
+                    )
+                }.onFailure {
+                    Timber.e(it, "Error while navigation: $command")
+                }
+            }
+            Command.ShowManageSpacesScreen -> {
+                runCatching {
+                    findNavController().navigate(R.id.spaceListScreen)
+                }.onFailure {
+                    Timber.e(it, "Error while navigation: $command")
+                }
+            }
+        }
+    }
+
+    override fun injectDependencies() {
+        componentManager().shareSpaceComponent.get(SpaceId(space)).inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().shareSpaceComponent.release()
+    }
+
+    companion object {
+        const val SPACE_ID_KEY = "arg.share-space.space-id-key"
+        fun args(space: SpaceId): Bundle = bundleOf(
+            SPACE_ID_KEY to space.id
+        )
+    }
+}

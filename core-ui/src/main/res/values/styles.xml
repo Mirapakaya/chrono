@@ -1,0 +1,862 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Customize your theme here. -->
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/orange</item>
+        <item name="bottomSheetDialogTheme">@style/AppBottomSheetDialogTheme</item>
+        <item name="searchViewStyle">@style/SearchViewStyle</item>
+        <item name="android:textStyle">normal</item>
+
+        <item name="primaryXSmallButtonStyle">@style/Button.Primary.XSmall</item>
+        <item name="primarySmallButtonStyle">@style/Button.Primary.Small</item>
+        <item name="primaryMediumButtonStyle">@style/Button.Primary.Medium</item>
+        <item name="primaryLargeButtonStyle">@style/Button.Primary.Large</item>
+        <item name="primaryLargeNumberButtonStyle">@style/Button.Primary.Large</item>
+
+        <item name="secondaryXSmallButtonStyle">@style/Button.Secondary.XSmall</item>
+        <item name="secondarySmallButtonStyle">@style/Button.Secondary.Small</item>
+        <item name="secondaryMediumButtonStyle">@style/Button.Secondary.Medium</item>
+        <item name="secondaryLargeButtonStyle">@style/Button.Secondary.Large</item>
+
+        <item name="warningXSmallButtonStyle">@style/Button.Warning.XSmall</item>
+        <item name="warningSmallButtonStyle">@style/Button.Warning.Small</item>
+        <item name="warningMediumButtonStyle">@style/Button.Warning.Medium</item>
+        <item name="warningLargeButtonStyle">@style/Button.Warning.Large</item>
+    </style>
+
+    <style name="AppBottomSheetDialogTheme" parent="Theme.Design.Light.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/AppModalStyle</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="colorAccent">@color/orange</item>
+    </style>
+
+    <style name="SelectSpaceDialogTheme" parent="Theme.Design.Light.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/SelectSpaceModalStyle</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="colorAccent">@color/orange</item>
+    </style>
+
+    <style name="NetworkSettingDialogTheme" parent="Theme.Design.Light.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/NetworkSettingModalStyle</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="colorAccent">@color/orange</item>
+    </style>
+
+    <style name="SelectSpaceModalStyle" parent="Widget.Design.BottomSheet.Modal">
+        <item name="android:background">@drawable/rounded_dialog_select_spaces</item>
+    </style>
+
+    <style name="NetworkSettingModalStyle" parent="Widget.Design.BottomSheet.Modal">
+        <item name="android:background">@drawable/rounded_dialog_network_settings</item>
+    </style>
+
+    <style name="AppBottomSecondarySheetDialogTheme" parent="Theme.Design.Light.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/AppModalStyleSecondary</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="colorAccent">@color/orange</item>
+    </style>
+
+    <style name="AppModalStyle" parent="Widget.Design.BottomSheet.Modal">
+        <item name="android:background">@drawable/rounded_dialog</item>
+    </style>
+
+    <style name="AppModalStyleSecondary" parent="Widget.Design.BottomSheet.Modal">
+        <item name="android:background">@drawable/rounded_dialog_secondary</item>
+    </style>
+
+    <style name="SearchViewStyle" parent="Widget.AppCompat.SearchView">
+        <item name="android:textColorHint">@color/glyph_active</item>
+    </style>
+
+    <style name="DefaultDocumentContainerStyle">
+        <item name="android:layout_marginTop">@dimen/default_document_item_margin_top</item>
+        <item name="android:layout_marginBottom">@dimen/default_document_item_margin_bottom</item>
+        <item name="android:paddingStart">@dimen/default_document_item_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_item_padding_end</item>
+    </style>
+
+    <style name="DefaultEditorTextStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="BlockTextContentStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:background">@null</item>
+        <item name="android:paddingStart">@dimen/default_document_content_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_content_padding_end</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="BlockHeaderOneContentStyle" parent="TextView.ContentStyle.Headline.Title">
+        <item name="android:paddingStart">@dimen/default_document_content_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_content_padding_end</item>
+        <item name="android:background">@null</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="BlockHeaderTwoContentStyle" parent="TextView.ContentStyle.Headline.Heading">
+        <item name="android:paddingStart">@dimen/default_document_content_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_content_padding_end</item>
+        <item name="android:background">@null</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="BlockHeaderThreeContentStyle" parent="TextView.ContentStyle.Headline.Subheading">
+        <item name="android:paddingStart">@dimen/default_document_content_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_content_padding_end</item>
+        <item name="android:background">@null</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="BlockTitleContentStyle" parent="TextView.ContentStyle.Headline.Title">
+        <item name="android:background">@null</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="BlockCheckboxContentStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:background">@null</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="BlockPageContentStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
+    </style>
+
+    <style name="BlockObjectLinkDeleteContentStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:textColor">@color/text_tertiary</item>
+    </style>
+
+    <style name="BlockBulletContentStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:background">@null</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">13dp</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="ToggleContentStyle" parent="DefaultEditorTextStyle">
+        <item name="android:background">@null</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="BlockNumberedContentStyle" parent="DefaultEditorTextStyle">
+        <item name="android:background">@null</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">13dp</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="BlockVideoStyle" parent="TextView.ContentStyle.Body.Callout">
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="UploadMediaTextStyle" parent="TextView.ContentStyle.Body.Callout">
+        <item name="android:textColor">@color/glyph_active</item>
+    </style>
+
+    <style name="UploadMediaInActiveTextStyle" parent="TextView.ContentStyle.Body.Callout">
+        <item name="android:textColor">@color/glyph_inactive</item>
+    </style>
+
+    <style name="BlockHighlightContentStyle" parent="DefaultEditorTextStyle">
+        <item name="android:background">@null</item>
+        <item name="android:layout_marginStart">@dimen/default_graphic_container_right_offset</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="BlockCalloutContentStyle" parent="TextView.ContentStyle.Body.Regular">
+        <item name="android:background">@null</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="RoundedBgTextView" parent="@android:style/Widget.TextView">
+        <item name="roundedTextHorizontalPadding">2dp</item>
+        <item name="roundedTextVerticalPadding">2dp</item>
+        <item name="roundedTextDrawable">@drawable/rounded_text_bg</item>
+        <item name="roundedTextDrawableLeft">@drawable/rounded_text_bg_left</item>
+        <item name="roundedTextDrawableMid">@drawable/rounded_text_bg_mid</item>
+        <item name="roundedTextDrawableRight">@drawable/rounded_text_bg_right</item>
+    </style>
+
+    <style name="BlockStyleGroupDividerStyle">
+        <item name="android:layout_width">1dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:background">@color/shape_primary</item>
+    </style>
+
+    <style name="BlockStyleDividerStyle">
+        <item name="android:layout_width">8dp</item>
+        <item name="android:layout_height">48dp</item>
+    </style>
+
+    <style name="BlockStyleButtonContainerStyle">
+        <item name="android:background">@drawable/ic_style_toolbar_button_background_selector</item>
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">48dp</item>
+    </style>
+
+    <style name="BlockStyleToolbarLeftBlockStyle">
+        <item name="android:background">@drawable/bg_toolbar_style_block_left_selector</item>
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">48dp</item>
+    </style>
+
+    <style name="BlockStyleToolbarMiddleBlockStyle">
+        <item name="android:background">@drawable/bg_toolbar_style_block_middle_selector</item>
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">48dp</item>
+    </style>
+
+    <style name="BlockStyleToolbarRightBlockStyle">
+        <item name="android:background">@drawable/bg_toolbar_style_block_right_selector</item>
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">48dp</item>
+    </style>
+
+    <style name="BlockMediaRootLayoutStyle">
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:layout_marginTop">1dp</item>
+        <item name="android:layout_marginBottom">1dp</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+    </style>
+
+    <style name="DefaultCircleColorStyle">
+        <item name="android:layout_width">@dimen/block_style_toolbar_circle_size</item>
+        <item name="android:layout_height">@dimen/block_style_toolbar_circle_size</item>
+    </style>
+
+    <style name="BlockImageErrorTextStyle" parent="TextView.UXStyle.Captions.2.Regular">
+        <item name="android:layout_gravity">center</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+    </style>
+
+    <style name="GreyProgressBar" parent="ThemeOverlay.AppCompat.Light">
+        <item name="colorAccent">@color/text_secondary</item>
+    </style>
+
+    <style name="SyncingObjectStyle" parent="ThemeOverlay.AppCompat.Light">
+        <item name="colorAccent">@color/text_tertiary</item>
+    </style>
+
+    <style name="WhiteProgressBar" parent="ThemeOverlay.AppCompat.Light">
+        <item name="colorAccent">@color/white</item>
+    </style>
+
+    <style name="GridCellDateTextStyle" parent="TextView.ContentStyle.Relations.2">
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="RelationObjectTextStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ViewerModalTitleStyle" parent="TextView.UXStyle.Titles.1">
+    </style>
+
+    <style name="ViewerModalChipShapeAppearance" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerSize">8dp</item>
+        <item name="cornerFamily">cut</item>
+    </style>
+
+    <style name="ViewerTagChipShapeAppearance" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerSize">3dp</item>
+        <item name="cornerFamily">cut</item>
+    </style>
+
+    <style name="DefaultCellInteractionTextButtonStyle" parent="TextView.UXStyle.Body">
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/glyph_active</item>
+    </style>
+
+    <style name="DefaultListPlaceholderTextStyle" parent="TextView.UXStyle.Body.Callout.Regular">
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+    </style>
+
+    <style name="ViewerModalStateButtonsStyle" parent="TextView.UXStyle.Body">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="DefaultOrangeTextButtonStyle" parent="TextView.UXStyle.Body">
+        <item name="android:textColor">@color/glyph_accent</item>
+    </style>
+
+    <style name="ViewerFilterTitleStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="layout_goneMarginEnd">20dp</item>
+    </style>
+
+    <style name="ViewerFilterConditionStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="ViewerFilterTextValueStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ViewerFilterObjectValueStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ViewerSortTitleStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="ViewerSortSubtitleStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="ViewerFilterTagChipShapeAppearance" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerSize">5dp</item>
+        <item name="cornerFamily">cut</item>
+    </style>
+
+    <style name="DefaultDataViewTagTextViewStyle" parent="TextView.UXStyle.Body">
+        <item name="android:background">@drawable/rect_relation_tag</item>
+        <item name="android:paddingStart">5dp</item>
+        <item name="android:paddingEnd">5dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <style name="DefaultDataViewStatusTextViewStyle" parent="TextView.UXStyle.Body">
+        <item name="android:paddingStart">5dp</item>
+        <item name="android:paddingEnd">5dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <style name="StatusTextStyle" parent="TextView.UXStyle.Body">
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="TagTextStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="DVFilterRemoveIcon">
+        <item name="android:paddingTop">@dimen/dp_12</item>
+        <item name="android:paddingEnd">@dimen/dp_12</item>
+        <item name="android:paddingBottom">@dimen/dp_12</item>
+        <item name="android:paddingStart">@dimen/dp_20</item>
+        <item name="srcCompat">@drawable/ic_remove_red</item>
+        <item name="android:contentDescription">@string/content_description_filter_remove</item>
+    </style>
+
+    <style name="DVFilterFormatIcon">
+        <item name="layout_goneMarginStart">20dp</item>
+        <item name="android:contentDescription">@string/content_description_filter_format</item>
+    </style>
+
+    <style name="RelationViewTitleStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">4</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="SelectedRelationCircleBadgeStyle" parent="TextView.UXStyle.Body">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text_white</item>
+        <item name="android:layout_gravity">center_vertical|end</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/ic_tag_selected_selector</item>
+    </style>
+
+    <style name="ObjectDescriptionTextStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:ellipsize">end</item>
+        <item name="android:background">@null</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="textColor">@color/text_primary</item>
+        <item name="text_size">15sp</item>
+    </style>
+
+    <style name="PasteUrlEditTextStyle" parent="TextView.UXStyle.Body">
+        <item name="android:textColorHint">@color/glyph_active</item>
+        <item name="android:background">@null</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <style name="SlashWidgetStyleItemTitle" parent="TextView.UXStyle.Titles.2.Regular">
+        <item name="android:layout_gravity">center_vertical|start</item>
+    </style>
+
+    <style name="SlashWidgetStyleItemSubTitle" parent="TextView.ContentStyle.Relations.2">
+        <item name="android:layout_gravity">center_vertical|start</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="DefaultRelationTitleStyle" parent="TextView.UXStyle.Body">
+        <item name="android:hint">@string/untitled</item>
+        <item name="singleLine">true</item>
+        <item name="maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="DefaultRelationCategoryStyle" parent="TextView.UXStyle.Captions.1.Regular">
+        <item name="singleLine">true</item>
+        <item name="maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="DataViewGridColumnHeaderTextStyle" parent="TextView.ContentStyle.Relations.2">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:layout_gravity">center_vertical</item>
+    </style>
+
+    <style name="DataViewCellObjectHeaderNameStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColorHint">@color/text_secondary</item>
+    </style>
+
+    <style name="ModifyViewerTextStyle" parent="TextView.UXStyle.Body">
+    </style>
+
+    <!-- Object items in lists -->
+    <style name="ObjectListItemTitle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="ObjectListItemSubtitle" parent="TextView.UXStyle.Captions.1.Regular">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="RelationPlaceholderTextStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+    </style>
+
+    <style name="ObjectSetHeaderTitleStyle" parent="TextView.ContentStyle.Headline.Title">
+        <item name="android:background">@null</item>
+        <item name="android:imeOptions">actionDone</item>
+        <item name="android:inputType">text</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+
+    <style name="ObjectSetToolbarTitleStyle" parent="TextView.UXStyle.Titles.2.Medium">
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="ViewerTitleStyle" parent="TextView.ContentStyle.Headline.Subheading">
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:maxWidth">250dp</item>
+    </style>
+
+    <style name="ObjectLayoutTitleStyle" parent="TextView.UXStyle.Titles.2.Medium">
+        <item name="android:singleLine">true</item>
+        <item name="maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ObjectLayoutSubtitleStyle" parent="TextView.UXStyle.Captions.1.Regular">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:singleLine">true</item>
+        <item name="maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- List View -->
+    <style name="ListViewItemPrimaryStyle" parent="TextView.ContentStyle.PreviewTitles.1.Medium">
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ListViewItemSecondaryStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="maxCharacterCount">40</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ViewerSettingOptionTextStyle" parent="TextView.UXStyle.Body">
+    </style>
+
+    <style name="ObjectIcon15Style">
+        <item name="imageSize">18dp</item>
+        <item name="emojiSize">18dp</item>
+        <item name="checkboxSize">16dp</item>
+        <item name="initialTextSize">11sp</item>
+        <item name="imageCornerRadius">@dimen/list_item_object_image_corner_radius_small</item>
+    </style>
+
+    <style name="ShapeAppearance.MaterialComponents.Circle">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <!-- card -->
+    <style name="DefaultMediaPlaceholderBlockCardStyle" parent="Widget.MaterialComponents.CardView">
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">@color/shape_primary</item>
+        <item name="strokeWidth">0.5dp</item>
+        <item name="cardBackgroundColor">@android:color/transparent</item>
+        <item name="android:paddingStart">@dimen/default_media_placeholder_card_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_media_placeholder_card_padding_end</item>
+    </style>
+
+    <!-- Editor, divider block style, {root {container {line, dots}}}-->
+
+    <!-- line -->
+    <style name="DefaultDividerBlockLineStyle">
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:background">@color/shape_primary</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+    </style>
+
+    <!-- card -->
+    <style name="DefaultLinkCardBlockCardStyle" parent="CardView">
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="rippleColor">@android:color/transparent</item>
+        <item name="strokeColor">@color/shape_tertiary</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cardBackgroundColor">@android:color/transparent</item>
+    </style>
+
+    <!-- Editor, Table of Contents block -->
+    <!-- root -->
+    <style name="DefaultTableOfContentsBlockRootStyle">
+        <item name="android:layout_marginTop">@dimen/dp_12</item>
+        <item name="android:layout_marginBottom">@dimen/dp_12</item>
+        <item name="android:paddingStart">@dimen/default_document_item_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_item_padding_end</item>
+    </style>
+
+    <!-- item -->
+    <style name="DefaultTableOfContentsBlockItemStyle" parent="TextView.UXStyle.Body.Callout.Regular">
+        <item name="android:layout_marginTop">@dimen/dp_6</item>
+        <item name="android:layout_marginBottom">@dimen/dp_6</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Editor, Code block -->
+    <style name="DefaultCodeBlockRootStyle">
+        <item name="android:layout_marginTop">@dimen/dp_10</item>
+        <item name="android:layout_marginBottom">@dimen/dp_10</item>
+    </style>
+
+    <style name="DefaultCodeBlockContentStyle" parent="TextView.ContentStyle.CodeBlock">
+        <item name="android:inputType">textMultiLine|textNoSuggestions</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="DefaultCodeBlockLanguageMenuStyle" parent="TextView.UXStyle.Body.Callout.Regular">
+        <item name="android:drawablePadding">4dp</item>
+        <item name="android:drawableEnd">@drawable/ic_turn_into_arrow</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Editor, table block style, {root {container {recycler}} selected}-->
+    <style name="DefaultTableBlockRootStyle">
+        <item name="android:layout_marginTop">@dimen/item_block_table_margin_top</item>
+        <item name="android:layout_marginBottom">@dimen/item_block_table_margin_bottom</item>
+        <item name="android:paddingStart">@dimen/default_document_content_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_content_padding_end</item>
+    </style>
+
+    <style name="BlockCellTextContentStyle" parent="DefaultEditorTextStyle">
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingBottom">9dp</item>
+        <item name="android:paddingStart">@dimen/default_document_content_padding_start</item>
+        <item name="android:paddingEnd">@dimen/default_document_content_padding_end</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+    </style>
+
+    <style name="BlockTableWidgetTabsStyle" parent="TextView.ContentStyle.Headline.Subheading">
+    </style>
+
+    <style name="RelationListViewTitleStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="RelationListViewValueStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <style name="RelationBlockTitleStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="RelationBlockValueStyle" parent="TextView.ContentStyle.Relations.1">
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:hint">@string/enter_value</item>
+    </style>
+
+    <!-- Editor, object link as text block, {root {guideline , iconObjectContainer, text, tvObjectType, tvDescription}}-->
+    <style name="ObjectLinkBlockTextStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="ObjectLinkBlockRelationsStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:background">@null</item>
+    </style>
+
+    <!-- Editor, object link as card block-->
+    <style name="ObjectLinkBlockCardTitleStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ObjectLinkBlockCardDescriptionStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ObjectLinkBlockCardObjectTypeStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- Editor, data view block  -->
+    <style name="BlockDataViewRootStyle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/block_data_view_height</item>
+    </style>
+
+    <style name="BlockDataViewCardStyle" parent="CardView">
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="rippleColor">@android:color/transparent</item>
+        <item name="strokeColor">@color/background_highlighted</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:layout_gravity">center_vertical</item>
+        <item name="android:layout_marginStart">@dimen/dp_12</item>
+        <item name="android:layout_marginEnd">@dimen/dp_12</item>
+    </style>
+
+    <style name="BlockDataViewTitleStyle" parent="TextView.ContentStyle.Headline.Subheading">
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:layout_marginStart">6dp</item>
+        <item name="android:layout_marginTop">18dp</item>
+        <item name="android:layout_marginEnd">16dp</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:contentDescription">@string/block_data_view_content_description_title</item>
+    </style>
+
+    <style name="BlockDataViewSubtitleStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:layout_marginStart">16dp</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:layout_marginEnd">16dp</item>
+        <item name="android:layout_marginBottom">16dp</item>
+    </style>
+
+    <style name="BlockDataViewInfoStyle" parent="TextView.UXStyle.Captions.2.Regular">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:background">@drawable/bg_rect_3_radius</item>
+        <item name="android:paddingTop">1dp</item>
+        <item name="android:paddingEnd">5dp</item>
+        <item name="android:paddingBottom">1dp</item>
+        <item name="android:paddingStart">5dp</item>
+        <item name="android:layout_marginTop">20dp</item>
+        <item name="android:layout_marginEnd">@dimen/dp_16</item>
+    </style>
+
+    <style name="BlockDataViewIconStyle">
+        <item name="android:layout_width">20dp</item>
+        <item name="android:layout_height">20dp</item>
+        <item name="android:layout_marginStart">16dp</item>
+        <item name="android:layout_marginTop">18dp</item>
+        <item name="checkboxSize">18dp</item>
+        <item name="emojiSize">18dp</item>
+        <item name="imageSize">18dp</item>
+        <item name="initialTextSize">11sp</item>
+    </style>
+
+    <style name="BlockSelectionStyle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:background">@drawable/item_block_multi_select_mode_selector</item>
+    </style>
+    <!-- Editor, data view block  -->
+
+    <!-- Set, gallery view, card -->
+    <style name="SetGalleryViewCardStyle" parent="Widget.MaterialComponents.CardView">
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="rippleColor">@android:color/transparent</item>
+        <item name="strokeColor">@color/shape_primary</item>
+        <!-- 1dp, not 0.5dp: the card has no fill, so this stroke is the only thing separating
+             neighbouring cards, and a sub-pixel line is antialiased down to roughly half alpha
+             — which is why the border read as almost invisible on light backgrounds. -->
+        <item name="strokeWidth">1dp</item>
+        <item name="cardBackgroundColor">@android:color/transparent</item>
+    </style>
+
+    <style name="SetGalleryViewTitleStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="DefaultPopupMenuStyle" parent="@style/Widget.Material3.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_menu_default</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.014</item>
+        <item name="android:fontWeight">400</item>
+    </style>
+
+   <style name="FeaturedRelationTextStyle" parent="TextView.ContentStyle.Relations.2">
+       <item name="android:textColor">@color/text_secondary</item>
+   </style>
+
+    <style name="GalleryViewContentWidgetStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="GalleryViewTitleWidgetStyle" parent="TextView.ContentStyle.PreviewTitles.2.Medium">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="GalleryViewDescriptionWidgetStyle" parent="TextView.ContentStyle.Relations.3">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+    <style name="TitleImageAppearanceOverlay" parent="">
+        <item name="cornerSize">8dp</item>
+        <item name="cornerFamily">rounded</item>
+    </style>
+
+
+    <!-- Editor, default block card style-->
+    <style name="DefaultCardBlockStyle">
+        <item name="android:layout_marginStart">@dimen/dp_20</item>
+        <item name="android:layout_marginEnd">@dimen/dp_20</item>
+        <item name="cardElevation">0dp</item>
+        <item name="cardForegroundColor">@color/card_color_selector</item>
+        <item name="rippleColor">@android:color/transparent</item>
+        <item name="strokeColor">@color/card_stroke_selector</item>
+    </style>
+
+    <!-- Editor, default bookmark card style-->
+    <style name="BookmarkBlockStyle" parent="DefaultCardBlockStyle">
+        <item name="cardCornerRadius">16dp</item>
+        <item name="strokeWidth">0.5dp</item>
+    </style>
+
+</resources>

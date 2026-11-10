@@ -1,0 +1,153 @@
+package com.chronoio.chrono.core_ui.tools
+
+import android.text.Editable
+import com.chronoio.chrono.core_ui.BuildConfig
+import com.chronoio.chrono.core_ui.tools.MentionHelper.getMentionSuggestPosition
+import com.chronoio.chrono.core_ui.tools.MentionHelper.isMentionDeleted
+import com.chronoio.chrono.presentation.editor.editor.mention.MentionEvent
+import timber.log.Timber
+
+class DefaultTextWatcher(val onTextChanged: (Editable) -> Unit) : TextInputTextWatcher {
+
+    private var locked: Boolean = false
+
+    override fun afterTextChanged(s: Editable) {
+        if (BuildConfig.DEBUG) {
+            Timber.d("OnTextChanged: $s")
+        }
+        if (!locked)
+            onTextChanged(s)
+        else
+            Timber.d("Locked text watcher. Skipping text update...")
+    }
+    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+    override fun lock() {
+        locked = true
+    }
+
+    override fun unlock() {
+        locked = false
+    }
+
+    fun pause(block: () -> Unit) = synchronized(this) {
+        lock()
+        block()
+        unlock()
+    }
+}
+
+class MentionTextWatcher(
+    private val onMentionEvent: (MentionTextWatcherState) -> Unit
+) : TextInputTextWatcher {
+
+    private var locked: Boolean = false
+
+    override fun lock() {
+        locked = true
+    }
+
+    override fun unlock() {
+        locked = false
+    }
+
+    /**
+     * Position of "@" character
+     */
+    private var mentionCharPosition = NO_MENTION_POSITION
+    private var mention: String = ""
+
+    override fun afterTextChanged(s: Editable?) {}
+    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+    override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {
+        interceptMentionDeleted(text = s, start = start, before = before, count = count)
+        interceptMentionTriggered(text = s, start = start, count = count, before = before)
+    }
+
+    fun onDismiss() {
+        Timber.d("Dismiss Mention Watcher $this")
+        mentionCharPosition = NO_MENTION_POSITION
+        mention = ""
+    }
+
+    /**
+     * If text changed with start [start] position smaller
+     * then char @ position [mentionCharPosition] then send MentionStop event
+     */
+    private fun interceptMentionDeleted(text: CharSequence, start: Int, before: Int, count: Int) {
+        if (isMentionDeleted(
+                text = text,
+                start = start,
+                mentionPosition = mentionCharPosition,
+                before = before,
+                count = count
+            )
+        ) {
+            stopMentionWatcher()
+        }
+    }
+
+    /**
+     * Check for new added char @ and start [MentionEvent.MentionSuggestStart] event
+     * Send all text added after mention start position [mentionCharPosition]
+     */
+    private fun interceptMentionTriggered(text: CharSequence, start: Int, before: Int, count: Int) {
+        val triggered = getMentionSuggestPosition(text, start, count)
+        if (triggered != NO_MENTION_POSITION) {
+            mentionCharPosition = triggered
+            // The trigger only matches when the inserted run ends with the mention char,
+            // so the query starts out as the mention char alone.
+            mention = MENTION_CHAR.toString()
+            proceedWithMentionEvent(MentionTextWatcherState.Start(mentionCharPosition))
+            proceedWithMentionEvent(MentionTextWatcherState.Text(mention))
+            return
+        }
+
+        if (isMentionCharVisible()) {
+            if (isStartPositionBeforeMention(start = start, mentionPos = mentionCharPosition)) {
+                stopMentionWatcher()
+            } else {
+                mention = mention.updateMentionWhenTextChanged(
+                    text = text,
+                    start = start,
+                    before = before,
+                    count = count,
+                    mentionStart = mentionCharPosition
+                )
+                proceedWithMentionEvent(MentionTextWatcherState.Text(mention))
+            }
+        }
+    }
+
+    private fun isMentionCharVisible(): Boolean = mentionCharPosition != NO_MENTION_POSITION
+
+    private fun stopMentionWatcher() {
+        onDismiss()
+        proceedWithMentionEvent(MentionTextWatcherState.Stop)
+    }
+
+    private fun proceedWithMentionEvent(event: MentionTextWatcherState) {
+        if (!locked) {
+            Timber.d("proceedWithMentionEvent, event:[$event]")
+            onMentionEvent(event)
+        } else {
+            Timber.d("Locked mention watcher. Skipping event:[$event]")
+        }
+    }
+
+    private fun isStartPositionBeforeMention(start: Int, mentionPos: Int): Boolean =
+        start - mentionPos < 0
+
+    sealed class MentionTextWatcherState {
+        data class Start(val start: Int) : MentionTextWatcherState()
+        object Stop : MentionTextWatcherState()
+        data class Text(val text: CharSequence) : MentionTextWatcherState()
+    }
+
+    companion object {
+        const val MENTION_CHAR = '@'
+        const val NO_MENTION_POSITION = -1
+    }
+}

@@ -1,0 +1,334 @@
+package com.chronoio.chrono.domain.page
+
+import com.chronoio.chrono.core_models.Command
+import com.chronoio.chrono.core_models.CoroutineTestRule
+import com.chronoio.chrono.core_models.CreateObjectResult
+import com.chronoio.chrono.core_models.InternalFlags
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Payload
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeId
+import com.chronoio.chrono.core_models.primitives.TypeKey
+import com.chronoio.chrono.domain.block.repo.BlockRepository
+import com.chronoio.chrono.domain.launch.GetDefaultObjectType
+import com.chronoio.chrono.domain.templates.GetTemplates
+import com.chronoio.chrono.domain.util.dispatchers
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+import org.mockito.kotlin.verifyNoInteractions
+
+class CreateObjectTest {
+
+    @get:Rule
+    val mockitoRule = MockitoJUnit.rule()
+
+    @ExperimentalCoroutinesApi
+    @get:Rule
+    var rule = CoroutineTestRule()
+
+    @Mock
+    lateinit var repo: BlockRepository
+
+    @Mock
+    lateinit var getDefaultObjectType: GetDefaultObjectType
+
+    @Mock
+    lateinit var getTemplates: GetTemplates
+
+    @Mock
+    lateinit var spaceManager: SpaceManager
+
+    lateinit var createObject: CreateObject
+
+    private val defaultSpaceId = SpaceId(MockDataFactory.randomUuid())
+
+    @Before
+    fun setup() {
+        createObject = CreateObject(
+            repo = repo,
+            getDefaultObjectType = getDefaultObjectType,
+            dispatchers = dispatchers
+        )
+        stubSpaceManager()
+    }
+
+    @Test
+    fun `when type is null and default type not null - should send proper params`() = runBlocking {
+
+        //SETUP
+        val type = null
+        val appDefaultTypeKey = TypeKey(MockDataFactory.randomString())
+        givenGetDefaultObjectType(type = appDefaultTypeKey)
+        stubCreateObject()
+
+        //TESTING
+        val params = CreateObject.Param(
+            space = defaultSpaceId,
+            type = type,
+            internalFlags = listOf(
+                InternalFlags.ShouldSelectType,
+                InternalFlags.ShouldSelectTemplate,
+                InternalFlags.ShouldEmptyDelete
+            )
+        )
+        createObject.run(params)
+
+        //ASSERT
+        verifyNoInteractions(getTemplates)
+        val commands = Command.CreateObject(
+            prefilled = emptyMap(),
+            template = null,
+            internalFlags = listOf(
+                InternalFlags.ShouldSelectType,
+                InternalFlags.ShouldSelectTemplate,
+                InternalFlags.ShouldEmptyDelete
+            ),
+            space = defaultSpaceId,
+            typeKey = appDefaultTypeKey
+        )
+        verifyBlocking(repo, times(1)) { createObject(commands) }
+    }
+
+    @Test
+    fun `when type is null and default type is note - should send proper params`() =
+        runBlocking {
+
+            //SETUP
+            val type = null
+            val defaultType = MockDataFactory.randomString()
+            givenGetDefaultObjectType(
+                type = TypeKey(defaultType)
+            )
+            givenGetTemplates()
+            stubCreateObject()
+
+            //TESTING
+            val params = CreateObject.Param(
+                space = defaultSpaceId,
+                type = type,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                )
+            )
+            createObject.run(params)
+
+            //ASSERT
+            val commands = Command.CreateObject(
+                prefilled = emptyMap(),
+                template = null,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                ),
+                space = defaultSpaceId,
+                typeKey = TypeKey(defaultType)
+            )
+            verifyBlocking(repo, times(1)) { createObject(commands) }
+        }
+
+    @Test
+    fun `when type is null and default type is book with template - should send proper params`() =
+        runBlocking {
+
+            //SETUP
+            val type = null
+            val defaultType = MockDataFactory.randomString()
+            val defaultTypeName = MockDataFactory.randomString()
+            val templateBook = MockDataFactory.randomString()
+            givenGetDefaultObjectType(
+                type = TypeKey(defaultType)
+            )
+            stubCreateObject()
+
+            //TESTING
+            val params = CreateObject.Param(
+                space = defaultSpaceId,
+                type = type,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                )
+            )
+            createObject.run(params)
+
+            //ASSERT
+            val commands = Command.CreateObject(
+                prefilled = emptyMap(),
+                template = null,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                ),
+                space = defaultSpaceId,
+                typeKey = TypeKey(defaultType)
+            )
+            verifyBlocking(repo, times(1)) { createObject(commands) }
+        }
+
+    @Test
+    fun `when type is custom without template - should send proper params`() =
+        runBlocking {
+
+            //SETUP
+            val type = MockDataFactory.randomString()
+            givenGetTemplates()
+            stubCreateObject()
+
+            //TESTING
+            val params = CreateObject.Param(
+                space = defaultSpaceId,
+                type = TypeKey(type),
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                )
+            )
+            createObject.run(params)
+
+            //ASSERT
+            verifyNoInteractions(getDefaultObjectType)
+            val commands = Command.CreateObject(
+                prefilled = emptyMap(),
+                template = null,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                ),
+                space = defaultSpaceId,
+                typeKey = TypeKey(type)
+            )
+            verifyBlocking(repo, times(1)) { createObject(commands) }
+        }
+
+    @Test
+    fun `when type is custom with one template - should send proper params`() =
+        runBlocking {
+
+            //SETUP
+            val type = MockDataFactory.randomString()
+            val template = MockDataFactory.randomString()
+            stubCreateObject()
+
+            //TESTING
+            val params = CreateObject.Param(
+                space = defaultSpaceId,
+                type = TypeKey(type),
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                )
+            )
+            createObject.run(params)
+
+            //ASSERT
+            verifyNoInteractions(getDefaultObjectType)
+            val commands = Command.CreateObject(
+                prefilled = emptyMap(),
+                template = null,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                ),
+                space = defaultSpaceId,
+                typeKey = TypeKey(type)
+            )
+            verifyBlocking(repo, times(1)) { createObject(commands) }
+        }
+
+    @Test
+    fun `when type is custom with two templates - should send proper params`() =
+        runBlocking {
+
+            //SETUP
+            val type = MockDataFactory.randomString()
+            val templateOne = MockDataFactory.randomString()
+            val templateTwo = MockDataFactory.randomString()
+            stubCreateObject()
+
+            //TESTING
+            val params = CreateObject.Param(
+                space = defaultSpaceId,
+                type = TypeKey(type),
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                ),
+                template = templateTwo
+            )
+            createObject.run(params)
+
+            //ASSERT
+            verifyNoInteractions(getDefaultObjectType)
+            val commands = Command.CreateObject(
+                prefilled = emptyMap(),
+                template = templateTwo,
+                internalFlags = listOf(
+                    InternalFlags.ShouldSelectType,
+                    InternalFlags.ShouldSelectTemplate,
+                    InternalFlags.ShouldEmptyDelete
+                ),
+                space = defaultSpaceId,
+                typeKey = TypeKey(type)
+            )
+            verifyBlocking(repo, times(1)) { createObject(commands) }
+        }
+
+    private fun givenGetDefaultObjectType(
+        type: TypeKey,
+        name: String? = null,
+        template: String? = null,
+    ) {
+        getDefaultObjectType.stub {
+            onBlocking { run(defaultSpaceId) } doReturn GetDefaultObjectType.Response(
+                type = type,
+                name = name,
+                id = TypeId(MockDataFactory.randomString()),
+                defaultTemplate = template
+            )
+        }
+    }
+
+    private fun givenGetTemplates(objects: List<ObjectWrapper.Basic> = listOf()) {
+        getTemplates.stub {
+            onBlocking { run(any()) } doReturn objects
+        }
+    }
+
+    private fun stubCreateObject() {
+        repo.stub {
+            onBlocking { createObject(any()) } doReturn CreateObjectResult(
+                id = "",
+                event = Payload(context = "", events = listOf()),
+                details = emptyMap()
+            )
+        }
+    }
+
+    private fun stubSpaceManager() {
+        spaceManager.stub {
+            onBlocking { get() } doReturn defaultSpaceId.id
+        }
+    }
+}

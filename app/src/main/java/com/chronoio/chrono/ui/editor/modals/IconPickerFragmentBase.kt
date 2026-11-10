@@ -1,0 +1,224 @@
+package com.chronoio.chrono.ui.editor.modals
+
+import android.net.Uri
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.core.view.updateLayoutParams
+import androidx.core.widget.doAfterTextChanged
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_utils.ext.GetImageContract
+import com.chronoio.chrono.core_utils.ext.Mimetype
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.fixBottomSheetNavigationBarGap
+import com.chronoio.chrono.core_utils.ext.invisible
+import com.chronoio.chrono.core_utils.ext.parseImagePath
+import com.chronoio.chrono.core_utils.ext.subscribe
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetFragment
+import com.chronoio.chrono.databinding.FragmentPageIconPickerBinding
+import com.chronoio.chrono.device.launchMediaPicker
+import com.chronoio.chrono.library_page_icon_picker_widget.ui.DocumentEmojiIconPickerAdapter
+import com.chronoio.chrono.other.MediaPermissionHelper
+import com.chronoio.chrono.presentation.editor.picker.EmojiPickerView.Companion.HOLDER_EMOJI_CATEGORY_HEADER
+import com.chronoio.chrono.presentation.editor.picker.EmojiPickerView.Companion.HOLDER_EMOJI_ITEM
+import com.chronoio.chrono.presentation.picker.IconPickerViewModel
+import com.chronoio.chrono.presentation.picker.IconPickerViewModel.ViewState
+import timber.log.Timber
+
+abstract class IconPickerFragmentBase<T> :
+    BaseBottomSheetFragment<FragmentPageIconPickerBinding>() {
+
+    protected val context: Id
+        get() = arg(ARG_CONTEXT_ID_KEY)
+
+    protected val space: Id
+        get() = arg(ARG_SPACE_ID_KEY)
+
+    /**
+     * The target for which we choose icon
+     * i.e. Object, callout text block
+     */
+    protected abstract val target: T
+
+    abstract val vm: IconPickerViewModel<T>
+
+    private val emojiPickerAdapter by lazy {
+        DocumentEmojiIconPickerAdapter(
+            views = emptyList(),
+            onEmojiClicked = { unicode ->
+                vm.onEmojiClicked(
+                    unicode = unicode,
+                    iconable = target
+                )
+            }
+        )
+    }
+
+    private lateinit var permissionHelper: MediaPermissionHelper
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        permissionHelper = MediaPermissionHelper(
+            fragment = this,
+            onPermissionDenied = { toast(R.string.permission_read_denied) },
+            onPermissionSuccess = { _, _ -> openGallery() }
+        )
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        setupRecycler()
+        with(binding) {
+            clearSearchText.setOnClickListener {
+                filterInputField.setText(EMPTY_FILTER_TEXT)
+                clearSearchText.invisible()
+            }
+            filterInputField.doAfterTextChanged { vm.onQueryChanged(it.toString()) }
+            btnRemoveIcon.setOnClickListener { vm.onRemoveClicked(target) }
+            tvTabRandom.setOnClickListener { vm.onRandomEmoji(target) }
+            tvTabUpload.setOnClickListener {
+                launchMediaPicker(
+                    pickMedia = pickMedia,
+                    permissionHelper = permissionHelper,
+                    mediaType = PickVisualMedia.ImageOnly,
+                    fallbackMimeType = Mimetype.MIME_IMAGE_ALL
+                )
+            }
+        }
+        setupBottomToolbarInsets()
+        skipCollapsed()
+    }
+
+    private fun setupBottomToolbarInsets() {
+        val bottomToolbar = binding.bottomToolbar
+        val initialBottomMargin = (bottomToolbar.layoutParams as LinearLayout.LayoutParams)
+            .bottomMargin
+
+        fixBottomSheetNavigationBarGap { navigationBars ->
+            bottomToolbar.updateLayoutParams<LinearLayout.LayoutParams> {
+                bottomMargin = initialBottomMargin + navigationBars.bottom
+            }
+        }
+    }
+
+    private fun setupRecycler() {
+        binding.pickerRecycler.apply {
+            setItemViewCacheSize(EMOJI_RECYCLER_ITEM_VIEW_CACHE_SIZE)
+            setHasFixedSize(true)
+            layoutManager = GridLayoutManager(context, PAGE_ICON_PICKER_DEFAULT_SPAN_COUNT).apply {
+                spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                    override fun getSpanSize(position: Int) =
+                        when (val type = emojiPickerAdapter.getItemViewType(position)) {
+                            HOLDER_EMOJI_ITEM -> 1
+                            HOLDER_EMOJI_CATEGORY_HEADER -> PAGE_ICON_PICKER_DEFAULT_SPAN_COUNT
+                            else -> throw IllegalStateException("$UNEXPECTED_VIEW_TYPE_MESSAGE: $type")
+                        }
+                }
+            }
+            adapter = emojiPickerAdapter
+        }
+    }
+
+    override fun onStart() {
+        with(lifecycleScope) {
+            jobs += subscribe(vm.state()) { render(it) }
+        }
+        super.onStart()
+        expand()
+    }
+
+    private fun render(state: ViewState) {
+        with(binding) {
+            when (state) {
+                is ViewState.Success -> {
+                    if (filterInputField.text.isNotEmpty())
+                        clearSearchText.visible()
+                    else
+                        clearSearchText.invisible()
+                    emojiPickerAdapter.update(state.views)
+                    progressBar.invisible()
+                }
+                is ViewState.Loading -> {
+                    clearSearchText.invisible()
+                    progressBar.visible()
+                }
+                is ViewState.Init -> {
+                    clearSearchText.visible()
+                    progressBar.invisible()
+                }
+                is ViewState.Exit -> dismiss()
+            }
+        }
+    }
+
+    override fun onDestroyView() {
+        dialog?.setOnShowListener(null)
+        super.onDestroyView()
+    }
+
+    private val getContent = registerForActivityResult(GetImageContract()) { uri: Uri? ->
+        if (uri != null) {
+            val path = uri.parseImagePath(requireContext())
+            if (path != null) {
+                vm.onPickedFromDevice(
+                    iconable = target,
+                    path = path,
+                    space = space
+                )
+            } else {
+                toast("Error while parsing path for cover image")
+            }
+        } else {
+            Timber.e("Error while upload cover image, URI is null")
+        }
+    }
+
+    private fun openGallery() {
+        getContent.launch(SELECT_IMAGE_CODE)
+    }
+
+    override fun inflateBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?
+    ): FragmentPageIconPickerBinding = FragmentPageIconPickerBinding.inflate(
+        inflater, container, false
+    )
+
+    val pickMedia = registerForActivityResult(PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val path = uri.parseImagePath(requireContext())
+            if (path != null) {
+                vm.onPickedFromDevice(
+                    iconable = target,
+                    path = path,
+                    space = space
+                )
+            } else {
+                toast("Error while parsing path for media file")
+            }
+        } else {
+            Timber.i("No media selected")
+        }
+    }
+
+    companion object {
+        private const val EMPTY_FILTER_TEXT = ""
+        private const val PAGE_ICON_PICKER_DEFAULT_SPAN_COUNT = 6
+        private const val EMOJI_RECYCLER_ITEM_VIEW_CACHE_SIZE = 2000
+        private const val MISSING_CONTEXT_ERROR = "Missing context id"
+        private const val UNEXPECTED_VIEW_TYPE_MESSAGE = "Unexpected view type"
+
+        const val ARG_CONTEXT_ID_KEY = "arg.picker.context.id"
+        const val ARG_SPACE_ID_KEY = "arg.picker.space.id"
+
+        private const val SELECT_IMAGE_CODE = 1
+    }
+}

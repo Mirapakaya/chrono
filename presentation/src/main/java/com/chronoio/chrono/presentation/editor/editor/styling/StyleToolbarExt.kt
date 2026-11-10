@@ -1,0 +1,231 @@
+package com.chronoio.chrono.presentation.editor.editor.styling
+
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.presentation.editor.Editor
+import com.chronoio.chrono.presentation.editor.editor.Markup
+import com.chronoio.chrono.presentation.editor.editor.model.Alignment
+import timber.log.Timber
+
+fun Editor.Mode.getIds(): List<Id>? = when (this) {
+    is Editor.Mode.Styling.Multi -> targets.toList()
+    is Editor.Mode.Styling.Single -> listOf(target)
+    is  Editor.Mode.Table -> targets.toList()
+    else -> {
+        Timber.w("Couldn't get ids of selected blocks, wrong Editor Mode : $this")
+        null
+    }
+}
+
+/**
+ * Checks that all block text contents have the same value of style and returns state with this value
+ * otherwise returns state with null
+ */
+fun List<Block.Content.Text>.getStyleTextToolbarState(): StyleToolbarState.Text {
+    val result = map { it.style }.distinct()
+    return if (result.size == 1) {
+        StyleToolbarState.Text(
+            textStyle = result[0]
+        )
+    } else {
+        StyleToolbarState.Text(
+            textStyle = null
+        )
+    }
+}
+
+fun Block.Content.Text.getStyleTextToolbarState(): StyleToolbarState.Text {
+    return StyleToolbarState.Text(
+        textStyle = style
+    )
+}
+
+/**
+ * Checks that all blocks have the same value of background color and returns state with this value
+ * otherwise returns state with null
+ * We take as a statement that if block background value is null, then this block have default color
+ */
+fun List<Block>.getStyleBackgroundToolbarState(): StyleToolbarState.Background {
+    return when (size) {
+        1 -> get(0).getStyleBackgroundToolbarState()
+        else -> {
+            val result = map { it.backgroundColor ?: ThemeColor.DEFAULT.code }.distinct()
+            if (result.size == 1) {
+                StyleToolbarState.Background(
+                    background = result[0]
+                )
+            } else {
+                StyleToolbarState.Background(
+                    background = null
+                )
+            }
+        }
+    }
+}
+
+fun Block.getStyleBackgroundToolbarState(): StyleToolbarState.Background {
+    val background = backgroundColor ?: ThemeColor.DEFAULT.code
+    return StyleToolbarState.Background(background)
+}
+
+/**
+ * Checks that all blocks have the same value of background color and text color and returns state with this values
+ * otherwise returns state with null
+ * We take as a statement that if the block's background value is null
+ * or the block's text color is null, then this block has default background or text colors
+ */
+fun List<Block>.getStyleColorBackgroundToolbarState(): StyleToolbarState.ColorBackground {
+    return when (size) {
+        1 -> get(0).getStyleColorBackgroundToolbarState()
+        else -> {
+            val isAllText = all { it.content is Block.Content.Text }
+            if (!isAllText) return StyleToolbarState.ColorBackground.empty()
+            val resultColor =
+                map { it.content.asText().color ?: ThemeColor.DEFAULT.code }.distinct()
+            val resultBackground = map { it.backgroundColor ?: ThemeColor.DEFAULT.code }.distinct()
+            return StyleToolbarState.ColorBackground(
+                background = if (resultBackground.size == 1) resultBackground[0] else null,
+                color = if (resultColor.size == 1) resultColor[0] else null
+            )
+        }
+    }
+}
+
+fun Block.getStyleColorBackgroundToolbarState(): StyleToolbarState.ColorBackground {
+    val isText = content is Block.Content.Text
+    if (!isText) return StyleToolbarState.ColorBackground.empty()
+    val color = content.asText().color ?: ThemeColor.DEFAULT.code
+    val background = backgroundColor ?: ThemeColor.DEFAULT.code
+    return StyleToolbarState.ColorBackground(
+        background = background,
+        color = color
+    )
+}
+
+fun List<Block.Content.Text>.getStyleOtherToolbarState(): StyleToolbarState.Other {
+    val isSupportBold = all { it.isSupportBold() }
+    val isBoldSelected = if (isSupportBold) {
+        all { it.isBold() }
+    } else false
+
+    return StyleToolbarState.Other(
+        isSupportBold = isSupportBold,
+        isSupportItalic = true,
+        isSupportCode = true,
+        isSupportLinked = true,
+        isSupportStrikethrough = true,
+        isSupportUnderline = true,
+        isSupportAlignStart = all { it.alignmentSupport().contains(Alignment.START) },
+        isSupportAlignCenter = all { it.alignmentSupport().contains(Alignment.CENTER) },
+        isSupportAlignEnd = all { it.alignmentSupport().contains(Alignment.END) },
+        isBoldSelected = isBoldSelected,
+        isItalicSelected = all { it.isItalic() },
+        isStrikethroughSelected = all { it.isStrikethrough() },
+        isUnderlineSelected = all { it.isUnderline() },
+        isCodeSelected = all { it.isCode() },
+        isLinkedSelected = all { it.isLinked() },
+        isAlignCenterSelected = all { it.isAlignCenter() },
+        isAlignStartSelected = all { it.isAlignStart() },
+        isAlignEndSelected = all { it.isAlignEnd() }
+    )
+}
+
+fun List<Block.Content.Text>.getStyleOtherStateForTableCells(): StyleToolbarState.Other {
+    return StyleToolbarState.Other(
+        isSupportBold = true,
+        isSupportItalic = true,
+        isSupportCode = true,
+        isSupportLinked = false,
+        isSupportStrikethrough = true,
+        isSupportUnderline = true,
+        isSupportAlignStart = all { it.alignmentSupport().contains(Alignment.START) },
+        isSupportAlignCenter = all { it.alignmentSupport().contains(Alignment.CENTER) },
+        isSupportAlignEnd = all { it.alignmentSupport().contains(Alignment.END) },
+        isBoldSelected = all { it.isBold() },
+        isItalicSelected = all { it.isItalic() },
+        isStrikethroughSelected = all { it.isStrikethrough() },
+        isUnderlineSelected = all { it.isUnderline() },
+        isCodeSelected = all { it.isCode() },
+        isLinkedSelected = all { it.isLinked() },
+        isAlignCenterSelected = all { it.isAlignCenter() },
+        isAlignStartSelected = all { it.isAlignStart() },
+        isAlignEndSelected = all { it.isAlignEnd() }
+    )
+}
+
+private fun Block.Content.Text.isSupportBold(): Boolean = when (this.style) {
+    Block.Content.Text.Style.H1,
+    Block.Content.Text.Style.H2,
+    Block.Content.Text.Style.H3,
+    Block.Content.Text.Style.H4,
+    Block.Content.Text.Style.TITLE,
+    Block.Content.Text.Style.CODE_SNIPPET -> false
+    else -> true
+}
+
+private fun Block.Content.Text.alignmentSupport(): List<Alignment> = when (this.style) {
+    Block.Content.Text.Style.P,
+    Block.Content.Text.Style.H1,
+    Block.Content.Text.Style.H2,
+    Block.Content.Text.Style.H3,
+    Block.Content.Text.Style.H4,
+    Block.Content.Text.Style.TITLE -> listOf(Alignment.START, Alignment.CENTER, Alignment.END)
+    Block.Content.Text.Style.QUOTE -> listOf(Alignment.START, Alignment.END)
+    else -> emptyList()
+}
+
+fun Block.Content.Text.getSupportedMarkupTypes(): List<Markup.Type> = when (style) {
+    Block.Content.Text.Style.P, Block.Content.Text.Style.QUOTE,
+    Block.Content.Text.Style.BULLET, Block.Content.Text.Style.NUMBERED,
+    Block.Content.Text.Style.TOGGLE, Block.Content.Text.Style.CHECKBOX,
+    Block.Content.Text.Style.CALLOUT -> {
+        listOf(
+            Markup.Type.BOLD,
+            Markup.Type.ITALIC,
+            Markup.Type.STRIKETHROUGH,
+            Markup.Type.UNDERLINE,
+            Markup.Type.KEYBOARD,
+            Markup.Type.LINK
+        )
+    }
+    Block.Content.Text.Style.H1, Block.Content.Text.Style.H2,
+    Block.Content.Text.Style.H3, Block.Content.Text.Style.H4 -> {
+        listOf(
+            Markup.Type.ITALIC,
+            Markup.Type.STRIKETHROUGH,
+            Markup.Type.UNDERLINE,
+            Markup.Type.KEYBOARD,
+            Markup.Type.LINK
+        )
+    }
+    else -> emptyList()
+}
+
+fun Block.Content.Text.isBold(): Boolean = marks.any { mark ->
+    mark.type == Block.Content.Text.Mark.Type.BOLD && mark.range.first == 0 && mark.range.last == text.length
+}
+
+fun Block.Content.Text.isItalic(): Boolean = marks.any { mark ->
+    mark.type == Block.Content.Text.Mark.Type.ITALIC && mark.range.first == 0 && mark.range.last == text.length
+}
+
+fun Block.Content.Text.isStrikethrough(): Boolean = marks.any { mark ->
+    mark.type == Block.Content.Text.Mark.Type.STRIKETHROUGH && mark.range.first == 0 && mark.range.last == text.length
+}
+
+fun Block.Content.Text.isCode(): Boolean = marks.any { mark ->
+    mark.type == Block.Content.Text.Mark.Type.KEYBOARD && mark.range.first == 0 && mark.range.last == text.length
+}
+
+fun Block.Content.Text.isLinked(): Boolean = marks.any { mark ->
+    mark.type == Block.Content.Text.Mark.Type.LINK && mark.range.first == 0 && mark.range.last == text.length
+}
+
+fun Block.Content.Text.isAlignStart(): Boolean = this.align == Block.Align.AlignLeft
+fun Block.Content.Text.isAlignCenter(): Boolean = this.align == Block.Align.AlignCenter
+fun Block.Content.Text.isAlignEnd(): Boolean = this.align == Block.Align.AlignRight
+
+fun Block.Content.Text.isUnderline(): Boolean = marks.any { mark ->
+    mark.type == Block.Content.Text.Mark.Type.UNDERLINE && mark.range.first == 0 && mark.range.last == text.length
+}

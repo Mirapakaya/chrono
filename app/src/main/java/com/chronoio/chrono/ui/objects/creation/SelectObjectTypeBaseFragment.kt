@@ -1,0 +1,313 @@
+package com.chronoio.chrono.ui.objects.creation
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.URLUtil
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.unit.dp
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.misc.OpenObjectNavigation
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeKey
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.argOrNull
+import com.chronoio.chrono.core_utils.ext.clipboard
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ext.withParentSafe
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.presentation.objects.ClipboardToolbarViewState
+import com.chronoio.chrono.presentation.objects.Command
+import com.chronoio.chrono.presentation.objects.SelectObjectTypeViewModel
+import com.chronoio.chrono.ui.editor.EditorFragment
+import com.chronoio.chrono.ui.objects.types.pickers.ObjectTypeSelectionListener
+import com.chronoio.chrono.ui.objects.types.pickers.WidgetSourceTypeListener
+import com.chronoio.chrono.ui.settings.typography
+import javax.inject.Inject
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+/**
+ * “A fragment that allows you to select an object type as the source in a new widget.”
+ */
+
+class WidgetSourceTypeFragment : SelectObjectTypeBaseFragment() {
+
+    private val widget get() = arg<Id>(WIDGET_ID_ARG)
+
+    override fun proceedWithSelectedType(objType: ObjectWrapper.Type) {
+        withParentSafe<WidgetSourceTypeListener> {
+            onSetNewWidgetSource(objType = objType, widgetId = widget)
+        }
+    }
+
+    override fun resolveScreenTitle(): String {
+        return getString(R.string.create_object)
+    }
+
+    companion object {
+        private const val WIDGET_ID_ARG = "arg.select-source-type.widget-id"
+        fun new(space: Id, widgetId: Id) = WidgetSourceTypeFragment().apply {
+            arguments = bundleOf(
+                SPACE_ID_KEY to space,
+                WIDGET_ID_ARG to widgetId
+            )
+        }
+    }
+}
+
+/**
+ * “A fragment that allows you to select an object type for a new object.”
+ */
+class ObjectTypeSelectionFragment : SelectObjectTypeBaseFragment() {
+
+    override fun proceedWithSelectedType(objType: ObjectWrapper.Type) {
+        withParentSafe<ObjectTypeSelectionListener> {
+            onSelectObjectType(objType = objType)
+        }
+    }
+
+    override fun resolveScreenTitle(): String {
+        return getString(R.string.create_object)
+    }
+
+    companion object {
+        fun new(
+            space: Id,
+            clipboardToolbarEnabled: Boolean = true
+        ) = ObjectTypeSelectionFragment().apply {
+            arguments = bundleOf(
+                SPACE_ID_KEY to space,
+                CLIPBOARD_TOOLBAR_ENABLED_ARG_KEY to clipboardToolbarEnabled
+            )
+        }
+    }
+}
+
+/**
+ * A base class for fragments that allow you to select an object type.
+ */
+abstract class SelectObjectTypeBaseFragment : BaseBottomSheetComposeFragment() {
+
+    @Inject
+    lateinit var factory: SelectObjectTypeViewModel.Factory
+
+    private val excludedTypeKeys get() = argOrNull<List<Key>>(EXCLUDED_TYPE_KEYS_ARG_KEY)
+
+    private val isClipboardToolbarEnabled
+        get() = argOrNull<Boolean>(CLIPBOARD_TOOLBAR_ENABLED_ARG_KEY) ?: true
+
+    private val space get() = arg<Id>(SPACE_ID_KEY)
+
+    private val vm by viewModels<SelectObjectTypeViewModel> { factory }
+
+    abstract fun proceedWithSelectedType(objType: ObjectWrapper.Type)
+    abstract fun resolveScreenTitle(): String
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = ComposeView(requireContext()).apply {
+        val clipboardToolbarEnabled = isClipboardToolbarEnabled
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            MaterialTheme(
+                typography = typography,
+                shapes = MaterialTheme.shapes.copy(medium = RoundedCornerShape(16.dp)),
+                colors = MaterialTheme.colors.copy(
+                    surface = colorResource(id = R.color.context_menu_background)
+                )
+            ) {
+                SelectObjectTypeScreen(
+                    state = vm.viewState.collectAsStateWithLifecycle().value,
+                    onTypeClicked = vm::onTypeClicked,
+                    onPinOnTopClicked = {
+                        lifecycleScope.launch {
+                            // Workaround to prevent dropdown-menu flickering
+                            delay(DROP_DOWN_MENU_ACTION_DELAY)
+                            vm.onPinTypeClicked(it)
+                        }
+                    },
+                    onUnpinTypeClicked = {
+                        lifecycleScope.launch {
+                            // Workaround to prevent dropdown-menu flickering
+                            delay(DROP_DOWN_MENU_ACTION_DELAY)
+                            vm.onUnpinTypeClicked(it)
+                        }
+                    },
+                    onSetDefaultTypeClicked = {
+                        lifecycleScope.launch {
+                            // Workaround to prevent dropdown-menu flickering
+                            delay(DROP_DOWN_MENU_ACTION_DELAY)
+                            vm.onSetDefaultObjectTypeClicked(it)
+                        }
+                    },
+                    onMoveLeftClicked = {
+                        lifecycleScope.launch {
+                            // Workaround to prevent dropdown-menu flickering
+                            delay(DROP_DOWN_MENU_ACTION_DELAY)
+                            vm.onMoveLeftClicked(it)
+                        }
+                    },
+                    onMoveRightClicked = {
+                        lifecycleScope.launch {
+                            // Workaround to prevent dropdown-menu flickering
+                            delay(DROP_DOWN_MENU_ACTION_DELAY)
+                            vm.onMoveRightClicked(it)
+                        }
+                    },
+                    onQueryChanged = vm::onQueryChanged,
+                    onFocused = {
+                        skipCollapsed()
+                        expand()
+                    },
+                    title = resolveScreenTitle()
+                )
+                if (clipboardToolbarEnabled) {
+                    when (vm.clipboardToolbarViewState.collectAsStateWithLifecycle().value) {
+                        is ClipboardToolbarViewState.CreateBookmark -> {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                ClipboardBottomToolbar(
+                                    type = CLIPBOARD_TYPE_BOOKMARK,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onToolbarClicked = vm::onClipboardToolbarClicked
+                                )
+                            }
+                        }
+                        is ClipboardToolbarViewState.CreateObject -> {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                ClipboardBottomToolbar(
+                                    type = CLIPBOARD_TYPE_OBJECT,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onToolbarClicked = vm::onClipboardToolbarClicked
+                                )
+                            }
+                        }
+                        ClipboardToolbarViewState.Hidden -> {
+                            // Draw nothing.
+                        }
+                    }
+                }
+            }
+            LaunchedEffect(Unit) {
+                vm.commands.collect { command ->
+                    proceedWithCommand(command)
+                }
+            }
+            LaunchedEffect(Unit) {
+                vm.toasts.collect { toast ->
+                    toast(toast)
+                }
+            }
+            if (clipboardToolbarEnabled) {
+                LaunchedEffect(Unit) {
+                    vm.navigation.collect { nav ->
+                        proceedWithNavigation(nav)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (isClipboardToolbarEnabled) {
+            runCatching {
+                with(clipboard()) {
+                    val clip = primaryClip
+                    if (hasPrimaryClip() && clip != null) {
+                        if (clip.itemCount == 1) {
+                            val item = clip.getItemAt(0)
+                            val text = item.text.toString()
+                            if (URLUtil.isValidUrl(text))
+                                vm.onClipboardUrlTypeDetected(text)
+                            else
+                                vm.onClipboardTextTypeDetected(text)
+                        }
+                    }
+                }
+            }.onFailure {
+                Timber.e(it, "Error while processing clipboard")
+            }
+        }
+        vm.onResume()
+    }
+
+    private fun proceedWithNavigation(nav: OpenObjectNavigation) {
+        when (nav) {
+            is OpenObjectNavigation.OpenEditor -> {
+                runCatching {
+                    findNavController().navigate(
+                        R.id.objectNavigation,
+                        EditorFragment.args(
+                            ctx = nav.target,
+                            space = nav.space
+                        )
+                    )
+                    dismiss()
+                }.onFailure {
+                    Timber.e(it, "Error while opening object from type selector")
+                }
+            }
+            else -> {
+                // Do nothing.
+            }
+        }
+    }
+
+    private fun proceedWithCommand(command: Command) {
+        when (command) {
+            is Command.DispatchObjectType -> {
+                proceedWithSelectedType(objType = command.type)
+                dismiss()
+            }
+            is Command.ShowTypeInstalledToast -> {
+                toast(resources.getString(R.string.library_type_added, command.typeName))
+            }
+        }
+    }
+
+    override fun injectDependencies() {
+        componentManager()
+            .selectObjectTypeComponent.get(
+                params = SelectObjectTypeViewModel.Params(
+                    excludedTypeKeys = excludedTypeKeys?.map { TypeKey(it) } ?: emptyList(),
+                    space = SpaceId(space)
+                )
+            )
+            .inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().selectObjectTypeComponent.release()
+    }
+
+    companion object {
+        const val SPACE_ID_KEY = "arg.select-object-type.space-id"
+        const val EXCLUDED_TYPE_KEYS_ARG_KEY = "arg.select-object-type.excluded-type-keys"
+        const val CLIPBOARD_TOOLBAR_ENABLED_ARG_KEY =
+            "arg.select-object-type.clipboard-toolbar-enabled"
+        private const val DROP_DOWN_MENU_ACTION_DELAY = 100L
+    }
+}

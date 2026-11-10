@@ -1,0 +1,13 @@
+plugins {
+    id "com.android.library"
+    id "kotlin-android"
+    id "com.google.devtools.ksp"
+}
+
+dependencies {
+    implementation libs.kotlin
+}
+
+android {
+    namespace 'com.chronoio.chrono.localization'
+}

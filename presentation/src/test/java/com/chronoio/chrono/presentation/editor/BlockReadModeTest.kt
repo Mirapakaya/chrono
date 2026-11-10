@@ -1,0 +1,404 @@
+package com.chronoio.chrono.presentation.editor
+
+import android.os.Build
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Event
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.Struct
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.presentation.editor.editor.BlockDimensions
+import com.chronoio.chrono.presentation.editor.editor.ViewState
+import com.chronoio.chrono.presentation.editor.editor.actions.ActionItemType
+import com.chronoio.chrono.presentation.editor.editor.listener.ListenerType
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.render.parseThemeBackgroundColor
+import com.chronoio.chrono.presentation.util.TXT
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.jraska.livedata.test
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@Config(sdk = [Build.VERSION_CODES.P])
+@RunWith(RobolectricTestRunner::class)
+class BlockReadModeTest : EditorViewModelTest() {
+
+    val blocks = listOf(
+        Block(
+            id = MockDataFactory.randomString(),
+            content = Block.Content.Text(
+                marks = emptyList(),
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.P
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        ),
+        Block(
+            id = MockDataFactory.randomString(),
+            content = Block.Content.Text(
+                marks = emptyList(),
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.P
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+    )
+
+    val page = listOf(
+        Block(
+            id = root,
+            fields = Block.Fields.empty(),
+            content = Block.Content.Smart,
+            children = listOf(header.id) + blocks.map { it.id }
+        )
+    ) + listOf(header, title) + blocks
+
+    private val blockViewsReadModeSelected = listOf<BlockView>(
+        blocks[0].let { p ->
+            BlockView.Text.Paragraph(
+                id = p.id,
+                marks = emptyList(),
+                text = p.content<Block.Content.Text>().text,
+                mode = BlockView.Mode.READ,
+                decorations = listOf(
+                    BlockView.Decoration(
+                        background = p.parseThemeBackgroundColor()
+                    )
+                )
+            )
+        },
+        blocks[1].let { p ->
+            BlockView.Text.Paragraph(
+                id = p.id,
+                marks = emptyList(),
+                text = p.content<Block.Content.Text>().text,
+                mode = BlockView.Mode.READ,
+                isSelected = true,
+                decorations =  listOf(
+                    BlockView.Decoration(
+                        background = p.parseThemeBackgroundColor()
+                    )
+                )
+            )
+        }
+    )
+
+    private val blockViewsEditMode = listOf<BlockView>(
+        blocks[0].let { p ->
+            BlockView.Text.Paragraph(
+                id = p.id,
+                marks = emptyList(),
+                text = p.content<Block.Content.Text>().text,
+                mode = BlockView.Mode.EDIT,
+                decorations = listOf(
+                    BlockView.Decoration(
+                        background = p.parseThemeBackgroundColor()
+                    )
+                )
+            )
+        },
+        blocks[1].let { p ->
+            BlockView.Text.Paragraph(
+                id = p.id,
+                marks = emptyList(),
+                text = p.content<Block.Content.Text>().text,
+                mode = BlockView.Mode.EDIT,
+                decorations = listOf(
+                    BlockView.Decoration(
+                        background = p.parseThemeBackgroundColor()
+                    )
+                )
+            )
+        }
+    )
+
+    private val titleEditModeView = BlockView.Title.Basic(
+        id = title.id,
+        text = title.content<TXT>().text,
+        isFocused = false,
+        mode = BlockView.Mode.EDIT,
+        icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+    )
+
+    private val titleReadModeView = BlockView.Title.Basic(
+        id = title.id,
+        text = title.content<TXT>().text,
+        isFocused = false,
+        mode = BlockView.Mode.READ,
+        icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+    )
+
+    private val flow: Flow<List<Event.Command>> = flow {
+        delay(100)
+        emit(
+            listOf(
+                Event.Command.ShowObject(
+                    root = root,
+                    blocks = page,
+                    context = root,
+                    details = mapOf(
+                        root to mapOf(
+                            Relations.ID to root,
+                            Relations.TYPE to listOf(objType.id)
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `all blocks should be in read mode after long-pressing a simple block and this clicked block should be selected`() {
+
+        val paragraphs = blocks
+        stubObserveEvents(flow)
+        stubOpenPage()
+        stubUserPermission()
+        stubAnalyticSpaceHelperDelegate()
+        givenViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        coroutineTestRule.advanceTime(100)
+
+        // TESTING
+
+        vm.onClickListener(
+            clicked = ListenerType.LongClick(
+                target = paragraphs[1].id,
+                dimensions = BlockDimensions(0, 0, 0, 0, 0, 0)
+            )
+        )
+
+        val testObserver = vm.state.test()
+
+        testObserver.assertValue(
+            ViewState.Success(
+                blocks = listOf(titleReadModeView) + listOf<BlockView>(
+                    blocks[0].let { p ->
+                        BlockView.Text.Paragraph(
+                            id = p.id,
+                            marks = emptyList(),
+                            text = p.content<Block.Content.Text>().text,
+                            mode = BlockView.Mode.READ,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = p.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    },
+                    blocks[1].let { p ->
+                        BlockView.Text.Paragraph(
+                            id = p.id,
+                            marks = emptyList(),
+                            text = p.content<Block.Content.Text>().text,
+                            mode = BlockView.Mode.READ,
+                            isSelected = true,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = p.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    }
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `should enter edit mode after action menu is closed by dismiss`() {
+
+        val paragraphs = blocks
+        stubObserveEvents(flow)
+        stubOpenPage()
+        stubUserPermission()
+        stubAnalyticSpaceHelperDelegate()
+        givenViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        coroutineTestRule.advanceTime(100)
+
+        // TESTING
+
+        vm.onClickListener(
+            clicked = ListenerType.LongClick(
+                target = paragraphs[1].id,
+                dimensions = BlockDimensions(0, 0, 0, 0, 0, 0)
+            )
+        )
+
+        vm.onDismissBlockActionMenu(true)
+
+        val testObserver = vm.state.test()
+
+        val initial = blockViewsEditMode
+
+        testObserver.assertValue(
+            ViewState.Success(
+                blocks = listOf(titleEditModeView) + initial
+            )
+        )
+    }
+
+    @Test
+    fun `should enter read mode with one selected block after action menu is closed by action item style`() {
+
+        val paragraphs = blocks
+        stubObserveEvents(flow)
+        stubOpenPage()
+        stubUserPermission()
+        stubAnalyticSpaceHelperDelegate()
+        givenViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        coroutineTestRule.advanceTime(100)
+
+        // TESTING
+
+        vm.onClickListener(
+            clicked = ListenerType.LongClick(
+                target = paragraphs[1].id,
+                dimensions = BlockDimensions(0, 0, 0, 0, 0, 0)
+            )
+        )
+
+        vm.onMultiSelectStyleButtonClicked()
+
+        val testObserver = vm.state.test()
+
+        testObserver.assertValue(
+            ViewState.Success(
+                blocks = listOf(titleReadModeView) + listOf<BlockView>(
+                    blocks[0].let { p ->
+                        BlockView.Text.Paragraph(
+                            id = p.id,
+                            marks = emptyList(),
+                            text = p.content<Block.Content.Text>().text,
+                            mode = BlockView.Mode.READ,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = p.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    },
+                    blocks[1].let { p ->
+                        BlockView.Text.Paragraph(
+                            id = p.id,
+                            isSelected = true,
+                            marks = emptyList(),
+                            text = p.content<Block.Content.Text>().text,
+                            mode = BlockView.Mode.READ,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = p.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    }
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `should enter edit mode after action menu is closed by action item delete`() = runTest {
+
+        val paragraphs = blocks
+        stubObserveEvents(flow)
+        stubOpenPage()
+        stubUserPermission()
+        stubAnalyticSpaceHelperDelegate()
+        stubUnlinkBlocks(root)
+
+        givenViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        coroutineTestRule.advanceUntilIdle()
+
+        // TESTING
+
+        vm.onClickListener(
+            clicked = ListenerType.LongClick(
+                target = paragraphs[1].id,
+                dimensions = BlockDimensions(0, 0, 0, 0, 0, 0)
+            )
+        )
+
+        coroutineTestRule.advanceUntilIdle()
+
+        vm.onMultiSelectAction(ActionItemType.Delete)
+
+        coroutineTestRule.advanceUntilIdle()
+
+        val testObserver = vm.state.test()
+
+        val initial = blockViewsEditMode
+
+        coroutineTestRule.advanceTime(EditorViewModel.DELAY_REFRESH_DOCUMENT_ON_EXIT_MULTI_SELECT_MODE)
+
+        assertEquals(
+            expected = ViewState.Success(
+                blocks = listOf(titleEditModeView) + initial
+            ),
+            actual = testObserver.value()
+        )
+    }
+
+    @Test
+    fun `should be in read mode and selected after action item duplicate`() = runTest {
+
+        val paragraphs = blocks
+        stubObserveEvents(flow)
+        stubOpenPage()
+        stubUserPermission()
+        stubAnalyticSpaceHelperDelegate()
+        stubDuplicateBlock(
+            newBlockId = MockDataFactory.randomUuid(),
+            root = root
+        )
+        givenViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        coroutineTestRule.advanceTime(100)
+
+        // TESTING
+
+        vm.onClickListener(
+            clicked = ListenerType.LongClick(
+                target = paragraphs[1].id,
+                dimensions = BlockDimensions(0, 0, 0, 0, 0, 0)
+            )
+        )
+
+        vm.onMultiSelectAction(ActionItemType.Duplicate)
+
+        val testObserver = vm.state.test()
+
+        val initial = blockViewsReadModeSelected
+
+        assertEquals(
+            ViewState.Success(
+                blocks = listOf(titleReadModeView) + initial
+            ),
+            testObserver.value()
+        )
+    }
+}

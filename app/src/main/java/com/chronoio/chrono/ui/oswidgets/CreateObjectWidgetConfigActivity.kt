@@ -1,0 +1,125 @@
+package com.chronoio.chrono.ui.oswidgets
+
+import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.ViewModelProvider
+import androidx.compose.ui.platform.ComposeView
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.feature_os_widgets.presentation.CreateObjectWidgetConfigViewModel
+import com.chronoio.chrono.feature_os_widgets.ui.config.SpaceSelectionScreen
+import com.chronoio.chrono.feature_os_widgets.ui.config.WidgetConfigTheme
+import com.chronoio.chrono.ui.objects.creation.ObjectTypeSelectionFragment
+import com.chronoio.chrono.ui.objects.types.pickers.ObjectTypeSelectionListener
+import javax.inject.Inject
+
+/**
+ * Configuration Activity for the Create Object widget.
+ * Two-step flow: Select Space -> Select Type (using ObjectTypeSelectionFragment)
+ */
+class CreateObjectWidgetConfigActivity : AppCompatActivity(), ObjectTypeSelectionListener {
+
+    @Inject
+    lateinit var factory: CreateObjectWidgetConfigViewModel.Factory
+
+    @Inject
+    lateinit var urlBuilder: UrlBuilder
+
+    private lateinit var vm: CreateObjectWidgetConfigViewModel
+
+    private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Set the result to CANCELED in case the user backs out
+        setResult(Activity.RESULT_CANCELED)
+
+        // Get the appWidgetId from the intent
+        appWidgetId = intent?.extras?.getInt(
+            AppWidgetManager.EXTRA_APPWIDGET_ID,
+            AppWidgetManager.INVALID_APPWIDGET_ID
+        ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
+
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+            finish()
+            return
+        }
+
+        // Inject dependencies
+        componentManager().createObjectWidgetConfigComponent.get().inject(this)
+        vm = ViewModelProvider(this, factory.create(appWidgetId))[CreateObjectWidgetConfigViewModel::class.java]
+
+        // Set up content with space selection screen
+        setContentView(
+            ComposeView(this).apply {
+                setContent {
+                    val spaces by vm.spaces.collectAsState()
+
+                    WidgetConfigTheme {
+                        SpaceSelectionScreen(
+                            spaces = spaces,
+                            urlBuilder = urlBuilder,
+                            onSpaceSelected = { space ->
+                                vm.onSpaceSelected(space)
+                            },
+                            onCancel = {
+                                finish()
+                            }
+                        )
+                    }
+
+                    LaunchedEffect(Unit) {
+                        vm.commands.collect { command ->
+                            when (command) {
+                                is CreateObjectWidgetConfigViewModel.Command.ShowTypeSelection -> {
+                                    showTypeSelectionDialog(command.spaceId)
+                                }
+                                is CreateObjectWidgetConfigViewModel.Command.FinishWithSuccess -> {
+                                    setResult(
+                                        Activity.RESULT_OK,
+                                        Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, command.appWidgetId)
+                                    )
+                                    finish()
+                                }
+                                is CreateObjectWidgetConfigViewModel.Command.ShowError -> {
+                                    Toast.makeText(this@CreateObjectWidgetConfigActivity, "Error: ${command.message}", Toast.LENGTH_LONG).show()
+                                }
+                                is CreateObjectWidgetConfigViewModel.Command.FinishWithFailure -> {
+                                    Toast.makeText(this@CreateObjectWidgetConfigActivity, "Error: ${command.message}", Toast.LENGTH_LONG).show()
+                                    setResult(Activity.RESULT_CANCELED)
+                                    finish()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    private fun showTypeSelectionDialog(spaceId: String) {
+        val dialog = ObjectTypeSelectionFragment.new(
+            space = spaceId,
+            clipboardToolbarEnabled = false
+        )
+        dialog.show(supportFragmentManager, "object-type-selection")
+    }
+
+    override fun onSelectObjectType(objType: ObjectWrapper.Type) {
+        vm.onTypeSelected(objType)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        componentManager().createObjectWidgetConfigComponent.release()
+    }
+}

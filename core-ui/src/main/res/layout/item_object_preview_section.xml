@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="52dp"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <TextView
+        android:id="@+id/section"
+        style="@style/TextView.UXStyle.Captions.1.Regular"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="26dp"
+        android:paddingBottom="8dp"
+        android:text="@string/relations"
+        android:textColor="@color/text_secondary"
+        android:gravity="start|center_vertical"
+        tools:text="Relations"/>
+
+</FrameLayout>

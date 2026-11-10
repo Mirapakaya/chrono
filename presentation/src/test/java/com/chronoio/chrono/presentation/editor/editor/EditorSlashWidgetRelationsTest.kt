@@ -1,0 +1,596 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import android.util.Log
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Position
+import com.chronoio.chrono.core_models.Relation
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.StubRelationObject
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.domain.block.interactor.CreateBlock
+import com.chronoio.chrono.domain.block.interactor.ReplaceBlock
+import com.chronoio.chrono.presentation.MockTypicalDocumentFactory
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashEvent
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashItem
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashPropertyView
+import com.chronoio.chrono.presentation.relations.ObjectRelationView
+import com.chronoio.chrono.presentation.util.DefaultCoroutineTestRule
+import com.chronoio.chrono.presentation.util.TXT
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.jraska.livedata.test
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import net.lachlanmckee.timberjunit.TimberTestRule
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+
+class EditorSlashWidgetRelationsTest: EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule(StandardTestDispatcher())
+
+    @get:Rule
+    val timberTestRule: TimberTestRule = TimberTestRule.builder()
+        .minPriority(Log.DEBUG)
+        .showThread(true)
+        .showTimestamp(false)
+        .onlyLogWhenTestFails(true)
+        .build()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @After
+    fun after() {
+        coroutineTestRule.advanceUntilIdle()
+    }
+
+    @Test
+    fun `should invoke create relation block  when target block not empty`() = runTest {
+
+        // SETUP
+
+        val doc = MockTypicalDocumentFactory.page(root)
+        val a = MockTypicalDocumentFactory.a
+        val r1 = MockTypicalDocumentFactory.relationObject("Ad")
+        val r2 = MockTypicalDocumentFactory.relationObject("De")
+        val r3 = MockTypicalDocumentFactory.relationObject("HJ")
+        val value1 = MockDataFactory.randomString()
+        val value2 = MockDataFactory.randomString()
+        val value3 = MockDataFactory.randomString()
+        val fields = mapOf(r1.key to value1, r2.key to value2, r3.key to value3)
+        val customDetails = ObjectViewDetails(mapOf(root to fields))
+
+        stubInterceptEvents()
+        stubUpdateText()
+        stubCreateBlock(root = root)
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc,
+            details = customDetails
+        )
+
+        storeOfRelations.merge(
+            listOf(r1, r2, r3)
+        )
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        val selection = IntRange(1, 1)
+
+        vm.apply {
+            onSelectionChanged(
+                id = a.id,
+                selection = selection
+            )
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 1
+                )
+            )
+            onSlashTextWatcherEvent(
+                event = SlashEvent.Filter(
+                    filter = "/",
+                    viewType = 0
+                )
+            )
+        }
+
+        advanceUntilIdle()
+
+        vm.onSlashItemClicked(
+            SlashItem.Property(
+                property = SlashPropertyView.Item(
+                    view = ObjectRelationView.Default(
+                        id = r2.id,
+                        key = r2.key,
+                        name = r2.name.orEmpty(),
+                        value = value2,
+                        featured = true,
+                        format = Relation.Format.SHORT_TEXT,
+                        system = false
+                    )
+                )
+            )
+        )
+
+        advanceUntilIdle()
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = a.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.Relation(key = r2.key)
+        )
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should invoke replace block when target block is empty`() = runTest {
+
+        // SETUP
+
+        val header = MockTypicalDocumentFactory.header
+        val title = MockTypicalDocumentFactory.title
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "",
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val doc = listOf(page, header, title, a)
+        val r1 = MockTypicalDocumentFactory.relationObject("Ad")
+        val r2 = MockTypicalDocumentFactory.relationObject("De")
+        val r3 = MockTypicalDocumentFactory.relationObject("HJ")
+        val value1 = MockDataFactory.randomString()
+        val value2 = MockDataFactory.randomString()
+        val value3 = MockDataFactory.randomString()
+        val fields = mapOf(
+            r1.key to value1,
+            r2.key to value2,
+            r3.key to value3,
+            Relations.ID to root,
+            Relations.TYPE to listOf(objType.id),
+        )
+        val customDetails = ObjectViewDetails(mapOf(root to fields))
+
+        stubInterceptEvents()
+        stubUpdateText()
+        stubReplaceBlock()
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc,
+            details = customDetails
+        )
+
+        storeOfRelations.merge(
+            listOf(r1, r2, r3)
+        )
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.onStart(id = root, space = defaultSpace)
+        val selection = IntRange(0, 0)
+
+
+        advanceUntilIdle()
+
+        vm.apply {
+            onSelectionChanged(
+                id = a.id,
+                selection = selection
+            )
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 0
+                )
+            )
+            onSlashTextWatcherEvent(
+                event = SlashEvent.Filter(
+                    filter = "/",
+                    viewType = 0
+                )
+            )
+            onTextBlockTextChanged(
+                view = BlockView.Text.Paragraph(
+                    id = a.id,
+                    text = "/",
+                    marks = listOf(),
+                    isFocused = true,
+                    mode = BlockView.Mode.EDIT,
+                    isSelected = false,
+                    cursor = null
+                )
+            )
+        }
+
+        advanceUntilIdle()
+
+        //TESTING
+
+        vm.onSlashItemClicked(
+            SlashItem.Property(
+                property = SlashPropertyView.Item(
+                    view = ObjectRelationView.Default(
+                        key = r3.key,
+                        id = r3.id,
+                        name = r3.name.orEmpty(),
+                        value = value3,
+                        featured = true,
+                        format = Relation.Format.SHORT_TEXT,
+                        system = false
+                    )
+                )
+            )
+        )
+
+        advanceUntilIdle()
+
+        val params = ReplaceBlock.Params(
+            context = root,
+            target = a.id,
+            prototype = Block.Prototype.Relation(key = r3.key)
+        )
+
+        verifyBlocking(replaceBlock, times(1)) { invoke(params) }
+    }
+
+    @Test
+    fun `before replacing current target should hide slash widget and show nav toolbar until new block is focused`() = runTest {
+        // SETUP
+
+        val header = MockTypicalDocumentFactory.header
+        val title = MockTypicalDocumentFactory.title
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "",
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val doc = listOf(page, header, title, a)
+        val r1 = MockTypicalDocumentFactory.relationObject("Ad")
+        val r2 = MockTypicalDocumentFactory.relationObject("De")
+        val r3 = MockTypicalDocumentFactory.relationObject("HJ")
+        val value1 = MockDataFactory.randomString()
+        val value2 = MockDataFactory.randomString()
+        val value3 = MockDataFactory.randomString()
+        val fields = mapOf(r1.key to value1, r2.key to value2, r3.key to value3, Relations.ID to root,
+            Relations.TYPE to listOf(objType.id),)
+        val customDetails = ObjectViewDetails(details = mapOf(root to fields))
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubReplaceBlock()
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc,
+            details = customDetails
+        )
+
+        storeOfRelations.merge(listOf(r1, r2, r3))
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        val selection = IntRange(0, 0)
+
+        vm.apply {
+            onSelectionChanged(
+                id = a.id,
+                selection = selection
+            )
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 0
+                )
+            )
+            onSlashTextWatcherEvent(
+                event = SlashEvent.Filter(
+                    filter = "/",
+                    viewType = 0
+                )
+            )
+            onTextBlockTextChanged(
+                view = BlockView.Text.Paragraph(
+                    id = a.id,
+                    text = "/",
+                    marks = listOf(),
+                    isFocused = true,
+                    mode = BlockView.Mode.EDIT,
+                    isSelected = false,
+                    cursor = null
+                )
+            )
+        }
+
+        advanceUntilIdle()
+
+        //TESTING
+
+        vm.onSlashItemClicked(
+            SlashItem.Property(
+                property = SlashPropertyView.Item(
+                    view = ObjectRelationView.Default(
+                        id = r3.id,
+                        key = r3.key,
+                        name = r3.name.orEmpty(),
+                        value = value3,
+                        featured = true,
+                        format = Relation.Format.SHORT_TEXT,
+                        system = false
+                    )
+                )
+            )
+        )
+
+        advanceUntilIdle()
+
+        vm.controlPanelViewState.test().assertValue { value ->
+            !value.mainToolbar.isVisible && value.navigationToolbar.isVisible && !value.slashWidget.isVisible
+        }
+    }
+
+    @Test
+    fun `before creating a new block under current target should hide slash widget and show nav toolbar until new block is focused`() = runTest {
+
+        // SETUP
+
+        val doc = MockTypicalDocumentFactory.page(root)
+        val a = MockTypicalDocumentFactory.a
+        val r1 = MockTypicalDocumentFactory.relationObject("Ad")
+        val r2 = MockTypicalDocumentFactory.relationObject("De")
+        val r3 = MockTypicalDocumentFactory.relationObject("HJ")
+        val value1 = MockDataFactory.randomString()
+        val value2 = MockDataFactory.randomString()
+        val value3 = MockDataFactory.randomString()
+        val fields = mapOf(r1.key to value1, r2.key to value2, r3.key to value3)
+        val customDetails = ObjectViewDetails(mapOf(root to fields))
+
+        stubInterceptEvents()
+        stubUpdateText()
+        stubCreateBlock(root = root)
+        stubSearchObjects()
+        stubCopy()
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubOpenDocument(
+            document = doc,
+            details = customDetails
+        )
+
+        storeOfRelations.merge(
+            listOf(r1, r2, r3)
+        )
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        val selection = IntRange(1, 1)
+        vm.apply {
+            onSelectionChanged(
+                id = a.id,
+                selection = selection
+            )
+            advanceUntilIdle()
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            advanceUntilIdle()
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 1
+                )
+            )
+            advanceUntilIdle()
+            onSlashTextWatcherEvent(
+                event = SlashEvent.Filter(
+                    filter = "/",
+                    viewType = 0
+                )
+            )
+        }
+
+        advanceUntilIdle()
+
+        //TESTING
+
+        vm.onSlashItemClicked(
+            SlashItem.Property(
+                property = SlashPropertyView.Item(
+                    view = ObjectRelationView.Default(
+                        key = r2.key,
+                        id = r2.id,
+                        name = r2.name.orEmpty(),
+                        value = value2,
+                        featured = true,
+                        format = Relation.Format.SHORT_TEXT,
+                        system = false
+                    )
+                )
+            )
+        )
+
+        advanceUntilIdle()
+
+        vm.controlPanelViewState.test().assertValue { value ->
+            !value.mainToolbar.isVisible && value.navigationToolbar.isVisible && !value.slashWidget.isVisible
+        }
+    }
+
+    @Test
+    fun `should remove slash filter after adding new relation`() = runTest {
+        // SETUP
+        val doc = MockTypicalDocumentFactory.page(root)
+        val a = MockTypicalDocumentFactory.a
+        val r1 = StubRelationObject(name = "Ad")
+        val r2 = StubRelationObject(name = "De")
+        val r3 = StubRelationObject(name = "HJ")
+        val objectRelations = listOf(r1, r2, r3)
+        val value1 = MockDataFactory.randomString()
+        val value2 = MockDataFactory.randomString()
+        val value3 = MockDataFactory.randomString()
+        val fields = mapOf(r1.key to value1, r2.key to value2, r3.key to value3, Relations.ID to root,
+            Relations.TYPE to listOf(objType.id),)
+        val customDetails = ObjectViewDetails(mapOf(root to fields))
+
+        stubInterceptEvents()
+        stubUpdateText()
+        stubCreateBlock(root = root)
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc,
+            details = customDetails
+        )
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        val selection = IntRange(1, 1)
+
+        //TESTING
+
+        vm.apply {
+            onSelectionChanged(
+                id = a.id,
+                selection = selection
+            )
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+
+            val view = BlockView.Text.Paragraph(
+                id = a.id,
+                text = a.content<TXT>().text
+            )
+
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 13
+                )
+            )
+            onSlashTextWatcherEvent(
+                event = SlashEvent.Filter(
+                    filter = "/",
+                    viewType = 0
+                )
+            )
+            onTextBlockTextChanged(
+                view = view.copy(text = "Jggig xtstdt /")
+            )
+            onSelectionChanged(
+                id = a.id,
+                selection = IntRange(14, 14)
+            )
+            onSlashItemClicked(SlashItem.Main.Properties)
+            onSlashItemClicked(SlashItem.PropertyNew)
+
+            advanceUntilIdle()
+            //open RelationListScreen
+            //open RelationCreateScreen
+            proceedWithAddingRelationToTarget(
+                target = a.id,
+                relationKey = MockDataFactory.randomUuid()
+            )
+        }
+
+        advanceUntilIdle()
+
+
+        val result = vm.blocks.find { it.id == a.id }
+
+        assertEquals("Jggig xtstdt ", result?.content<TXT>()?.text)
+
+        clearPendingCoroutines()
+    }
+
+    private fun clearPendingCoroutines() {
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+}

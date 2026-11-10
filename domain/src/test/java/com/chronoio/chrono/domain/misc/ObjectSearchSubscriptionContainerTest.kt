@@ -1,0 +1,215 @@
+package com.chronoio.chrono.domain.misc
+
+import app.cash.turbine.test
+import com.chronoio.chrono.core_models.*
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.block.repo.BlockRepository
+import com.chronoio.chrono.domain.objects.DefaultObjectStore
+import com.chronoio.chrono.domain.search.ObjectSearchSubscriptionContainer
+import com.chronoio.chrono.domain.search.SubscriptionEventChannel
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
+import kotlin.test.assertEquals
+
+class ObjectSearchSubscriptionContainerTest {
+
+    @ExperimentalCoroutinesApi
+    @get:Rule
+    var rule = CoroutineTestRule()
+
+    @Mock
+    lateinit var repo: BlockRepository
+
+    private lateinit var container: ObjectSearchSubscriptionContainer
+
+    private val defaultLimit = 0
+    private val defaultOffset = 0L
+
+    private val defaultSpaceId = SpaceId(
+        MockDataFactory.randomUuid()
+    )
+
+    private val defaultKeys = listOf(
+        Relations.ID,
+        Relations.NAME,
+        Relations.TYPE,
+        Relations.LAYOUT
+    )
+
+    @Mock
+    lateinit var channel: SubscriptionEventChannel
+
+    lateinit var store: DefaultObjectStore
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.initMocks(this)
+        store = DefaultObjectStore()
+        setupContainer()
+    }
+
+    @Test
+    fun `should initialize then consume all subscriptions events for two objects`() {
+
+        val subscription1 = "sub1"
+
+        val keys1 = defaultKeys + listOf(Relations.DESCRIPTION)
+
+        val initialResults1 = listOf(
+            ObjectWrapper.Basic(
+                mapOf(
+                    Relations.ID to "obj1",
+                    Relations.NAME to "Jonathan Littel",
+                    Relations.TYPE to ObjectTypeIds.PROFILE,
+                    Relations.LAYOUT to ObjectType.Layout.PROFILE.code,
+                    Relations.DESCRIPTION to null
+                )
+            )
+        )
+
+        val dependentResults1 = listOf(
+            ObjectWrapper.Basic(
+                mapOf(
+                    Relations.ID to "obj2",
+                    Relations.NAME to "Writer",
+                    Relations.TYPE to ObjectTypeIds.PROFILE,
+                    Relations.LAYOUT to ObjectType.Layout.PROFILE.code
+                )
+            )
+        )
+
+        repo.stub {
+            onBlocking {
+                searchObjectsWithSubscription(
+                    space = defaultSpaceId,
+                    subscription = subscription1,
+                    limit = defaultLimit,
+                    offset = defaultOffset,
+                    filters = emptyList(),
+                    sorts = emptyList(),
+                    keys = keys1,
+                    afterId = null,
+                    beforeId = null,
+                    source = emptyList(),
+                    noDepSubscription = null,
+                    ignoreWorkspace = null,
+                    collection = null
+                )
+            } doReturn SearchResult(
+                results = initialResults1,
+                dependencies = dependentResults1
+            )
+        }
+
+        channel.stub {
+            on {
+                subscribe(listOf(subscription1))
+            } doReturn flow {
+                emit(
+                    listOf(
+                        SubscriptionEvent.Amend(
+                            target = "obj4",
+                            subscriptions = listOf(
+                                subscription1
+                            ),
+                            diff = mapOf(
+                                Relations.ID to "obj4"
+                            )
+                        ),
+                        SubscriptionEvent.Add(
+                            target = "obj4",
+                            subscription = subscription1,
+                            afterId = "obj1"
+                        )
+                    )
+                )
+                emit(
+                    listOf(
+                        SubscriptionEvent.Position(
+                            target = "obj4",
+                            afterId = null
+                        )
+                    )
+                )
+            }
+        }
+
+        runTest {
+            container.observe(
+                space = defaultSpaceId,
+                subscription1,
+                limit = defaultLimit,
+                offset = defaultOffset,
+                keys = keys1
+            ).test {
+
+                // checking subscription
+
+                assertEquals(
+                    expected = Subscription(
+                        listOf("obj1")
+                    ),
+                    actual = awaitItem()
+                )
+
+                assertEquals(
+                    expected = Subscription(
+                        listOf("obj1", "obj4")
+                    ),
+                    actual = awaitItem()
+                )
+
+                assertEquals(
+                    expected = Subscription(
+                        listOf("obj4", "obj1")
+                    ),
+                    actual = awaitItem()
+                )
+
+                awaitComplete()
+
+                // checking store
+
+                assertEquals(
+                    actual = store.get("obj1")?.map,
+                    expected = initialResults1.firstOrNull()?.map
+                )
+                assertEquals(
+                    actual = store.get("obj2")?.map,
+                    expected = dependentResults1.firstOrNull()?.map
+                )
+                assertEquals(
+                    actual = store.get("obj3"),
+                    expected = null
+                )
+                assertEquals(
+                    actual = store.get("obj4")?.map,
+                    expected = mapOf(Relations.ID to "obj4"),
+                )
+            }
+        }
+    }
+
+    private fun setupContainer() {
+        container = ObjectSearchSubscriptionContainer(
+            repo = repo,
+            channel = channel,
+            store = store,
+            dispatchers = AppCoroutineDispatchers(
+                io = rule.testDispatcher,
+                main = rule.testDispatcher,
+                computation = rule.testDispatcher
+            )
+        )
+    }
+}

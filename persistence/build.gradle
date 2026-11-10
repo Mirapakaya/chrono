@@ -1,0 +1,49 @@
+plugins {
+    id "com.android.library"
+    id "kotlin-android"
+    id "com.google.devtools.ksp"
+    id "kotlinx-serialization"
+    id "com.squareup.wire"
+}
+
+dependencies {
+
+    implementation project(':data')
+    implementation project(':core-models')
+    implementation project(':device')
+    implementation project(':domain')
+
+    implementation libs.kotlin
+    implementation libs.coroutinesAndroid
+    implementation libs.gson
+    implementation libs.lifecycleLiveData
+    implementation libs.kotlinxSerializationJson
+
+    implementation libs.room
+    implementation libs.roomKtx
+    implementation libs.dataStore
+    implementation libs.dataStorePreferences
+
+    ksp libs.annotations
+
+    implementation libs.timber
+
+    testImplementation project(":test:utils")
+    testImplementation libs.roomTesting
+    testImplementation libs.junit
+    testImplementation libs.kotlinTest
+    testImplementation libs.mockitoKotlin
+    testImplementation libs.robolectric
+    testImplementation libs.archCoreTesting
+    testImplementation libs.androidXTestCore
+    testImplementation libs.coroutineTesting
+}
+
+android {
+    namespace 'com.chronoio.chrono.persistence'
+}
+
+wire {
+    protoPath { srcDir 'src/main/proto' }
+    kotlin {}
+}

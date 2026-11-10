@@ -1,0 +1,63 @@
+package com.chronoio.chrono.domain.`object`
+
+import com.chronoio.chrono.core_models.ObjectWrapper.SpaceView
+import com.chronoio.chrono.core_models.ObjectWrapper.SpaceMember
+import com.chronoio.chrono.core_models.multiplayer.ParticipantStatus
+import com.chronoio.chrono.core_models.multiplayer.SpaceAccessType
+import com.chronoio.chrono.core_models.multiplayer.SpaceMemberPermissions
+
+fun SpaceView.canAddWriters(
+    isCurrentUserOwner: Boolean,
+    participants: List<SpaceMember>,
+    newMember: SpaceMember
+): Boolean {
+    if (!canAddReaders(isCurrentUserOwner, participants, newMember)) return false
+    if (!isCurrentUserOwner) return false
+    if (spaceAccessType != SpaceAccessType.SHARED) return false
+    if (newMember.status != ParticipantStatus.JOINING ) return false
+    val isWritersLimitReached =
+        isSubscriberLimitReached(activeWriters(participants), writersLimit?.toInt())
+    return !isWritersLimitReached
+}
+
+fun SpaceView.canAddReaders(
+    isCurrentUserOwner: Boolean,
+    participants: List<SpaceMember>,
+    newMember: SpaceMember
+): Boolean {
+    if (!isCurrentUserOwner) return false
+    if (spaceAccessType != SpaceAccessType.SHARED) return false
+    if (newMember.status != ParticipantStatus.JOINING ) return false
+    val isReadersLimitReached =
+        isSubscriberLimitReached(activeReaders(participants), readersLimit?.toInt())
+    return !isReadersLimitReached
+}
+
+fun SpaceView.canChangeWriterToReader(participants: List<SpaceMember>): Boolean {
+    return true
+}
+
+fun SpaceView.canChangeReaderToWriter(participants: List<SpaceMember>): Boolean {
+    return !isSubscriberLimitReached(activeWriters(participants), writersLimit?.toInt())
+}
+
+fun activeReaders(participants: List<SpaceMember>): Int =
+    participants.count {
+        it.permissions in listOf(
+            SpaceMemberPermissions.READER,
+            SpaceMemberPermissions.WRITER,
+            SpaceMemberPermissions.OWNER
+        ) && it.status == ParticipantStatus.ACTIVE
+    }
+
+fun activeWriters(participants: List<SpaceMember>): Int =
+    participants.count {
+        it.permissions in listOf(
+            SpaceMemberPermissions.WRITER,
+            SpaceMemberPermissions.OWNER
+        ) && it.status == ParticipantStatus.ACTIVE
+    }
+
+fun isSubscriberLimitReached(currentSubscribers: Int, subscriberLimit: Int?): Boolean {
+    return subscriberLimit?.let { currentSubscribers >= it } == true
+}

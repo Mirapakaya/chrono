@@ -1,0 +1,112 @@
+package com.chronoio.chrono.analytics.tracker
+
+import com.amplitude.api.Amplitude
+import com.amplitude.api.AmplitudeClient
+import com.chronoio.chrono.analytics.BuildConfig
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.event.EventAnalytics
+import com.chronoio.chrono.analytics.props.Props
+import com.chronoio.chrono.analytics.props.UserProperty
+import com.chronoio.chrono.analytics.tracker.AmplitudeTracker.Companion.PROP_MIDDLE
+import com.chronoio.chrono.analytics.tracker.AmplitudeTracker.Companion.PROP_RENDER
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import org.json.JSONException
+import org.json.JSONObject
+import timber.log.Timber
+
+class AmplitudeTracker(
+    scope: CoroutineScope,
+    private val analytics: Analytics
+) : Tracker {
+
+    companion object {
+        const val PROP_MIDDLE = "middleTime"
+        const val PROP_RENDER = "renderTime"
+    }
+
+    private val tracker: AmplitudeClient get() = Amplitude.getInstance()
+
+    init {
+        scope.launch { startRegisteringEvents() }
+        scope.launch { startRegisteringUserProps() }
+    }
+
+    private suspend fun startRegisteringEvents() {
+        analytics
+            .observeEvents()
+            .collect { event ->
+                if (BuildConfig.DEBUG) {
+                    Timber.d("Analytics Amplitude(event = $event)")
+                }
+                if (BuildConfig.SEND_EVENTS && event is EventAnalytics.Anytype) {
+                    val props = event.props.getEventProperties(
+                        startTime = event.duration?.start,
+                        middleTime = event.duration?.middleware,
+                        renderTime = event.duration?.render
+                    )
+                    tracker.logEvent(event.name, props)
+                }
+            }
+    }
+
+    private suspend fun startRegisteringUserProps() {
+        analytics.observeUserProperties().collect { prop: UserProperty ->
+            Timber.d("Setting user property: $prop")
+            if (BuildConfig.SEND_EVENTS) {
+                when (prop) {
+                    is UserProperty.AccountId -> {
+                        tracker.setUserId(prop.id, true)
+                    }
+                    is UserProperty.InterfaceLanguage -> {
+                        tracker.setUserProperties(
+                            JSONObject(mapOf(UserProperty.INTERFACE_LANG_KEY to prop.lang))
+                        )
+                    }
+                    is UserProperty.Tier -> {
+                        tracker.setUserProperties(
+                            JSONObject(mapOf(UserProperty.TIER_KEY to prop.tier))
+                        )
+                    }
+
+                    is UserProperty.NetworkId -> {
+                        tracker.setUserProperties(
+                            JSONObject(mapOf(UserProperty.NETWORK_ID_KEY to prop.id))
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun Props.getEventProperties(startTime: Long?, middleTime: Long?, renderTime: Long?): JSONObject {
+    val map = map
+    return JSONObject().apply {
+        if (map.isNotEmpty()) {
+            map.forEach { (key, value) ->
+                if (key != null) {
+                    try {
+                        this.put(key, value)
+                    } catch (e: JSONException) {
+                        Timber.e("Analytics props exception:${e.message}")
+                    }
+                }
+            }
+        }
+        if (startTime != null && middleTime != null) {
+            try {
+                this.put(PROP_MIDDLE, middleTime - startTime)
+            } catch (e: JSONException) {
+                Timber.e("Analytics props exception:${e.message}")
+            }
+        }
+        if (middleTime != null && renderTime != null) {
+            try {
+                this.put(PROP_RENDER, renderTime - middleTime)
+            } catch (e: JSONException) {
+                Timber.e("Analytics props exception:${e.message}")
+            }
+        }
+    }
+}

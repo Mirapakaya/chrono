@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="menuStyle" type="id"/>
+    <item name="menuBookmark" type="id"/>
+    <item name="menuLink" type="id"/>
+
+    <item name="menuChangeType" type="id"/>
+    <item name="menuOpenType" type="id"/>
+
+    <item name="object_set_header" type="id"/>
+    <item name="featuredRelationsWidget" type="id"/>
+
+</resources>

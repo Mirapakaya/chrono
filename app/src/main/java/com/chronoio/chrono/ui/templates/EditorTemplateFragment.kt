@@ -1,0 +1,191 @@
+package com.chronoio.chrono.ui.templates
+
+import android.os.Bundle
+import android.view.View
+import android.widget.LinearLayout
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.os.bundleOf
+import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.argInt
+import com.chronoio.chrono.core_utils.ext.dimen
+import com.chronoio.chrono.core_utils.ext.gone
+import com.chronoio.chrono.core_utils.ext.hide
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.presentation.editor.editor.ViewState
+import com.chronoio.chrono.presentation.editor.editor.control.ControlPanelState
+import com.chronoio.chrono.core_models.ui.objectIcon
+import com.chronoio.chrono.ui.editor.EditorFragment
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class EditorTemplateFragment : EditorFragment() {
+
+    private val targetTypeId get() = arg<Id>(ARG_TARGET_TYPE_ID)
+    private val targetTypeKey get() = arg<Id>(ARG_TARGET_TYPE_KEY)
+    private val fragmentType get() = argInt(ARG_SCREEN_TYPE)
+
+    override val navigationDestinationId: Int
+        get() = when (fragmentType) {
+            TYPE_TEMPLATE_MULTIPLE -> R.id.templatesModalScreen
+            else -> R.id.editorModalScreen
+        }
+
+    // initializeBinding hides topToolbar for good on the multiple-template screen. Select mode
+    // must not bring it back (DROID-4592).
+    override val showsTopToolbar: Boolean
+        get() = fragmentType != TYPE_TEMPLATE_MULTIPLE
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        initializeBinding()
+    }
+
+    override fun onActivityCreated(savedInstanceState: Bundle?) {
+        super.onActivityCreated(savedInstanceState)
+        binding.topToolbar.setStyle(false)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        jobs.clear()
+    }
+
+    override fun saveAsLastOpened(): Boolean {
+        return false
+    }
+
+    override fun onApplyWindowRootInsets() {}
+    override fun setupWindowInsetAnimation() {}
+
+    override fun resetDocumentTitle(state: ViewState.Success) {}
+
+    override fun render(state: ControlPanelState) {
+        super.render(state)
+        when (fragmentType) {
+            TYPE_TEMPLATE_SELECT, TYPE_TEMPLATE_MULTIPLE -> {
+                // DROID-4318: bottom nav toolbar replaced with FABs in
+                // EditorFragment — hide both inside template flows.
+                // Use instant visibility toggles, not FAB.hide(), to avoid
+                // the ~200ms scale+fade animation and touch-through window.
+                binding.fabCreate.isVisible = false
+                if (state.navigationToolbar.isVisible) {
+                    binding.btnSelectTemplate.visible()
+                } else {
+                    binding.btnSelectTemplate.gone()
+                }
+            }
+            TYPE_TEMPLATE_EDIT -> {
+                binding.fabCreate.isVisible = false
+                binding.btnSelectTemplate.gone()
+            }
+        }
+
+    }
+
+    private fun initializeBinding() {
+        with(binding) {
+            if (fragmentType == TYPE_TEMPLATE_SELECT || fragmentType == TYPE_TEMPLATE_EDIT) {
+                recycler.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                    topMargin = dimen(R.dimen.default_toolbar_height)
+                }
+                setupTemplateTitle()
+                binding.topToolbar.status.hide()
+            } else {
+                binding.topToolbar.hide()
+            }
+            topToolbar.title.updateLayoutParams<LinearLayout.LayoutParams> {
+                width = LinearLayout.LayoutParams.WRAP_CONTENT
+                height = LinearLayout.LayoutParams.MATCH_PARENT
+            }
+            topToolbar.title.setTextAppearance(R.style.TextView_UXStyle_Titles_2_Medium)
+            btnSelectTemplate.setOnClickListener {
+                Timber.d("Select template clicked, get back to Set or Editor")
+                findNavController().apply {
+                    previousBackStackEntry?.savedStateHandle?.apply {
+                        set(ARG_TEMPLATE_ID, ctx)
+                        set(ARG_TARGET_TYPE_ID, targetTypeId)
+                        set(ARG_TARGET_TYPE_KEY, targetTypeKey)
+                    }
+                    when (fragmentType) {
+                        TYPE_TEMPLATE_SELECT -> popBackStack(R.id.editorModalScreen, true)
+                        TYPE_TEMPLATE_MULTIPLE -> {
+                            vm.onSelectTemplateClicked()
+                            popBackStack(R.id.templatesModalScreen, true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun observeSelectingTemplate() {
+        // Do nothing
+    }
+
+    private fun setupTemplateTitle() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val type = vm.getObjectTypeById(targetTypeId)
+            if (type != null) {
+                val typeName = type.name.orEmpty()
+
+                // Hide the toolbar title - we'll use the banner instead
+                binding.topToolbar.title.gone()
+                binding.topToolbar.icon.gone()
+
+                // Show and populate the template banner below the toolbar
+                binding.templateBanner.visible()
+                binding.templateBannerIcon.setIcon(type.objectIcon())
+                binding.templateBannerTypeName.text = typeName
+
+                // Update recycler constraint to be below the banner
+                binding.recycler.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                    topToTop = ConstraintLayout.LayoutParams.UNSET
+                    topToBottom = binding.templateBanner.id
+                    topMargin = 0
+                }
+            } else {
+                binding.topToolbar.title.text = getString(R.string.templates_menu_edit)
+                binding.topToolbar.icon.gone()
+                binding.templateBanner.gone()
+            }
+        }
+    }
+
+    fun onDocumentMenuClicked() {
+        vm.onDocumentMenuClicked()
+    }
+
+    companion object {
+        fun newInstance(
+            targetTemplateId: String,
+            space: Id,
+            targetTypeId: Id,
+            targetTypeKey: Key,
+            screenType: Int
+        ): EditorTemplateFragment =
+            EditorTemplateFragment().apply {
+                arguments = bundleOf(
+                    CTX_KEY to targetTemplateId,
+                    SPACE_ID_KEY to space,
+                    ARG_TARGET_TYPE_ID to targetTypeId,
+                    ARG_TARGET_TYPE_KEY to targetTypeKey,
+                    ARG_SCREEN_TYPE to screenType
+                )
+            }
+
+        const val ARG_TEMPLATE_ID = "template_id"
+        const val ARG_TARGET_TYPE_ID = "target_type_id"
+        const val ARG_TARGET_TYPE_KEY = "target_type_key"
+        const val ARG_SCREEN_TYPE = "screen_type"
+        const val TYPE_TEMPLATE_EDIT = 1
+        const val TYPE_TEMPLATE_SELECT = 2
+        const val TYPE_TEMPLATE_MULTIPLE = 3
+    }
+}

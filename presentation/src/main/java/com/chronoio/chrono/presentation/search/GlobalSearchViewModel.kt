@@ -1,0 +1,902 @@
+package com.chronoio.chrono.presentation.search
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.core_models.Command
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relation.Format.CHECKBOX
+import com.chronoio.chrono.core_models.Relation.Format.DATE
+import com.chronoio.chrono.core_models.Relation.Format.EMAIL
+import com.chronoio.chrono.core_models.Relation.Format.EMOJI
+import com.chronoio.chrono.core_models.Relation.Format.FILE
+import com.chronoio.chrono.core_models.Relation.Format.LONG_TEXT
+import com.chronoio.chrono.core_models.Relation.Format.MAP
+import com.chronoio.chrono.core_models.Relation.Format.NUMBER
+import com.chronoio.chrono.core_models.Relation.Format.OBJECT
+import com.chronoio.chrono.core_models.Relation.Format.PHONE
+import com.chronoio.chrono.core_models.Relation.Format.RELATIONS
+import com.chronoio.chrono.core_models.Relation.Format.SHORT_TEXT
+import com.chronoio.chrono.core_models.Relation.Format.STATUS
+import com.chronoio.chrono.core_models.Relation.Format.TAG
+import com.chronoio.chrono.core_models.Relation.Format.UNDEFINED
+import com.chronoio.chrono.core_models.Relation.Format.URL
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.SupportedLayouts
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.core_models.ext.EMPTY_STRING_VALUE
+import com.chronoio.chrono.core_models.misc.OpenObjectNavigation
+import com.chronoio.chrono.core_models.misc.navigation
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.core_models.ui.objectIcon
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Position
+import com.chronoio.chrono.core_models.WidgetLayout
+import com.chronoio.chrono.core_models.isDataView
+import com.chronoio.chrono.domain.base.Resultat
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.base.onSuccess
+import com.chronoio.chrono.domain.misc.DeepLinkResolver
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.`object`.GetObject
+import com.chronoio.chrono.domain.`object`.DuplicateObject
+import com.chronoio.chrono.domain.objects.SetObjectListIsArchived
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.objects.StoreOfRelations
+import com.chronoio.chrono.domain.objects.getTypeOfObject
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.search.RestoreGlobalSearchHistory
+import com.chronoio.chrono.domain.search.SearchWithMeta
+import com.chronoio.chrono.domain.search.UpdateGlobalSearchHistory
+import com.chronoio.chrono.domain.widgets.CreateWidget
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.common.PayloadDelegator
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.common.BaseViewModel
+import com.chronoio.chrono.presentation.extension.getUrlBasedOnFileLayout
+import com.chronoio.chrono.presentation.extension.sendAnalyticsSearchBacklinksEvent
+import com.chronoio.chrono.presentation.extension.sendAnalyticsSearchResultEvent
+import com.chronoio.chrono.presentation.search.ObjectSearchConstants.filterObjectsByIds
+import com.chronoio.chrono.presentation.search.ObjectSearchConstants.filterSearchObjects
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.scan
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class GlobalSearchViewModel @Inject constructor(
+    private val vmParams: VmParams,
+    private val searchWithMeta: SearchWithMeta,
+    private val storeOfObjectTypes: StoreOfObjectTypes,
+    private val storeOfRelations: StoreOfRelations,
+    private val urlBuilder: UrlBuilder,
+    private val analytics: Analytics,
+    private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+    private val restoreGlobalSearchHistory: RestoreGlobalSearchHistory,
+    private val updateGlobalSearchHistory: UpdateGlobalSearchHistory,
+    private val fieldParser: FieldParser,
+    private val spaceViews: SpaceViewSubscriptionContainer,
+    private val setObjectListIsArchived: SetObjectListIsArchived,
+    private val deepLinkResolver: DeepLinkResolver,
+    private val createWidget: CreateWidget,
+    private val spaceManager: SpaceManager,
+    private val getObject: GetObject,
+    private val payloadDelegator: PayloadDelegator,
+    private val duplicateObject: DuplicateObject
+) : BaseViewModel(), AnalyticSpaceHelperDelegate by analyticSpaceHelperDelegate {
+
+    private val userInput = MutableStateFlow("")
+
+    private val mode = MutableStateFlow<Mode>(Mode.Default)
+
+    /**
+     * Emits the current mode together with the debounced query. When the mode changes,
+     * the query flow is restarted and re-reads the current [userInput] immediately,
+     * so mode transitions never fire a search with a stale (pre-debounce) query.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val searchParams = mode.flatMapLatest { mode ->
+        userInput
+            .take(1)
+            .onCompletion {
+                emitAll(userInput.drop(1).debounce(DEFAULT_DEBOUNCE_DURATION).distinctUntilChanged())
+            }
+            .map { query -> mode to query }
+    }
+
+    val navigation = MutableSharedFlow<OpenObjectNavigation>()
+    val commands = MutableSharedFlow<SearchCommand>()
+
+    private val _state: MutableStateFlow<ViewState> = MutableStateFlow(ViewState.Init())
+    val state = _state.asStateFlow()
+
+    init {
+        Timber.d("GlobalSearchViewModel, init")
+        proceedRestoreGlobalSearch(space = vmParams.space)
+    }
+
+    private fun proceedRestoreGlobalSearch(space: SpaceId) {
+        Timber.d("restoreGlobalSearch, space $space")
+        viewModelScope.launch {
+            val params = RestoreGlobalSearchHistory.Params(spaceId = space)
+            restoreGlobalSearchHistory.async(params = params).fold(
+                onSuccess = { response ->
+                    val globalSearchHistory = response.globalSearchHistory
+                    Timber.d("restoreGlobalSearchHistory, onSuccess $globalSearchHistory")
+                    userInput.value = globalSearchHistory?.query ?: EMPTY_STRING_VALUE
+                    val relatedObjectId = globalSearchHistory?.relatedObject
+                    if (!relatedObjectId.isNullOrEmpty()) {
+                        proceedRelatedObjectSearch(
+                            query = globalSearchHistory.query,
+                            relatedObjectId = relatedObjectId
+                        )
+                    } else {
+                        val initialState =
+                            ViewState.Init(query = globalSearchHistory?.query ?: EMPTY_STRING_VALUE)
+                        proceedWithInitialState(initialState)
+                    }
+                },
+                onFailure = {
+                    Timber.e(it, "restoreGlobalSearch, onFailure")
+                    userInput.value = EMPTY_STRING_VALUE
+                    proceedWithInitialState(ViewState.Init(query = EMPTY_STRING_VALUE))
+                }
+            )
+        }
+    }
+
+    private suspend fun proceedRelatedObjectSearch(query: String, relatedObjectId: Id) {
+        val params = SearchWithMeta.Params(
+            relatedObjectId = relatedObjectId,
+            command = Command.SearchWithMeta(
+                limit = 1,
+                keys = DEFAULT_KEYS,
+                filters = filterObjectsByIds(
+                    ids = listOf(relatedObjectId),
+                    space = vmParams.space.id
+                ),
+                space = vmParams.space
+            )
+        )
+        searchWithMeta.async(params).fold(
+            onSuccess = { result ->
+                Timber.d("proceedRelatedObjectSearch, onSuccess $result")
+                val relatedGlobalSearchItemView = result.firstOrNull()?.view(
+                    storeOfRelations = storeOfRelations,
+                    storeOfObjectTypes = storeOfObjectTypes,
+                    urlBuilder = urlBuilder,
+                    fieldParser = fieldParser
+                )
+                if (relatedGlobalSearchItemView != null) {
+                    mode.value = Mode.Related(target = relatedGlobalSearchItemView)
+                    proceedWithInitialState(
+                        ViewState.RelatedInit(
+                            query = query,
+                            target = relatedGlobalSearchItemView,
+                            isLoading = false
+                        )
+                    )
+                } else {
+                    proceedWithInitialState(ViewState.Init(query = query))
+                }
+            },
+            onFailure = {
+                Timber.e(it, "proceedRelatedObjectSearch, onFailure")
+                proceedWithInitialState(ViewState.Init(query = query))
+            }
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun proceedWithInitialState(initial: ViewState) {
+        searchParams.flatMapLatest { (mode, query) ->
+            when(mode) {
+                is Mode.Default -> {
+                    buildDefaultSearchFlow(query = query, space = vmParams.space)
+                }
+                is Mode.Related -> {
+                    buildRelatedSearchFlow(query = query, mode = mode, space = vmParams.space)
+                }
+            }
+        }.scan(
+            initial = initial
+        ) { curr, new ->
+            when(new) {
+                is ViewState.Default -> {
+                    if (new.isLoading) {
+                        new.copy(
+                            views = curr.views
+                        )
+                    } else {
+                        new
+                    }
+                }
+                is ViewState.Related -> {
+                    if (new.isLoading) {
+                        new.copy(
+                            views = curr.views
+                        )
+                    } else {
+                        new
+                    }
+                }
+                else -> new
+            }
+        }.collect { viewState ->
+            _state.value = viewState
+        }
+    }
+
+    private suspend fun buildRelatedSearchFlow(
+        query: String,
+        mode: Mode.Related,
+        space: SpaceId
+    ) = searchWithMeta
+        .stream(
+            relatedSearchFlowParams(
+                query = query,
+                links = mode.target.links,
+                backlinks = mode.target.backlinks,
+                space = space,
+                relatedObjectId = mode.target.id
+            )
+        ).map { result ->
+            when (result) {
+                is Resultat.Failure -> {
+                    ViewState.Related(
+                        target = mode.target,
+                        isLoading = false
+                    )
+                }
+
+                is Resultat.Loading -> {
+                    ViewState.Related(
+                        target = mode.target,
+                        isLoading = true
+                    )
+                }
+                is Resultat.Success -> {
+                    val types = storeOfObjectTypes.getAll()
+                    ViewState.Related(
+                        target = mode.target,
+                        views = result.value.mapNotNull {
+                            it.view(
+                                storeOfRelations = storeOfRelations,
+                                storeOfObjectTypes = storeOfObjectTypes,
+                                urlBuilder = urlBuilder,
+                                fieldParser = fieldParser,
+                                types = types
+                            )
+                        },
+                        isLoading = false
+                    )
+                }
+            }
+        }.flowOn(Dispatchers.Default)
+
+    private fun relatedSearchFlowParams(
+        query: String,
+        links: List<Id>,
+        backlinks: List<Id>,
+        space: SpaceId,
+        relatedObjectId: Id?
+    ): SearchWithMeta.Params {
+        return SearchWithMeta.Params(
+            saveSearch = true,
+            relatedObjectId = relatedObjectId,
+            command = Command.SearchWithMeta(
+                space = space,
+                query = query,
+                limit = DEFAULT_SEARCH_LIMIT,
+                offset = 0,
+                keys = DEFAULT_KEYS,
+                filters = buildList {
+                    val isOneToOneSpace = spaceViews.get(vmParams.space)?.isOneToOneSpace == true
+                    addAll(filterSearchObjects(isOneToOneSpace = isOneToOneSpace))
+                    add(
+                        DVFilter(
+                            relation = Relations.ID,
+                            value = buildSet {
+                                addAll(links)
+                                addAll(backlinks)
+                            }.toList(),
+                            condition = DVFilterCondition.IN
+                        )
+                    )
+                },
+                sorts = ObjectSearchConstants.sortsSearchObjects,
+                withMetaRelationDetails = false,
+                withMeta = false
+            )
+        )
+    }
+
+    private suspend fun buildDefaultSearchFlow(query: String, space: SpaceId) = searchWithMeta
+        .stream(
+            SearchWithMeta.Params(
+                saveSearch = true,
+                relatedObjectId = null,
+                command = Command.SearchWithMeta(
+                    query = query,
+                    limit = DEFAULT_SEARCH_LIMIT,
+                    offset = 0,
+                    keys = DEFAULT_KEYS,
+                    filters = buildList {
+                        val isOneToOneSpace = spaceViews.get(vmParams.space)?.isOneToOneSpace == true
+                        addAll(ObjectSearchConstants.filterSearchObjects(isOneToOneSpace = isOneToOneSpace))
+                    },
+                    sorts = ObjectSearchConstants.sortsSearchObjects,
+                    withMetaRelationDetails = true,
+                    withMeta = true,
+                    space = space
+                )
+            )
+
+        ).map { result ->
+            when (result) {
+                is Resultat.Failure -> {
+                    ViewState.Default(
+                        views = emptyList(),
+                        isLoading = false
+                    )
+                }
+                is Resultat.Loading -> {
+                    ViewState.Default(
+                        isLoading = true
+                    )
+                }
+                is Resultat.Success -> {
+                    val types = storeOfObjectTypes.getAll()
+                    ViewState.Default(
+                        views = result.value.mapNotNull {
+                            it.view(
+                                storeOfRelations = storeOfRelations,
+                                storeOfObjectTypes = storeOfObjectTypes,
+                                urlBuilder = urlBuilder,
+                                fieldParser = fieldParser,
+                                types = types
+                            )
+                        },
+                        isLoading = false
+                    )
+                }
+            }
+        }.flowOn(Dispatchers.Default)
+
+
+    fun onQueryChanged(query: String) {
+        userInput.value = query
+    }
+
+    fun onObjectClicked(globalSearchItemView: GlobalSearchItemView) {
+        Timber.d("onObjectClicked, globalSearchItemView $globalSearchItemView")
+        viewModelScope.launch {
+            navigation.emit(
+                globalSearchItemView.obj.navigation()
+            )
+        }
+        viewModelScope.launch {
+            sendAnalyticsSearchResultEvent(
+                analytics = analytics,
+                spaceParams = provideParams(vmParams.space.id)
+            )
+        }
+    }
+
+    fun onClearRelatedObjectClicked() {
+        viewModelScope.launch {
+            userInput.value = EMPTY_STRING_VALUE
+            mode.value = Mode.Default
+        }
+    }
+
+    /**
+     * Opens the bookmark/file object as an Anytype object (bypassing default URL/file open).
+     */
+    fun onOpenObjectAsObject(item: GlobalSearchItemView) {
+        Timber.d("onOpenObjectAsObject, item: ${item.id}")
+        viewModelScope.launch {
+            navigation.emit(
+                item.obj.navigation(openBookmarkAsObject = true)
+            )
+        }
+    }
+
+    /**
+     * Opens the bookmark's source URL in the browser.
+     */
+    fun onOpenInBrowser(item: GlobalSearchItemView) {
+        Timber.d("onOpenInBrowser, item: ${item.id}")
+        viewModelScope.launch {
+            val url = item.obj.getSingleValue<String>(Relations.SOURCE)
+            if (!url.isNullOrBlank()) {
+                navigation.emit(OpenObjectNavigation.OpenBookmarkUrl(url))
+            } else {
+                Timber.w("onOpenInBrowser: source URL is missing for item: ${item.id}")
+                sendToast("Couldn't open URL: no source found")
+            }
+        }
+    }
+
+    /**
+     * Opens the file object in the appropriate system viewer.
+     */
+    fun onOpenFile(item: GlobalSearchItemView) {
+        Timber.d("onOpenFile, item: ${item.id}")
+        viewModelScope.launch {
+            val layout = item.layout
+            when (layout) {
+                ObjectType.Layout.IMAGE -> commands.emit(
+                    SearchCommand.PlayMedia(
+                        targetObjectId = item.id,
+                        name = item.title,
+                        layout = ObjectType.Layout.IMAGE
+                    )
+                )
+                ObjectType.Layout.VIDEO -> commands.emit(
+                    SearchCommand.PlayMedia(
+                        targetObjectId = item.id,
+                        name = item.title,
+                        layout = ObjectType.Layout.VIDEO
+                    )
+                )
+                ObjectType.Layout.AUDIO -> commands.emit(
+                    SearchCommand.PlayMedia(
+                        targetObjectId = item.id,
+                        name = item.title,
+                        layout = ObjectType.Layout.AUDIO
+                    )
+                )
+                else -> {
+                    val url = urlBuilder.getUrlBasedOnFileLayout(item.id, layout)
+                    if (url != null) {
+                        commands.emit(SearchCommand.Browse(url))
+                    } else {
+                        Timber.w("onOpenFile: could not resolve URL for item: ${item.id}, layout: $layout")
+                        sendToast("Couldn't open file: URL not available")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Pins (creates a widget for) the object.
+     */
+    fun onPinObject(item: GlobalSearchItemView) {
+        Timber.d("onPinObject, item: ${item.id}")
+        viewModelScope.launch {
+            val config = spaceManager.getConfig()
+            if (config == null) {
+                Timber.e("Cannot pin object: space config is missing")
+                return@launch
+            }
+
+            var target: Id? = null
+            getObject.async(
+                GetObject.Params(
+                    target = config.widgets,
+                    space = SpaceId(config.space),
+                    saveAsLastOpened = false
+                )
+            ).onSuccess { objectView ->
+                objectView.blocks.find { it.content is Block.Content.Widget }?.let {
+                    target = it.id
+                }
+            }
+
+            val params = CreateWidget.Params(
+                ctx = config.widgets,
+                source = item.id,
+                type = when {
+                    item.layout.isDataView() -> WidgetLayout.VIEW
+                    item.layout == ObjectType.Layout.PARTICIPANT -> WidgetLayout.LINK
+                    else -> WidgetLayout.TREE
+                },
+                position = Position.TOP,
+                target = target
+            )
+            createWidget.async(params).fold(
+                onSuccess = { payload ->
+                    payloadDelegator.dispatch(payload)
+                    Timber.d("Widget created for object: ${item.id}")
+                    sendToast("Widget created")
+                },
+                onFailure = { e ->
+                    Timber.e(e, "Error while creating widget")
+                    sendToast("Error while creating widget")
+                }
+            )
+        }
+    }
+
+    /**
+     * Copies the object's deep link to clipboard.
+     */
+    fun onCopyLink(item: GlobalSearchItemView) {
+        Timber.d("onCopyLink, item: ${item.id}")
+        viewModelScope.launch {
+            val link = deepLinkResolver.createObjectDeepLink(
+                obj = item.id,
+                space = vmParams.space
+            )
+            commands.emit(SearchCommand.CopyLinkToClipboard(link = link))
+        }
+    }
+
+    /**
+     * Moves the object to bin (archives it).
+     */
+    fun onMoveToBin(item: GlobalSearchItemView) {
+        Timber.d("onMoveToBin, item: ${item.id}")
+        viewModelScope.launch {
+            setObjectListIsArchived.async(
+                SetObjectListIsArchived.Params(
+                    targets = listOf(item.id),
+                    isArchived = true
+                )
+            ).fold(
+                onSuccess = {
+                    Timber.d("Object moved to bin: ${item.id}")
+                    sendToast("Object moved to bin.")
+                },
+                onFailure = { e ->
+                    Timber.e(e, "Error while moving object to bin")
+                }
+            )
+        }
+    }
+
+    /**
+     * Duplicates the object.
+     */
+    fun onDuplicateObject(item: GlobalSearchItemView) {
+        Timber.d("onDuplicateObject, item: ${item.id}")
+        viewModelScope.launch {
+            duplicateObject.invoke(item.id).process(
+                failure = { e ->
+                    Timber.e(e, "Error while duplicating object")
+                },
+                success = { newId ->
+                    Timber.d("Object duplicated: ${item.id} -> $newId")
+                }
+            )
+        }
+    }
+
+    fun onShowRelatedClicked(globalSearchItemView: GlobalSearchItemView) {
+        viewModelScope.launch {
+            userInput.value = EMPTY_STRING_VALUE
+            mode.value = Mode.Related(globalSearchItemView)
+            proceedUpdateGlobalSearch(
+                query = EMPTY_STRING_VALUE,
+                relatedObjectId = globalSearchItemView.id
+            )
+        }
+        viewModelScope.launch {
+            sendAnalyticsSearchBacklinksEvent(
+                analytics = analytics,
+                spaceParams = provideParams(vmParams.space.id)
+            )
+        }
+    }
+
+    private suspend fun proceedUpdateGlobalSearch(query: String, relatedObjectId: Id?) {
+        val params = UpdateGlobalSearchHistory.Params(
+            spaceId = vmParams.space,
+            query = query,
+            relatedObjectId = relatedObjectId
+        )
+        updateGlobalSearchHistory.async(params).fold(
+            onSuccess = {
+                Timber.i("updateGlobalSearch, onSuccess")
+            },
+            onFailure = {
+                Timber.e(it, "updateGlobalSearch, onFailure")
+            }
+        )
+    }
+
+    data class VmParams(val space: SpaceId)
+
+    class Factory @Inject constructor(
+        private val vmParams: VmParams,
+        private val searchWithMeta: SearchWithMeta,
+        private val storeOfObjectTypes: StoreOfObjectTypes,
+        private val storeOfRelations: StoreOfRelations,
+        private val urlBuilder: UrlBuilder,
+        private val analytics: Analytics,
+        private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+        private val restoreGlobalSearchHistory: RestoreGlobalSearchHistory,
+        private val updateGlobalSearchHistory: UpdateGlobalSearchHistory,
+        private val fieldParser: FieldParser,
+        private val spaceViews: SpaceViewSubscriptionContainer,
+        private val setObjectListIsArchived: SetObjectListIsArchived,
+        private val deepLinkResolver: DeepLinkResolver,
+        private val createWidget: CreateWidget,
+        private val spaceManager: SpaceManager,
+        private val getObject: GetObject,
+        private val payloadDelegator: PayloadDelegator,
+        private val duplicateObject: DuplicateObject
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return GlobalSearchViewModel(
+                vmParams = vmParams,
+                searchWithMeta = searchWithMeta,
+                storeOfObjectTypes = storeOfObjectTypes,
+                storeOfRelations = storeOfRelations,
+                urlBuilder = urlBuilder,
+                analytics = analytics,
+                analyticSpaceHelperDelegate = analyticSpaceHelperDelegate,
+                restoreGlobalSearchHistory = restoreGlobalSearchHistory,
+                updateGlobalSearchHistory = updateGlobalSearchHistory,
+                fieldParser = fieldParser,
+                spaceViews = spaceViews,
+                setObjectListIsArchived = setObjectListIsArchived,
+                deepLinkResolver = deepLinkResolver,
+                createWidget = createWidget,
+                spaceManager = spaceManager,
+                getObject = getObject,
+                payloadDelegator = payloadDelegator,
+                duplicateObject = duplicateObject
+            ) as T
+        }
+    }
+
+    /**
+     * Search interaction mode.
+     */
+    private sealed class Mode {
+        /**
+         * Default search mode. Searching for objects in a given space.
+         */
+        data object Default : Mode()
+        /**
+         * Searching for objects related to the given object, i.e. searching for (back)links.
+         */
+        data class Related(val target: GlobalSearchItemView) : Mode()
+    }
+
+    sealed class ViewState {
+
+        abstract val views: List<GlobalSearchItemView>
+        abstract val isLoading: Boolean
+
+        data class Init(
+            val query: String = EMPTY_STRING_VALUE
+        ): ViewState() {
+            override val views: List<GlobalSearchItemView> = emptyList()
+            override val isLoading: Boolean = false
+        }
+
+        data class Default (
+            override val views: List<GlobalSearchItemView> = emptyList(),
+            override val isLoading: Boolean
+        ): ViewState()
+
+        data class Related (
+            val target: GlobalSearchItemView,
+            override val views: List<GlobalSearchItemView> = emptyList(),
+            override val isLoading: Boolean
+        ): ViewState()
+
+        //ToDo: remove this state, and make Related sealed class
+        data class RelatedInit (
+            val query: String = EMPTY_STRING_VALUE,
+            val target: GlobalSearchItemView,
+            override val views: List<GlobalSearchItemView> = emptyList(),
+            override val isLoading: Boolean
+        ): ViewState()
+
+        fun isEmptyState() : Boolean {
+            return this !is Init && !this.isLoading && views.isEmpty()
+        }
+    }
+
+    sealed class SearchCommand {
+        data class Browse(val url: String) : SearchCommand()
+        data class PlayMedia(
+            val targetObjectId: Id,
+            val name: String,
+            val layout: ObjectType.Layout
+        ) : SearchCommand()
+        data class CopyLinkToClipboard(val link: String) : SearchCommand()
+    }
+
+    companion object {
+        const val DEFAULT_DEBOUNCE_DURATION = 300L
+        const val DEFAULT_SEARCH_LIMIT = 50
+        val DEFAULT_KEYS = buildList {
+            addAll(ObjectSearchConstants.defaultKeys)
+            add(Relations.LINKS)
+            add(Relations.BACKLINKS)
+        }
+    }
+}
+
+/**
+ * @property [title] object title
+ * @property [type] type screen name
+ */
+data class GlobalSearchItemView(
+    val id: Id,
+    val obj: ObjectWrapper.Basic,
+    val icon: ObjectIcon,
+    val space: SpaceId,
+    val layout: ObjectType.Layout,
+    val title: String,
+    val type: String,
+    val meta: Meta,
+    val links: List<Id> = emptyList(),
+    val backlinks: List<Id> = emptyList(),
+    val pinned: Boolean = false,
+    val nameMeta: NameMeta? = null
+) {
+    data class NameMeta(
+        val name: String,
+        val highlights: List<IntRange> = emptyList()
+    )
+
+    sealed class Meta {
+        data object None : Meta()
+        data class Default(
+            val name: String,
+            val value: String,
+            val highlights: List<IntRange> = emptyList()
+        ): Meta()
+        data class Status(
+            val name: String,
+            val value: String,
+            val color: ThemeColor
+        ): Meta()
+        data class Tag(
+            val name: String,
+            val value: String,
+            val color: ThemeColor
+        ): Meta()
+        data class Block(
+            val snippet: String,
+            val highlights: List<IntRange> = emptyList()
+        ): Meta()
+    }
+}
+
+suspend fun Command.SearchWithMeta.Result.view(
+    storeOfObjectTypes: StoreOfObjectTypes,
+    storeOfRelations: StoreOfRelations,
+    urlBuilder: UrlBuilder,
+    fieldParser: FieldParser,
+    types: List<ObjectWrapper.Type>? = null
+) : GlobalSearchItemView? {
+    if (wrapper.spaceId == null) return null
+    if (wrapper.layout == null) return null
+    val (_, typeName) = fieldParser.getObjectTypeIdAndName(
+        objectWrapper = wrapper,
+        types = types ?: storeOfObjectTypes.getAll()
+    )
+    val meta = metas.firstOrNull()
+    return GlobalSearchItemView(
+        id = obj,
+        obj = wrapper,
+        icon = wrapper.objectIcon(
+            builder = urlBuilder,
+            objType = storeOfObjectTypes.getTypeOfObject(wrapper)
+        ),
+        links = wrapper.links,
+        backlinks = wrapper.backlinks,
+        space = SpaceId(requireNotNull(wrapper.spaceId)),
+        layout = requireNotNull(wrapper.layout),
+        title = fieldParser.getObjectNameOrPluralsForTypes(wrapper),
+        type =  typeName,
+        meta = if (meta != null) {
+            when(val source = meta.source) {
+                is Command.SearchWithMeta.Result.Meta.Source.Block -> {
+                    GlobalSearchItemView.Meta.Block(
+                        snippet = meta.highlight.orEmpty(),
+                        highlights = meta.ranges,
+                    )
+                }
+                is Command.SearchWithMeta.Result.Meta.Source.Relation -> {
+                    val relation = storeOfRelations.getByKey(source.key)
+                    val dep = meta.dependencies.firstOrNull()
+                    if (relation != null && relation.map.isNotEmpty() && relation.key != Relations.TYPE && dep != null && dep.map.isNotEmpty()) {
+                        when(relation.format) {
+                            SHORT_TEXT, LONG_TEXT, URL, EMAIL, PHONE -> {
+                                GlobalSearchItemView.Meta.Default(
+                                    name = relation.name.orEmpty(),
+                                    value = meta.highlight.orEmpty(),
+                                    highlights = meta.ranges
+                                )
+                            }
+                            NUMBER -> {
+                                GlobalSearchItemView.Meta.Default(
+                                    name = relation.name.orEmpty(),
+                                    value = meta.highlight.orEmpty(),
+                                    highlights = emptyList()
+                                )
+                            }
+                            STATUS -> {
+                                val value  = ObjectWrapper.Option(dep.map)
+                                GlobalSearchItemView.Meta.Status(
+                                    name = relation.name.orEmpty(),
+                                    color = ThemeColor.entries.find {
+                                        it.code == value.color
+                                    } ?: ThemeColor.DEFAULT,
+                                    value = value.name.orEmpty()
+                                )
+                            }
+                            TAG -> {
+                                val value  = ObjectWrapper.Option(dep.map)
+                                GlobalSearchItemView.Meta.Tag(
+                                    name = relation.name.orEmpty(),
+                                    color = ThemeColor.entries.find {
+                                        it.code == value.color
+                                    } ?: ThemeColor.DEFAULT,
+                                    value = value.name.orEmpty()
+                                )
+                            }
+                            FILE -> GlobalSearchItemView.Meta.Default(
+                                name = relation.name.orEmpty(),
+                                value = fieldParser.getObjectName(dep),
+                                highlights = emptyList()
+                            )
+                            OBJECT -> {
+                                val value  = ObjectWrapper.Basic(dep.map)
+                                GlobalSearchItemView.Meta.Default(
+                                    name = relation.name.orEmpty(),
+                                    value = value.name.orEmpty(),
+                                    highlights = emptyList()
+                                )
+                            }
+                            DATE -> GlobalSearchItemView.Meta.None
+                            EMOJI -> GlobalSearchItemView.Meta.None
+                            CHECKBOX -> GlobalSearchItemView.Meta.None
+                            RELATIONS -> GlobalSearchItemView.Meta.None
+                            MAP -> GlobalSearchItemView.Meta.None
+                            UNDEFINED -> GlobalSearchItemView.Meta.None
+                        }
+                    } else {
+                        GlobalSearchItemView.Meta.None
+                    }
+                }
+            }
+        } else {
+            GlobalSearchItemView.Meta.None
+        },
+        nameMeta = metas.getNameMeta()
+    )
+}
+
+private fun List<Command.SearchWithMeta.Result.Meta>.getNameMeta(): GlobalSearchItemView.NameMeta? {
+    val meta =
+        firstOrNull { (it.source as? Command.SearchWithMeta.Result.Meta.Source.Relation)?.key == Relations.NAME }
+    return if (meta != null) {
+        GlobalSearchItemView.NameMeta(
+            name = meta.highlight.orEmpty(),
+            highlights = meta.ranges
+        )
+    } else {
+        null
+    }
+}

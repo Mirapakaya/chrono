@@ -1,0 +1,134 @@
+package com.chronoio.chrono.domain.search
+
+import com.chronoio.chrono.core_models.Config
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.DVSort
+import com.chronoio.chrono.core_models.DVSortType
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.RelationFormat
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.subscriptions.GlobalSubscription
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.domain.workspace.spaceIdOrNull
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+
+class RelationOptionsSubscriptionManager(
+    private val scope: CoroutineScope = GlobalScope,
+    private val container: RelationOptionsSubscriptionContainer,
+    private val spaceManager: SpaceManager
+) : GlobalSubscription {
+
+    val pipeline get() = spaceManager.state()
+        .distinctUntilChangedBy { state -> state.spaceIdOrNull() }
+        .flatMapLatest { state ->
+        when (state) {
+            is SpaceManager.State.Space.Active -> {
+                val params = buildParams(SpaceId(state.config.space))
+                container.observe(params)
+            }
+            is SpaceManager.State.Space.Idle -> {
+                // A space activated without Workspace.Open (quick capture). The params below
+                // are built from the space id alone, so there is nothing a config would add.
+                container.observe(buildParams(state.space))
+            }
+            is SpaceManager.State.NoSpace -> {
+                flow {
+                    container.unsubscribe()
+                    emit(RelationOptionsSubscriptionContainer.Index.empty())
+                }
+            }
+            is SpaceManager.State.Init -> {
+                emptyFlow()
+            }
+        }
+    }
+
+    private var job: Job? = null
+
+    fun onStart() {
+        job?.cancel()
+        job = scope.launch {
+            pipeline.collect()
+        }
+    }
+
+    fun onStop() {
+        scope.launch {
+            container.unsubscribe()
+            job?.cancel()
+            job = null
+        }
+    }
+
+    companion object {
+        fun buildParams(config: Config) = buildParams(SpaceId(config.space))
+
+        fun buildParams(space: SpaceId) =
+            RelationOptionsSubscriptionContainer.Params(
+                space = space,
+                subscription = RelationOptionsSubscriptionContainer.SUBSCRIPTION_ID,
+                filters = listOf(
+                    DVFilter(
+                        relation = Relations.LAYOUT,
+                        condition = DVFilterCondition.EQUAL,
+                        value = ObjectType.Layout.RELATION_OPTION.code.toDouble()
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_DELETED,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_ARCHIVED,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_HIDDEN,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_HIDDEN_DISCOVERY,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    )
+                ),
+                limit = 0,
+                offset = 0L,
+                sorts = listOf(
+                    DVSort(
+                        relationKey = Relations.RELATION_OPTION_ORDER,
+                        type = DVSortType.ASC,
+                        relationFormat = RelationFormat.LONG_TEXT
+                    ),
+                    DVSort(
+                        relationKey = Relations.NAME,
+                        type = DVSortType.ASC,
+                        relationFormat = RelationFormat.LONG_TEXT
+                    )
+                ),
+                sources = emptyList(),
+                keys = listOf(
+                    Relations.ID,
+                    Relations.SPACE_ID,
+                    Relations.NAME,
+                    Relations.RELATION_OPTION_COLOR,
+                    Relations.RELATION_KEY,
+                    Relations.RELATION_OPTION_ORDER,
+                    Relations.ORDER_ID
+                ),
+                ignoreWorkspace = true
+            )
+    }
+}

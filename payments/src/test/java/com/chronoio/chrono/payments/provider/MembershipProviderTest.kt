@@ -1,0 +1,143 @@
+package com.chronoio.chrono.payments.provider
+
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import app.cash.turbine.turbineScope
+import com.chronoio.chrono.core_models.membership.Membership
+import com.chronoio.chrono.core_models.membership.MembershipTiers
+import com.chronoio.chrono.domain.account.AwaitAccountStartManager
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.block.repo.BlockRepository
+import com.chronoio.chrono.domain.misc.DateProvider
+import com.chronoio.chrono.domain.misc.LocaleProvider
+import com.chronoio.chrono.domain.workspace.MembershipChannel
+import com.chronoio.chrono.payments.DefaultCoroutineTestRule
+import com.chronoio.chrono.payments.StubMembership
+import com.chronoio.chrono.payments.StubMembershipTierData
+import com.chronoio.chrono.presentation.membership.provider.MembershipProvider
+import com.chronoio.chrono.presentation.membership.provider.MembershipProvider.Default.Companion.DATE_FORMAT
+import junit.framework.TestCase.assertEquals
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+
+class MembershipProviderTest {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule()
+
+    private val dispatchers = AppCoroutineDispatchers(
+        io = coroutineTestRule.dispatcher,
+        main = coroutineTestRule.dispatcher,
+        computation = coroutineTestRule.dispatcher
+    )
+
+    @Mock
+    lateinit var localeProvider: LocaleProvider
+
+    @Mock
+    lateinit var repo: BlockRepository
+
+    @Mock
+    lateinit var dateProvider: DateProvider
+
+    @Mock
+    lateinit var membershipChannel: MembershipChannel
+
+    private val awaitAccountStartManager: AwaitAccountStartManager =
+        AwaitAccountStartManager.Default
+
+    private lateinit var provider: MembershipProvider
+
+    @Before
+    fun before() {
+        MockitoAnnotations.openMocks(this)
+        provider = MembershipProvider.Default(
+            dispatchers = dispatchers,
+            membershipChannel = membershipChannel,
+            awaitAccountStartManager = awaitAccountStartManager,
+            localeProvider = localeProvider,
+            repo = repo,
+            dateProvider = dateProvider
+        )
+    }
+
+    @Test
+    fun `test membership status and tiers fetched successfully plus updated after event`() =
+        runTest {
+            turbineScope {
+
+                val dateEnds = 432331231L
+                val membership = StubMembership(dateEnds = dateEnds)
+                val tierData = StubMembershipTierData(androidProductId = "test.product.id")
+                val tierData2 = StubMembershipTierData(isTest = true)
+
+                val event1 = Membership.Event(StubMembership(dateEnds = dateEnds))
+                val event2 = Membership.Event(StubMembership(dateEnds = dateEnds))
+                val eventList = flow {
+                    emit(listOf(event1))
+                    emit(listOf(event2))
+                }
+
+                val tierEvent1 = MembershipTiers.Event(listOf(tierData2, tierData))
+                val tierEvent2 = MembershipTiers.Event(listOf(tierData2, tierData))
+                val tierEventList = flow {
+                    emit(listOf(tierEvent1))
+                    emit(listOf(tierEvent2))
+                }
+
+                membershipChannel.stub {
+                    on { observe() } doReturn eventList
+                    on { observeTiers() } doReturn tierEventList
+                }
+                whenever(repo.membershipStatus(any())).thenReturn(membership)
+                whenever(
+                    dateProvider.formatToDateString(
+                        dateEnds,
+                        DATE_FORMAT
+                    )
+                ).thenReturn("01-01-1970")
+                whenever(localeProvider.language()).thenReturn("en")
+                whenever(repo.membershipGetTiers(any())).thenReturn(listOf(tierData2, tierData))
+
+                awaitAccountStartManager.setState(AwaitAccountStartManager.State.Started)
+                val membershipProviderFlow = provider.status().testIn(backgroundScope)
+                val membershipProviderFlow1 = provider.status().testIn(backgroundScope)
+                val membershipProviderFlow2 = provider.activeTier().testIn(backgroundScope)
+
+                val initialStatus = membershipProviderFlow.awaitItem()
+                assertEquals(membership.tier, initialStatus.activeTier.value)
+                assertEquals(tierData.id, initialStatus.tiers.first().id)
+
+                val status1 = membershipProviderFlow.awaitItem()
+                assertEquals(event1.membership.tier, status1.activeTier.value)
+                assertEquals(tierData.id, status1.tiers.first().id)
+
+                val status2 = membershipProviderFlow.awaitItem()
+                assertEquals(event2.membership.tier, status2.activeTier.value)
+                assertEquals(tierData.id, status2.tiers.first().id)
+
+                membershipProviderFlow1.awaitItem()
+                membershipProviderFlow1.awaitItem()
+                membershipProviderFlow1.awaitItem()
+                membershipProviderFlow2.awaitItem()
+                membershipProviderFlow2.awaitItem()
+                membershipProviderFlow2.awaitItem()
+
+                // Each call to status() fetches tiers once initially, then uses events for updates
+                verify(repo, times(2)).membershipGetTiers(any())
+            }
+        }
+}

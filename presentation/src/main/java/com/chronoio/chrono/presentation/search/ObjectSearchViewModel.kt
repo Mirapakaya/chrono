@@ -1,0 +1,325 @@
+package com.chronoio.chrono.presentation.search
+
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_utils.common.EventWrapper
+import com.chronoio.chrono.core_utils.ext.cancel
+import com.chronoio.chrono.core_utils.ui.TextInputDialogBottomBehaviorApplier
+import com.chronoio.chrono.core_utils.ui.ViewStateViewModel
+import com.chronoio.chrono.domain.base.Resultat
+import com.chronoio.chrono.domain.base.getOrThrow
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.search.SearchObjects
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.extension.sendAnalyticsSearchResultEvent
+import com.chronoio.chrono.presentation.navigation.AppNavigation
+import com.chronoio.chrono.presentation.navigation.DefaultObjectView
+import com.chronoio.chrono.presentation.navigation.DefaultSearchItem
+import com.chronoio.chrono.presentation.navigation.SupportNavigation
+import com.chronoio.chrono.presentation.objects.toViews
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+open class ObjectSearchViewModel(
+    private val vmParams: VmParams,
+    private val urlBuilder: UrlBuilder,
+    private val searchObjects: SearchObjects,
+    private val analytics: Analytics,
+    private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+    private val fieldParser: FieldParser,
+    private val storeOfObjectTypes: StoreOfObjectTypes,
+    private val spaceViews: SpaceViewSubscriptionContainer
+) : ViewStateViewModel<ObjectSearchView>(),
+    SupportNavigation<EventWrapper<AppNavigation.Command>>,
+    TextInputDialogBottomBehaviorApplier.OnDialogCancelListener,
+    AnalyticSpaceHelperDelegate by analyticSpaceHelperDelegate {
+
+    private val jobs = mutableListOf<Job>()
+
+    protected val userInput = MutableStateFlow(EMPTY_QUERY)
+    private val searchQuery = userInput
+        .take(1)
+        .onCompletion {
+            emitAll(userInput.drop(1).debounce(DEBOUNCE_DURATION).distinctUntilChanged())
+        }
+
+    protected val objects =
+        MutableStateFlow<Resultat<List<ObjectWrapper.Basic>>>(Resultat.Loading())
+
+    /**
+     * The query the current [objects] were requested for. Carried through the
+     * mapping pipeline so the distinct-key below compares against the query the
+     * results actually belong to, instead of re-reading the live user input.
+     */
+    private val appliedQuery = MutableStateFlow(EMPTY_QUERY)
+
+    override val navigation = MutableLiveData<EventWrapper<AppNavigation.Command>>()
+
+    private var eventRoute = ""
+
+    init {
+        viewModelScope.launch {
+            combine(
+                objects,
+                storeOfObjectTypes.trackChanges(),
+                appliedQuery
+            ) { listOfObjects, _, query ->
+                val result: Resultat<List<DefaultObjectView>> = if (listOfObjects.isLoading) {
+                    Resultat.Loading()
+                } else {
+                    Resultat.success(
+                        listOfObjects.getOrThrow().toViews(
+                            urlBuilder = urlBuilder,
+                            fieldParser = fieldParser,
+                            storeOfObjectTypes = storeOfObjectTypes
+                        )
+                    )
+                }
+                result to query
+            }
+                // Suppress redundant re-emissions caused by type-store churn, but never
+                // suppress query changes: resolveViews depends on the current query too.
+                .distinctUntilChangedBy { (result, query) -> result.getOrNull() to query }
+                .flowOn(Dispatchers.Default)
+                .collectLatest { (result, _) ->
+                    resolveViews(result)
+                }
+        }
+    }
+
+    protected open fun resolveViews(result: Resultat<List<DefaultObjectView>>) {
+        if (result.isSuccess) {
+            with(result.getOrThrow()) {
+                if (this.isEmpty()) {
+                    stateData.postValue(ObjectSearchView.NoResults(userInput.value))
+                } else {
+                    if (userInput.value.isEmpty()) {
+                        val items =
+                            mutableListOf<DefaultSearchItem>(ObjectSearchSection.RecentlyOpened)
+                        items.addAll(this)
+                        stateData.postValue(ObjectSearchView.Success(items))
+                    } else {
+                        stateData.postValue(ObjectSearchView.Success(this))
+                    }
+                }
+            }
+        } else {
+            stateData.postValue(ObjectSearchView.Loading)
+        }
+    }
+
+    fun onStart(route: String, ignore: Id? = null) {
+        eventRoute = route
+        startProcessingSearchQuery(ignore)
+    }
+
+    fun onStop() {
+        jobs.cancel()
+    }
+
+    protected fun startProcessingSearchQuery(ignore: Id?) {
+        jobs += viewModelScope.launch {
+            searchQuery.collectLatest { query ->
+                appliedQuery.value = query
+                // Keep previous results visible while a new search is in flight, so
+                // lists are diffed in place instead of being replaced by a spinner —
+                // but only when there is something to keep visible: a retained EMPTY
+                // success would re-resolve as a false "no results" for the new query.
+                val current = objects.value
+                if (current !is Resultat.Success || current.value.isEmpty()) {
+                    objects.emit(Resultat.Loading())
+                }
+                val params = getSearchObjectsParams(ignore).copy(fulltext = query)
+                searchObjects(params = params).process(
+                    success = { objects ->
+                        Timber.d("SearchObjects success with ${objects.size} items")
+                        setObjects(objects)
+                    },
+                    failure = {
+                        Timber.e(it, "Error while searching for objects")
+                        // Don't fail silently: without this, results for the previous
+                        // query would stay on screen with no indication of failure.
+                        stateData.postValue(
+                            ObjectSearchView.Error(
+                                error = "Error while searching: ${it.message ?: "unknown error"}"
+                            )
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    open suspend fun setObjects(data: List<ObjectWrapper.Basic>) {
+        objects.emit(Resultat.success(data))
+    }
+
+    fun onSearchTextChanged(searchText: String) {
+        userInput.value = searchText
+    }
+
+    open fun onObjectClicked(view: DefaultObjectView) {
+        val target = view.id
+        sendSearchResultEvent(target)
+        when (view.layout) {
+            ObjectType.Layout.BASIC,
+            ObjectType.Layout.TODO,
+            ObjectType.Layout.NOTE,
+            ObjectType.Layout.FILE,
+            ObjectType.Layout.IMAGE,
+            ObjectType.Layout.BOOKMARK -> {
+                val obj = objects
+                    .value
+                    .getOrNull()
+                    ?.find { obj -> obj.id == view.id }
+                navigate(
+                    EventWrapper(
+                        AppNavigation.Command.LaunchDocument(
+                            target = target,
+                            space = requireNotNull(obj?.spaceId)
+                        )
+                    )
+                )
+            }
+            ObjectType.Layout.PARTICIPANT -> {
+                val obj = objects
+                    .value
+                    .getOrNull()
+                    ?.find { obj -> obj.id == view.id }
+                navigate(
+                    EventWrapper(
+                        AppNavigation.Command.OpenParticipant(
+                            objectId = target,
+                            space = requireNotNull(obj?.spaceId)
+                        )
+                    )
+                )
+            }
+            ObjectType.Layout.OBJECT_TYPE -> {
+                val obj = objects
+                    .value
+                    .getOrNull()
+                    ?.find { obj -> obj.id == view.id }
+                navigate(
+                    EventWrapper(
+                        AppNavigation.Command.OpenTypeObject(
+                            target = target,
+                            space = requireNotNull(obj?.spaceId)
+                        )
+                    )
+                )
+            }
+            ObjectType.Layout.PROFILE -> {
+                val obj = objects
+                    .value
+                    .getOrNull()
+                    ?.find { obj -> obj.id == view.id }
+                val identity = obj?.getValue<Id>(Relations.IDENTITY_PROFILE_LINK)
+                if (identity != null) {
+                    navigate(
+                        EventWrapper(
+                            AppNavigation.Command.LaunchDocument(
+                                target = identity,
+                                space = requireNotNull(obj.spaceId)
+                            )
+                        )
+                    )
+                } else {
+                    navigate(
+                        EventWrapper(
+                            AppNavigation.Command.LaunchDocument(
+                                target = target,
+                                space = requireNotNull(obj?.spaceId)
+                            )
+                        )
+                    )
+                }
+            }
+            ObjectType.Layout.SET, ObjectType.Layout.COLLECTION -> {
+                val obj = objects
+                    .value
+                    .getOrNull()
+                    ?.find { obj -> obj.id == view.id }
+                navigate(
+                    EventWrapper(
+                        AppNavigation.Command.LaunchObjectSet(
+                            target = target,
+                            space = requireNotNull(obj?.spaceId)
+                        )
+                    )
+                )
+            }
+            else -> {
+                Timber.e("Unexpected layout: ${view.layout}")
+            }
+        }
+    }
+
+    protected fun sendSearchResultEvent(id: String) {
+        val value = state.value
+        if (value is ObjectSearchView.Success) {
+            val index = value.objects.indexOfFirst { (it as? DefaultObjectView)?.id == id }
+            if (index != -1) {
+                viewModelScope.launch {
+                    sendAnalyticsSearchResultEvent(
+                        analytics = analytics,
+                        pos = index + 1,
+                        length = userInput.value.length,
+                        spaceParams = provideParams(vmParams.space.id)
+                    )
+                }
+            }
+        }
+    }
+
+    open suspend fun getSearchObjectsParams(ignore: Id?) = SearchObjects.Params(
+        space = vmParams.space,
+        limit = SEARCH_LIMIT,
+        filters = buildList {
+            val isOneToOneSpace = spaceViews.get(vmParams.space)?.isOneToOneSpace == true
+            addAll(ObjectSearchConstants.filterSearchObjects(isOneToOneSpace = isOneToOneSpace))
+        },
+        sorts = ObjectSearchConstants.sortsSearchObjects,
+        fulltext = EMPTY_QUERY,
+        keys = buildList {
+            addAll(ObjectSearchConstants.defaultKeys)
+            add(Relations.IDENTITY_PROFILE_LINK)
+        }
+    )
+
+    override fun onDialogCancelled() {
+        navigation.postValue(EventWrapper(AppNavigation.Command.Exit(vmParams.space.id)))
+    }
+
+    companion object {
+        const val EMPTY_QUERY = ""
+        const val DEBOUNCE_DURATION = 300L
+        const val SEARCH_LIMIT = 50
+    }
+
+    data class VmParams(
+        val space: SpaceId
+    )
+}

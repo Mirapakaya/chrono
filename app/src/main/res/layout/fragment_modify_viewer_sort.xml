@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="28dp">
+
+    <ImageView
+        android:id="@+id/dragger"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="6dp"
+        android:contentDescription="@string/content_description_modal_icon"
+        android:src="@drawable/sheet_top"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/txtName"
+        style="@style/TextView.UXStyle.Titles.1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="center"
+        tools:text="Object" />
+
+    <FrameLayout
+        android:id="@+id/flSortAsc"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/tvSortAsc"
+            style="@style/TextView.UXStyle.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="44dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            tools:text="@string/sort_from_a_to_z" />
+
+        <ImageView
+            android:id="@+id/ivAscSelected"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="20dp"
+            android:contentDescription="@string/content_description_check_icon"
+            android:src="@drawable/ic_viewer_chosen"
+            app:layout_constraintBottom_toBottomOf="@+id/tvSortAsc"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/tvSortAsc" />
+    </FrameLayout>
+
+    <View
+        android:id="@+id/view"
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/divider" />
+
+    <FrameLayout
+        android:id="@+id/flSortDesc"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/tvSortDesc"
+            style="@style/TextView.UXStyle.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="44dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            tools:text="@string/sort_from_a_to_z" />
+
+        <ImageView
+            android:id="@+id/ivDescSelected"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="20dp"
+            android:contentDescription="@string/content_description_check_icon"
+            android:src="@drawable/ic_viewer_chosen"
+            app:layout_constraintBottom_toBottomOf="@+id/tvSortAsc"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/tvSortAsc" />
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/divider" />
+
+    <TextView
+        android:id="@+id/tvSectionEmptyValues"
+        style="@style/TextView.UXStyle.Captions.1.Regular"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginTop="26dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="8dp"
+        android:text="@string/sort_empty_values_desc"
+        android:textColor="@color/text_secondary" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/divider" />
+
+    <FrameLayout
+        android:id="@+id/flSortEmptyBottom"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/tvSectionEmptyBottom"
+            style="@style/TextView.UXStyle.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="44dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:text="@string/sort_empty_values_bottom" />
+
+        <ImageView
+            android:id="@+id/ivEmptyBottomSelected"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="20dp"
+            android:contentDescription="@string/content_desc_empty_values_bottom_check_icon"
+            android:src="@drawable/ic_viewer_chosen" />
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/divider" />
+
+    <FrameLayout
+        android:id="@+id/flSortEmptyUp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/tvSectionEmptyUp"
+            style="@style/TextView.UXStyle.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="44dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:text="@string/sort_empty_values_top" />
+
+        <ImageView
+            android:id="@+id/ivEmptyUpSelected"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="20dp"
+            android:contentDescription="@string/content_desc_empty_values_top_check_icon"
+            android:src="@drawable/ic_viewer_chosen" />
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/divider" />
+</LinearLayout>

@@ -1,0 +1,36 @@
+plugins {
+    id "com.android.library"
+    id "kotlin-android"
+}
+
+android {
+    buildFeatures {
+        viewBinding true
+    }
+    namespace 'com.chronoio.chrono.library_page_icon_picker_widget'
+}
+
+dependencies {
+
+    implementation project(':core-utils')
+    implementation project(':core-ui')
+    implementation project(':presentation')
+    implementation project(':library-emojifier')
+
+    implementation libs.appcompat
+    implementation libs.kotlin
+    implementation libs.coroutinesAndroid
+    implementation libs.androidxCore
+    implementation libs.emoji2
+    implementation libs.coil
+
+    implementation libs.design
+    implementation libs.recyclerView
+    implementation libs.constraintLayout
+    implementation libs.timber
+
+    testImplementation libs.junit
+    testImplementation libs.kotlinTest
+    testImplementation libs.robolectric
+    testImplementation libs.androidXTestCore
+}

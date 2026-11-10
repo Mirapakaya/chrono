@@ -1,0 +1,139 @@
+package com.chronoio.chrono.presentation.sets
+
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.ObjectType
+
+sealed class ObjectSetCommand {
+
+    sealed class Modal : ObjectSetCommand() {
+
+        data class Menu(
+            val ctx: Id,
+            val space: Id,
+            val isArchived: Boolean,
+            val isFavorite: Boolean,
+            val isReadOnly: Boolean
+        ) : Modal()
+
+        data class OpenSettings(
+            val ctx: Id,
+            val dv: Id,
+            val viewer: Id
+        ) : Modal()
+
+        data class ModifyViewerFilters(
+            val ctx: Id,
+            val viewer: Id
+        ) : Modal()
+
+        data class ModifyViewerSorts(
+            val ctx: Id,
+            val viewer: Id
+        ) : Modal()
+
+        data class EditGridTextCell(
+            val ctx: Id,
+            val space: Id,
+            val relationKey: Id,
+            val recordId: Id
+        ) : Modal()
+
+        data class EditGridDateCell(
+            val ctx: Id,
+            val space: Id,
+            val relationKey: Key,
+            val objectId: Id
+        ) : Modal()
+
+        data class EditObjectCell(
+            val ctx: Id,
+            val space: Id,
+            val target: Id,
+            val relationKey: Key
+        ) : Modal()
+
+        data class EditTagOrStatusCell(
+            val ctx: Id,
+            val space: Id,
+            val target: Id,
+            val relationKey: Key
+        ) : Modal()
+
+        data class CreateBookmark(val ctx: Id, val space: Id) : Modal()
+
+        data class OpenIconActionMenu(
+            val target: Id,
+            val space: Id
+        ) : Modal()
+
+        data class OpenCoverActionMenu(
+            val ctx: Id,
+            val space: Id
+        ) : Modal()
+
+        data class OpenDataViewSelectQueryScreen(
+            val selectedTypes: List<Id>
+        ) : Modal()
+
+        data object OpenEmptyDataViewSelectQueryScreen: Modal()
+
+        data class EditIntrinsicTextRelation(
+            val ctx: Id,
+            val space: Id,
+            val relation: Key
+        ) : Modal()
+
+        data class EditObjectRelationValue(
+            val ctx: Id,
+            val space: Id,
+            val relation: Key
+        ) : Modal()
+
+        data class EditTagOrStatusRelationValue(
+            val ctx: Id,
+            val space: Id,
+            val relation: Key
+        ) : Modal()
+
+        data object OpenSelectTypeScreen : Modal()
+
+        data class ShowObjectSetTypePopupMenu(
+            val ctx: Id,
+            val anchor: Int
+        ) : Modal()
+
+        data class ShowObjectSetRelationPopupMenu(
+            val ctx: Id,
+            val anchor: Int
+        ) : Modal()
+
+        data class ShowObjectHeaderContextMenu(
+            val objectId: Id,
+            val canMoveToBin: Boolean,
+            val isCollection: Boolean,
+            val layout: ObjectType.Layout? = null
+        ) : Modal()
+    }
+
+    sealed class Intent : ObjectSetCommand() {
+        data class GoTo(val url: String) : Intent()
+        data class MailTo(val email: String) : Intent()
+        data class Call(val phone: String) : Intent()
+        data object OpenAppStore : Intent()
+    }
+
+    data object ShowOnlyAccessError : ObjectSetCommand()
+
+    data class Browse(val url: String) : ObjectSetCommand()
+
+    data class PlayMedia(
+        val targetObjectId: Id,
+        val name: String,
+        val layout: ObjectType.Layout
+    ) : ObjectSetCommand()
+
+    data class CopyLinkToClipboard(val link: String) : ObjectSetCommand()
+
+    data class ScrollToObject(val objectId: Id) : ObjectSetCommand()
+}

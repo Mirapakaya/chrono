@@ -1,0 +1,473 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Relation
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.StubRelationObject
+import com.chronoio.chrono.core_models.StubTitle
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.presentation.MockTypicalDocumentFactory
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.render.parseThemeBackgroundColor
+import com.chronoio.chrono.presentation.mapper.toView
+import com.chronoio.chrono.presentation.relations.ObjectRelationView
+import com.chronoio.chrono.presentation.util.CoroutinesTestRule
+import com.chronoio.chrono.presentation.util.TXT
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+
+class EditorRelationBlockTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = CoroutinesTestRule()
+
+    private val title = StubTitle()
+
+    private val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @Test
+    fun test() = runTest {
+
+        // SETUP
+
+        val relation = StubRelationObject(
+            key = MockDataFactory.randomString(),
+            name = "Album's title",
+            format = Relation.Format.SHORT_TEXT
+        )
+
+        val value = "Safe as milk"
+
+        val customDetails = ObjectViewDetails(mapOf(root to mapOf(
+            Relations.ID to root,
+            relation.key to value)))
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id, b.id)
+        )
+
+        val document = listOf(page, header, title, a, b)
+
+        stubInterceptEvents()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+
+        )
+
+        val vm = buildViewModel()
+
+        storeOfRelations.merge(
+            relations = listOf(relation)
+        )
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        // TESTING
+
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = a.id,
+                    text = a.content<Block.Content.Text>().text,
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = a.parseThemeBackgroundColor()
+                        )
+                    )
+                ),
+                BlockView.Relation.Related(
+                    id = b.id,
+                    view = ObjectRelationView.Default(
+                        id = relation.id,
+                        key = relation.key,
+                        name = relation.name.orEmpty(),
+                        value = value,
+                        format = relation.format,
+                        system = false
+                    ),
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = b.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = vm.state.value
+        )
+    }
+
+    @Test
+    fun `should render block relation deleted when relationKey is not present in relationStore`() =
+        runTest {
+
+            val title = MockTypicalDocumentFactory.title
+            val header = MockTypicalDocumentFactory.header
+            val block = MockTypicalDocumentFactory.a
+
+            val missedProperty = StubRelationObject(
+                format = Relation.Format.LONG_TEXT
+            )
+
+            val relationBlock = Block(
+                id = MockDataFactory.randomUuid(),
+                fields = Block.Fields.empty(),
+                children = emptyList(),
+                content = Block.Content.RelationBlock(key = missedProperty.key)
+            )
+
+            val page = Block(
+                id = root,
+                fields = Block.Fields(emptyMap()),
+                content = Block.Content.Smart,
+                children = listOf(header.id, block.id, relationBlock.id)
+            )
+
+            val doc = listOf(page, header, title, block, relationBlock)
+
+            val r1 = MockTypicalDocumentFactory.relationObject("Ad")
+            val r2 = MockTypicalDocumentFactory.relationObject("De")
+            val r3 = MockTypicalDocumentFactory.relationObject("HJ")
+
+            val value1 = MockDataFactory.randomString()
+            val value2 = MockDataFactory.randomString()
+            val value3 = MockDataFactory.randomString()
+            val objectFields =
+                mapOf(
+                    r1.key to value1,
+                    r2.key to value2,
+                    r3.key to value3,
+                    missedProperty.key to "Some Text",
+                    Relations.ID to root,
+                    Relations.TYPE to listOf(objType.id)
+                )
+
+            val customDetails = ObjectViewDetails(
+                mapOf(
+                    root to objectFields,
+                )
+            )
+
+            stubInterceptEvents()
+            stubSearchObjects()
+            stubOpenDocument(
+                document = doc,
+                details = customDetails,
+
+            )
+
+            storeOfRelations.merge(
+                listOf(r1, r2, r3)
+            )
+
+            val vm = buildViewModel()
+
+            vm.onStart(id = root, space = defaultSpace)
+
+            val expected =
+                listOf(
+                    BlockView.Title.Basic(
+                        id = title.id,
+                        isFocused = false,
+                        text = title.content<Block.Content.Text>().text,
+                        emoji = null,
+                        icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                    ),
+                    BlockView.Text.Numbered(
+                        isFocused = false,
+                        id = block.id,
+                        marks = emptyList(),
+                        background = block.parseThemeBackgroundColor(),
+                        text = block.content<Block.Content.Text>().text,
+                        alignment = block.content<Block.Content.Text>().align?.toView(),
+                        number = 1,
+                        decorations = listOf(
+                            BlockView.Decoration(
+                                background = block.parseThemeBackgroundColor()
+                            )
+                        )
+                    ),
+                    BlockView.Relation.Deleted(
+                        id = relationBlock.id,
+                        indent = 0,
+                        isSelected = false,
+                        decorations = listOf(
+                            BlockView.Decoration(
+                                background = relationBlock.parseThemeBackgroundColor()
+                            )
+                        )
+                    )
+                )
+
+            assertEquals(
+                expected = ViewState.Success(
+                    blocks = expected
+                ),
+                actual = vm.state.value
+            )
+        }
+
+    @Test
+    fun `should render block relation when relation is present`() = runTest {
+
+        val title = MockTypicalDocumentFactory.title
+        val header = MockTypicalDocumentFactory.header
+        val block = MockTypicalDocumentFactory.a
+
+        val r1 = MockTypicalDocumentFactory.relationObject("Ad")
+        val r2 = MockTypicalDocumentFactory.relationObject("De")
+        val r3 = MockTypicalDocumentFactory.relationObject("HJ")
+        val relationObjectType = StubRelationObject(
+            key = Block.Fields.TYPE_KEY,
+            name = "Object Type",
+            format = Relation.Format.OBJECT
+        )
+
+        val value1 = MockDataFactory.randomString()
+        val value2 = MockDataFactory.randomString()
+        val value3 = MockDataFactory.randomString()
+
+
+        val relationBlock = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = r2.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id, relationBlock.id)
+        )
+
+        val doc = listOf(page, header, title, block, relationBlock)
+
+        val objectTypeId = MockDataFactory.randomString()
+        val objectTypeName = MockDataFactory.randomString()
+        val objectTypeDescription = MockDataFactory.randomString()
+
+        val objectFields =
+            mapOf(
+                Relations.ID to root,
+                r1.key to value1,
+                r2.key to value2,
+                r3.key to value3,
+                relationObjectType.key to objectTypeId
+            )
+
+        val objectTypeFields =
+            mapOf(
+                Relations.ID to objectTypeId,
+                Relations.NAME to objectTypeName,
+                Relations.DESCRIPTION to objectTypeDescription,
+                Relations.UNIQUE_KEY to objectTypeId
+            )
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to objectFields,
+                objectTypeId to objectTypeFields
+            )
+        )
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc,
+            details = customDetails,
+
+        )
+
+        storeOfRelations.merge(
+            listOf(r1, r2, r3, relationObjectType)
+        )
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val expected = listOf(
+            BlockView.Title.Basic(
+                id = title.id,
+                isFocused = false,
+                text = title.content<Block.Content.Text>().text,
+                emoji = null,
+                icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+            ),
+            BlockView.Text.Numbered(
+                isFocused = false,
+                id = block.id,
+                marks = emptyList(),
+                background = block.parseThemeBackgroundColor(),
+                text = block.content<Block.Content.Text>().text,
+                alignment = block.content<Block.Content.Text>().align?.toView(),
+                number = 1,
+                decorations = listOf(
+                    BlockView.Decoration(
+                        background = block.parseThemeBackgroundColor()
+                    )
+                )
+            ),
+            BlockView.Relation.Related(
+                id = relationBlock.id,
+                indent = 0,
+                isSelected = false,
+                view = ObjectRelationView.Default(
+                    id = r2.id,
+                    key = r2.key,
+                    name = r2.name.orEmpty(),
+                    value = value2,
+                    featured = false,
+                    format = r2.format,
+                    system = false
+                ),
+                decorations = listOf(
+                    BlockView.Decoration(
+                        background = relationBlock.parseThemeBackgroundColor()
+                    )
+                )
+            )
+        )
+
+        coroutineTestRule.advanceUntilIdle()
+
+        assertEquals(
+            expected = ViewState.Success(expected),
+            actual = vm.state.value
+        )
+    }
+
+    @Test
+    fun `should render block-relation as placeholder when link is null`() = runTest {
+
+        val title = MockTypicalDocumentFactory.title
+        val header = MockTypicalDocumentFactory.header
+        val block = MockTypicalDocumentFactory.a
+
+        val relationBlock = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = null)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id, relationBlock.id)
+        )
+
+        val doc = listOf(page, header, title, block, relationBlock)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc
+        )
+
+        val vm = buildViewModel()
+        storeOfRelations.merge(listOf())
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val expected =
+            listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<Block.Content.Text>().text,
+                    emoji = null,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Numbered(
+                    isFocused = false,
+                    id = block.id,
+                    marks = emptyList(),
+                    background = block.parseThemeBackgroundColor(),
+                    text = block.content<Block.Content.Text>().text,
+                    alignment = block.content<Block.Content.Text>().align?.toView(),
+                    number = 1,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = block.parseThemeBackgroundColor()
+                        )
+                    )
+                ),
+                BlockView.Relation.Placeholder(
+                    id = relationBlock.id,
+                    indent = 0,
+                    isSelected = false,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = relationBlock.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+
+        assertEquals(ViewState.Success(expected), vm.state.value)
+    }
+}

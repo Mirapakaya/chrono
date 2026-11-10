@@ -1,0 +1,479 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import android.util.Log
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.ObjectTypeIds.PAGE
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.presentation.MockTypicalDocumentFactory
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.render.parseThemeBackgroundColor
+import com.chronoio.chrono.presentation.util.CoroutinesTestRule
+import com.chronoio.chrono.presentation.util.TXT
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.jraska.livedata.test
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import net.lachlanmckee.timberjunit.TimberTestRule
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+
+class EditorMarkupObjectTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = CoroutinesTestRule()
+
+    @get:Rule
+    val timberTestRule: TimberTestRule = TimberTestRule.builder()
+        .minPriority(Log.DEBUG)
+        .showThread(true)
+        .showTimestamp(false)
+        .onlyLogWhenTestFails(true)
+        .build()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @After
+    fun after() {
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun `should add object markup to text`() = runTest {
+        val title = MockTypicalDocumentFactory.title
+        val header = MockTypicalDocumentFactory.header
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = "Start Foobar End",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc
+        )
+        stubUpdateText()
+
+        val vm = buildViewModel()
+        val linkObject = MockDataFactory.randomString()
+
+        //TESTING
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = block.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = block.id,
+                selection = IntRange(6, 12)
+            )
+            proceedToAddObjectToTextAsLink(id = linkObject)
+        }
+
+        coroutineTestRule.advanceUntilIdle()
+
+        vm.state.test().apply {
+            assertValue(
+                ViewState.Success(
+                    blocks = listOf(
+                        BlockView.Title.Basic(
+                            id = title.id,
+                            isFocused = false,
+                            text = title.content<TXT>().text,
+                            mode = BlockView.Mode.EDIT,
+                            icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                        ),
+                        BlockView.Text.Paragraph(
+                            id = block.id,
+                            cursor = null,
+                            isSelected = false,
+                            isFocused = true,
+                            marks = listOf(
+                                Markup.Mark.Object(
+                                    from = 6,
+                                    to = 12,
+                                    param = linkObject,
+                                    isArchived = false
+                                )
+                            ),
+                            indent = 0,
+                            text = "Start Foobar End",
+                            mode = BlockView.Mode.EDIT,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = block.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `should add object markup to text end remove all clicked marks in range`() = runTest {
+        val title = MockTypicalDocumentFactory.title
+        val header = MockTypicalDocumentFactory.header
+        val linkObject = MockDataFactory.randomUuid()
+        val linkWeb = MockDataFactory.randomString()
+        val linkMention = MockDataFactory.randomUuid()
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = "Start Link Object Mention End",
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 0,
+                            endInclusive = 5
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 6,
+                            endInclusive = 10
+                        ),
+                        type = Block.Content.Text.Mark.Type.LINK,
+                        param = linkWeb
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 6,
+                            endInclusive = 10
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 11,
+                            endInclusive = 17
+                        ),
+                        type = Block.Content.Text.Mark.Type.OBJECT,
+                        param = linkObject
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 18,
+                            endInclusive = 25
+                        ),
+                        type = Block.Content.Text.Mark.Type.MENTION,
+                        param = linkMention
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 18,
+                            endInclusive = 25
+                        ),
+                        type = Block.Content.Text.Mark.Type.TEXT_COLOR,
+                        param = "#000"
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 26,
+                            endInclusive = 29
+                        ),
+                        type = Block.Content.Text.Mark.Type.ITALIC
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubOpenDocument(document = doc)
+        stubUpdateText()
+
+        val vm = buildViewModel()
+        val linkNew = MockDataFactory.randomString()
+
+        //TESTING
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = block.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = block.id,
+                selection = IntRange(6, 25)
+            )
+            proceedToAddObjectToTextAsLink(id = linkNew)
+        }
+
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = block.id,
+                    cursor = null,
+                    isSelected = false,
+                    isFocused = true,
+                    marks = listOf(
+                        Markup.Mark.Italic(
+                            from = 26,
+                            to = 29
+                        ),
+                        Markup.Mark.Bold(
+                            from = 0,
+                            to = 5
+                        ),
+                        Markup.Mark.Bold(
+                            from = 6,
+                            to = 10
+                        ),
+                        Markup.Mark.TextColor(
+                            from = 18,
+                            to = 25,
+                            color = "#000"
+                        ),
+                        Markup.Mark.Object(
+                            from = 6,
+                            to = 25,
+                            param = linkNew,
+                            isArchived = false
+                        ),
+
+                        ),
+                    indent = 0,
+                    text = "Start Link Object Mention End",
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = block.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        coroutineTestRule.advanceUntilIdle()
+
+        val actual = vm.state.value
+        assertEquals(expected, actual)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should create object and add markup to text end remove all clicked marks in range`()= runTest {
+        val title = MockTypicalDocumentFactory.title
+        val header = MockTypicalDocumentFactory.header
+        val linkObject = MockDataFactory.randomUuid()
+        val linkWeb = MockDataFactory.randomString()
+        val linkMention = MockDataFactory.randomUuid()
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = "Start Link Object Mention End",
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 0,
+                            endInclusive = 5
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 6,
+                            endInclusive = 10
+                        ),
+                        type = Block.Content.Text.Mark.Type.LINK,
+                        param = linkWeb
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 6,
+                            endInclusive = 10
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 11,
+                            endInclusive = 17
+                        ),
+                        type = Block.Content.Text.Mark.Type.OBJECT,
+                        param = linkObject
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 18,
+                            endInclusive = 25
+                        ),
+                        type = Block.Content.Text.Mark.Type.MENTION,
+                        param = linkMention
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 18,
+                            endInclusive = 25
+                        ),
+                        type = Block.Content.Text.Mark.Type.TEXT_COLOR,
+                        param = "#000"
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 26,
+                            endInclusive = 29
+                        ),
+                        type = Block.Content.Text.Mark.Type.ITALIC
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val doc = listOf(page, header, title, block)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubSearchObjects()
+        stubOpenDocument(
+            document = doc
+        )
+        stubUpdateText()
+        val vm = buildViewModel()
+        val linkNew = MockDataFactory.randomString()
+
+        //TESTING
+        val newObjectType = PAGE
+        val newObjectId = MockDataFactory.randomString()
+        val newObjectName = MockDataFactory.randomString()
+        stubCreateObjectAsMentionOrLink(
+            name = newObjectName,
+            id = newObjectId
+        )
+        stubGetDefaultObjectType(type = newObjectType)
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = block.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = block.id,
+                selection = IntRange(6, 25)
+            )
+            proceedToCreateObjectAndAddToTextAsLink(name = newObjectName)
+            advanceUntilIdle()
+        }
+
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = block.id,
+                    cursor = null,
+                    isSelected = false,
+                    isFocused = true,
+                    marks = listOf(
+                        Markup.Mark.Italic(
+                            from = 26,
+                            to = 29
+                        ),
+                        Markup.Mark.Bold(
+                            from = 0,
+                            to = 5
+                        ),
+                        Markup.Mark.Bold(
+                            from = 6,
+                            to = 10
+                        ),
+                        Markup.Mark.TextColor(
+                            from = 18,
+                            to = 25,
+                            color = "#000"
+                        ),
+                        Markup.Mark.Object(
+                            from = 6,
+                            to = 25,
+                            param = newObjectId,
+                            isArchived = false
+                        ),
+                    ),
+                    indent = 0,
+                    text = "Start Link Object Mention End",
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = block.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        val actual = vm.state.value
+        assertEquals(expected, actual)
+    }
+}

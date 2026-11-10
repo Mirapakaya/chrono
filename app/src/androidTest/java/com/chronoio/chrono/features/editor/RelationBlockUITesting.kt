@@ -1,0 +1,1160 @@
+package com.chronoio.chrono.features.editor
+
+import android.os.Bundle
+import androidx.core.os.bundleOf
+import androidx.fragment.app.testing.FragmentScenario
+import androidx.fragment.app.testing.launchFragmentInContainer
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Relation
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.core_ui.extensions.light
+import com.chronoio.chrono.emojifier.data.DefaultDocumentEmojiIconProvider
+import com.chronoio.chrono.features.editor.base.EditorTestSetup
+import com.chronoio.chrono.features.editor.base.TestEditorFragment
+import com.chronoio.chrono.presentation.MockBlockContentFactory.StubTextContent
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.chronoio.chrono.test_utils.utils.checkHasBackgroundColor
+import com.chronoio.chrono.test_utils.utils.checkHasNoBackground
+import com.chronoio.chrono.test_utils.utils.checkHasText
+import com.chronoio.chrono.test_utils.utils.checkIsDisplayed
+import com.chronoio.chrono.test_utils.utils.checkIsNotSelected
+import com.chronoio.chrono.test_utils.utils.checkIsRecyclerSize
+import com.chronoio.chrono.test_utils.utils.checkIsSelected
+import com.chronoio.chrono.test_utils.utils.onItem
+import com.chronoio.chrono.test_utils.utils.onItemView
+import com.chronoio.chrono.test_utils.utils.rVMatcher
+import com.chronoio.chrono.test_utils.utils.resources
+import com.chronoio.chrono.ui.editor.EditorFragment
+import com.chronoio.chrono.utils.checkHasMarginStart
+import com.chronoio.chrono.utils.checkHasPaddingLeft
+import com.bartoszlipinski.disableanimationsrule.DisableAnimationsRule
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+@LargeTest
+class RelationBlockUITesting : EditorTestSetup() {
+
+    @get:Rule
+    val animationsRule = DisableAnimationsRule()
+
+//    @get:Rule
+//    val coroutineTestRule = CoroutinesTestRule()
+
+    private val args = bundleOf(EditorFragment.CTX_KEY to root)
+
+    private val defaultDetails = ObjectViewDetails(
+        mapOf(
+            root to
+                mapOf(
+                    "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random()
+                )
+            )
+    )
+
+    private val title = Block(
+        id = MockDataFactory.randomUuid(),
+        content = StubTextContent(
+            style = Block.Content.Text.Style.TITLE,
+            text = "Relation Block UI Testing",
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    private val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @Before
+    override fun setup() {
+        super.setup()
+    }
+
+    @Test
+    fun shouldDisplayRelationBlockPlaceholderAtTheEnd() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        // This should be rendered as placeholder because it's not related to any relation.
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = null)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id, b.id)
+        )
+
+        val document = listOf(page, header, title, a, b)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(document, defaultDetails)
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            onItemView(0, R.id.title).checkHasText(title.content<Block.Content.Text>().text)
+            onItemView(1, R.id.textContent).checkHasText(a.content<Block.Content.Text>().text)
+            onItemView(2, R.id.tvPlaceholder).checkHasText(R.string.set_new_relation)
+            checkIsRecyclerSize(3)
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldDisplayPrimitiveTextRelationBlocksAtTheEnd() {
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Company",
+            format = Relation.Format.SHORT_TEXT,
+            source = Relation.Source.values().random()
+        )
+
+        val relation2 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Year",
+            format = Relation.Format.NUMBER,
+            source = Relation.Source.values().random()
+        )
+
+        val relation3 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Phone",
+            format = Relation.Format.PHONE,
+            source = Relation.Source.values().random()
+        )
+
+        val relation4 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Website",
+            format = Relation.Format.URL,
+            source = Relation.Source.values().random()
+        )
+
+        val relation5 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Email",
+            format = Relation.Format.EMAIL,
+            source = Relation.Source.values().random()
+        )
+
+        val value1 = "Anytype"
+        val value2 = 2021.01
+        val value3 = "+00000000000"
+        val value4 = "https://chrono.app/"
+        val value5 = "team@chrono.app"
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to value1,
+                        relation2.key to value2,
+                        relation3.key to value3,
+                        relation4.key to value4,
+                        relation5.key to value5,
+                    )
+                )
+        )
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block1 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation1.key)
+        )
+
+        val block2 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation2.key)
+        )
+
+        val block3 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation3.key)
+        )
+
+        val block4 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation4.key)
+        )
+
+        val block5 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation5.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(
+                header.id,
+                paragraph.id,
+                block1.id,
+                block2.id,
+                block3.id,
+                block4.id,
+                block5.id
+            )
+        )
+
+        val document =
+            listOf(page, header, title, paragraph, block1, block2, block3, block4, block5)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1, relation2, relation3, relation4, relation5)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            checkIsRecyclerSize(7)
+            onItemView(0, R.id.title).checkHasText(title.content<Block.Content.Text>().text)
+            onItemView(
+                1,
+                R.id.textContent
+            ).checkHasText(paragraph.content<Block.Content.Text>().text)
+            onItemView(2, R.id.tvRelationTitle).checkHasText(relation1.name)
+            onItemView(2, R.id.tvRelationValue).checkHasText(value1)
+            onItemView(3, R.id.tvRelationTitle).checkHasText(relation2.name)
+            onItemView(3, R.id.tvRelationValue).checkHasText(value2.toString())
+            onItemView(4, R.id.tvRelationTitle).checkHasText(relation3.name)
+            onItemView(4, R.id.tvRelationValue).checkHasText(value3)
+            onItemView(5, R.id.tvRelationTitle).checkHasText(relation4.name)
+            onItemView(5, R.id.tvRelationValue).checkHasText(value4)
+            onItemView(6, R.id.tvRelationTitle).checkHasText(relation5.name)
+            onItemView(6, R.id.tvRelationValue).checkHasText(value5)
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldDisplayPrimitiveTextRelationBlocksWithBackgroundColorSetExceptForOneBlock() {
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Company",
+            format = Relation.Format.SHORT_TEXT,
+            source = Relation.Source.values().random()
+        )
+
+        val relation2 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Year",
+            format = Relation.Format.NUMBER,
+            source = Relation.Source.values().random()
+        )
+
+        val relation3 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Phone",
+            format = Relation.Format.PHONE,
+            source = Relation.Source.values().random()
+        )
+
+        val relation4 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Website",
+            format = Relation.Format.URL,
+            source = Relation.Source.values().random()
+        )
+
+        val relation5 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Email",
+            format = Relation.Format.EMAIL,
+            source = Relation.Source.values().random()
+        )
+
+        val value1 = "Anytype"
+        val value2 = "2021"
+        val value3 = "+00000000000"
+        val value4 = "https://chrono.app/"
+        val value5 = "team@chrono.app"
+
+        val background1 = ThemeColor.PURPLE
+        val background2 = ThemeColor.RED
+        val background3 = ThemeColor.BLUE
+        val background4 = ThemeColor.ORANGE
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to value1,
+                        relation2.key to value2,
+                        relation3.key to value3,
+                        relation4.key to value4,
+                        relation5.key to value5,
+                    )
+                )
+        )
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block1 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            backgroundColor = background1.code,
+            content = Block.Content.RelationBlock(
+                key = relation1.key,
+            )
+        )
+
+        val block2 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            backgroundColor = background2.code,
+            content = Block.Content.RelationBlock(
+                key = relation2.key
+            )
+        )
+
+        val block3 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            backgroundColor = background3.code,
+            content = Block.Content.RelationBlock(
+                key = relation3.key
+            )
+        )
+
+        val block4 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            backgroundColor = background4.code,
+            content = Block.Content.RelationBlock(
+                key = relation4.key
+            )
+        )
+
+        val block5 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation5.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(
+                header.id,
+                paragraph.id,
+                block1.id,
+                block2.id,
+                block3.id,
+                block4.id,
+                block5.id
+            )
+        )
+
+        val document =
+            listOf(page, header, title, paragraph, block1, block2, block3, block4, block5)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1, relation2, relation3, relation4, relation5)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            checkIsRecyclerSize(7)
+            onItem(2).checkHasBackgroundColor(resources.light(background1))
+            onItem(3).checkHasBackgroundColor(resources.light(background2))
+            onItem(4).checkHasBackgroundColor(resources.light(background3))
+            onItem(5).checkHasBackgroundColor(resources.light(background4))
+            onItem(6).checkHasNoBackground()
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldDisplayOneStatusRelationBlockAtTheEnd() {
+
+        val option = Relation.Option(
+            id = MockDataFactory.randomUuid(),
+            text = "Done",
+            color = ThemeColor.PURPLE.code
+        )
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Status",
+            format = Relation.Format.STATUS,
+            source = Relation.Source.values().random(),
+            selections = listOf(option)
+        )
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to option.id
+                    )
+                )
+        )
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation1.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id, b.id)
+        )
+
+        val document = listOf(page, header, title, a, b)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            checkIsRecyclerSize(3)
+            onItemView(0, R.id.title).checkHasText(title.content<Block.Content.Text>().text)
+            onItemView(1, R.id.textContent).checkHasText(a.content<Block.Content.Text>().text)
+            onItemView(2, R.id.tvRelationTitle).checkHasText(relation1.name)
+            onItemView(2, R.id.tvRelationValue).checkHasText(option.text)
+        }
+    }
+
+    @Test
+    fun shouldDisplayOneFileRelationBlockContainingTwoFiles() {
+
+        val file1 = MockDataFactory.randomUuid()
+        val file2 = MockDataFactory.randomUuid()
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Attachement",
+            format = Relation.Format.FILE,
+            source = Relation.Source.values().random(),
+            selections = emptyList()
+        )
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to listOf(file1, file2)
+                    )
+                ,
+                file1 to
+                    mapOf(
+                        "name" to "Document",
+                        "ext" to "pdf",
+                        "mime" to "application/pdf"
+                    )
+                ,
+                file2 to
+                    mapOf(
+                        "name" to "Image",
+                        "ext" to "jpg",
+                        "mime" to "image/jpeg"
+                    )
+                )
+        )
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val b = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation1.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id, b.id)
+        )
+
+        val document = listOf(page, header, title, a, b)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            checkIsRecyclerSize(3)
+            onItemView(0, R.id.title).checkHasText(title.content<Block.Content.Text>().text)
+            onItemView(1, R.id.textContent).checkHasText(a.content<Block.Content.Text>().text)
+            onItemView(2, R.id.tvRelationTitle).checkHasText(relation1.name)
+            onItemView(2, R.id.file0).checkIsDisplayed()
+            onItemView(2, R.id.file1).checkIsDisplayed()
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldSelectRelationBlockPlaceholder() {
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = null)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, paragraph.id, block.id)
+        )
+
+        val document = listOf(page, header, title, paragraph, block)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(document, defaultDetails)
+
+        // TESTING
+
+        launchFragment(args)
+
+        val rvMatcher = R.id.recycler.rVMatcher()
+
+        with(rvMatcher) {
+            checkIsRecyclerSize(3)
+            onItemView(0, R.id.title).checkHasText(title.content<Block.Content.Text>().text)
+            onItemView(
+                1,
+                R.id.textContent
+            ).checkHasText(paragraph.content<Block.Content.Text>().text)
+            onItemView(1, R.id.textContent).checkIsNotSelected()
+            onItemView(2, R.id.tvPlaceholder).checkHasText(R.string.set_new_relation)
+            onItemView(2, R.id.tvPlaceholder).checkIsNotSelected()
+        }
+
+        rvMatcher.onItemView(1, R.id.textContent).perform(click())
+
+        onView(withId(R.id.multiSelectModeButton)).perform(click())
+
+        advance(EditorViewModel.DELAY_REFRESH_DOCUMENT_TO_ENTER_MULTI_SELECT_MODE)
+
+        rvMatcher.onItemView(1, R.id.textContent).perform(click())
+        rvMatcher.onItemView(2, R.id.content).perform(click())
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldIndentRelationBlockPlaceholder() {
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = null)
+        )
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = listOf(block.id),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, paragraph.id)
+        )
+
+        val document = listOf(page, header, title, paragraph, block)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(document, defaultDetails)
+
+        // TESTING
+
+        launchFragment(args)
+
+        val rvMatcher = R.id.recycler.rVMatcher()
+
+        rvMatcher.onItemView(2, R.id.relationIcon)
+            .checkHasMarginStart(dimen = R.dimen.indent, coefficient = 1)
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldIndentPrimitiveTextRelationBlocksAtTheEnd() {
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Company",
+            format = Relation.Format.SHORT_TEXT,
+            source = Relation.Source.values().random()
+        )
+
+        val relation2 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Year",
+            format = Relation.Format.NUMBER,
+            source = Relation.Source.values().random()
+        )
+
+        val relation3 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Phone",
+            format = Relation.Format.PHONE,
+            source = Relation.Source.values().random()
+        )
+
+        val relation4 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Website",
+            format = Relation.Format.URL,
+            source = Relation.Source.values().random()
+        )
+
+        val relation5 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Email",
+            format = Relation.Format.EMAIL,
+            source = Relation.Source.values().random()
+        )
+
+        val value1 = "Anytype"
+        val value2 = "2021"
+        val value3 = "+00000000000"
+        val value4 = "https://chrono.app/"
+        val value5 = "team@chrono.app"
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to value1,
+                        relation2.key to value2,
+                        relation3.key to value3,
+                        relation4.key to value4,
+                        relation5.key to value5,
+                    )
+                )
+        )
+
+        val block1 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation1.key)
+        )
+
+        val block2 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation2.key)
+        )
+
+        val block3 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation3.key)
+        )
+
+        val block4 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation4.key)
+        )
+
+        val block5 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation5.key)
+        )
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = listOf(block1.id, block2.id, block3.id, block4.id, block5.id),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, paragraph.id)
+        )
+
+        val document =
+            listOf(page, header, title, paragraph, block1, block2, block3, block4, block5)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1, relation2, relation3, relation4, relation5)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            checkIsRecyclerSize(7)
+            onItemView(2, R.id.tvRelationTitle).checkHasPaddingLeft(R.dimen.indent, 1)
+            onItemView(3, R.id.tvRelationTitle).checkHasPaddingLeft(R.dimen.indent, 1)
+            onItemView(4, R.id.tvRelationTitle).checkHasPaddingLeft(R.dimen.indent, 1)
+            onItemView(5, R.id.tvRelationTitle).checkHasPaddingLeft(R.dimen.indent, 1)
+            onItemView(6, R.id.tvRelationTitle).checkHasPaddingLeft(R.dimen.indent, 1)
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldIndentStatusRelationBlockAtTheEnd() {
+
+        val option1 = Relation.Option(
+            id = MockDataFactory.randomUuid(),
+            color = ThemeColor.BLUE.code,
+            text = "In testing"
+        )
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Status",
+            format = Relation.Format.STATUS,
+            source = Relation.Source.values().random(),
+            selections = listOf(option1)
+        )
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to option1.id
+                    )
+                )
+        )
+
+        val block1 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation1.key)
+        )
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = listOf(block1.id),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, paragraph.id)
+        )
+
+        val document = listOf(page, header, title, paragraph, block1)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        with(R.id.recycler.rVMatcher()) {
+            checkIsRecyclerSize(3)
+            onItemView(2, R.id.tvRelationTitle).checkHasPaddingLeft(R.dimen.indent, 1)
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun shouldSelectAllBasicTextRelationBlocks() {
+
+        val relation1 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Company",
+            format = Relation.Format.SHORT_TEXT,
+            source = Relation.Source.values().random()
+        )
+
+        val relation2 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Year",
+            format = Relation.Format.NUMBER,
+            source = Relation.Source.values().random()
+        )
+
+        val relation3 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Phone",
+            format = Relation.Format.PHONE,
+            source = Relation.Source.values().random()
+        )
+
+        val relation4 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Website",
+            format = Relation.Format.URL,
+            source = Relation.Source.values().random()
+        )
+
+        val relation5 = Relation(
+            key = MockDataFactory.randomString(),
+            name = "Email",
+            format = Relation.Format.EMAIL,
+            source = Relation.Source.values().random()
+        )
+
+        val value1 = "Anytype"
+        val value2 = "2021"
+        val value3 = "+00000000000"
+        val value4 = "https://chrono.app/"
+        val value5 = "team@chrono.app"
+
+        val customDetails = ObjectViewDetails(
+            mapOf(
+                root to
+                    mapOf(
+                        "iconEmoji" to DefaultDocumentEmojiIconProvider.DOCUMENT_SET.random(),
+                        relation1.key to value1,
+                        relation2.key to value2,
+                        relation3.key to value3,
+                        relation4.key to value4,
+                        relation5.key to value5,
+                    )
+                )
+        )
+
+        val paragraph = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = StubTextContent(
+                text = "Foo",
+                marks = emptyList(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block1 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation1.key)
+        )
+
+        val block2 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation2.key)
+        )
+
+        val block3 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation3.key)
+        )
+
+        val block4 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation4.key)
+        )
+
+        val block5 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.RelationBlock(key = relation5.key)
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(
+                header.id,
+                paragraph.id,
+                block1.id,
+                block2.id,
+                block3.id,
+                block4.id,
+                block5.id
+            )
+        )
+
+        val document =
+            listOf(page, header, title, paragraph, block1, block2, block3, block4, block5)
+
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubUpdateText()
+        stubAnalytics()
+        stubOpenDocument(
+            document = document,
+            details = customDetails,
+            relations = listOf(relation1, relation2, relation3, relation4, relation5)
+        )
+
+        // TESTING
+
+        launchFragment(args)
+
+        val rvMatcher = R.id.recycler.rVMatcher()
+
+        with(rvMatcher) {
+            checkIsRecyclerSize(7)
+            onItemView(1, R.id.textContent).checkIsNotSelected()
+            onItemView(2, R.id.tvRelationTitle).checkIsNotSelected()
+            onItemView(2, R.id.tvRelationValue).checkIsNotSelected()
+            onItemView(3, R.id.tvRelationTitle).checkIsNotSelected()
+            onItemView(3, R.id.tvRelationValue).checkIsNotSelected()
+            onItemView(4, R.id.tvRelationTitle).checkIsNotSelected()
+            onItemView(4, R.id.tvRelationValue).checkIsNotSelected()
+            onItemView(5, R.id.tvRelationTitle).checkIsNotSelected()
+            onItemView(5, R.id.tvRelationValue).checkIsNotSelected()
+            onItemView(6, R.id.tvRelationTitle).checkIsNotSelected()
+            onItemView(6, R.id.tvRelationValue).checkIsNotSelected()
+        }
+
+        rvMatcher.onItemView(1, R.id.textContent).perform(click())
+
+        onView(withId(R.id.multiSelectModeButton)).perform(click())
+
+        advance(EditorViewModel.DELAY_REFRESH_DOCUMENT_TO_ENTER_MULTI_SELECT_MODE)
+
+        rvMatcher.onItemView(1, R.id.textContent).perform(click())
+        rvMatcher.onItemView(2, R.id.content).perform(click())
+        rvMatcher.onItemView(3, R.id.content).perform(click())
+        rvMatcher.onItemView(4, R.id.content).perform(click())
+        rvMatcher.onItemView(5, R.id.content).perform(click())
+        rvMatcher.onItemView(6, R.id.content).perform(click())
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+
+        with(rvMatcher) {
+            checkIsRecyclerSize(7)
+            onItemView(1, R.id.textContent).checkIsSelected()
+            onItemView(2, R.id.content).checkIsSelected()
+            onItemView(3, R.id.content).checkIsSelected()
+            onItemView(4, R.id.content).checkIsSelected()
+            onItemView(5, R.id.content).checkIsSelected()
+            onItemView(6, R.id.content).checkIsSelected()
+        }
+
+        advance(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    // STUBBING & SETUP
+
+    private fun launchFragment(args: Bundle): FragmentScenario<TestEditorFragment> {
+        return launchFragmentInContainer<TestEditorFragment>(
+            fragmentArgs = args,
+            themeResId = R.style.AppTheme
+        )
+    }
+
+    /**
+     * Moves coroutines clock time.
+     */
+    private fun advance(millis: Long) {
+//        coroutineTestRule.advanceTime(millis)
+    }
+}

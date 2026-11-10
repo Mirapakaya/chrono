@@ -1,0 +1,114 @@
+package com.chronoio.chrono.core_ui.features.editor.holders.`interface`
+
+import android.view.Gravity
+import android.view.View
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_ui.extensions.setTextColor
+import com.chronoio.chrono.core_ui.widgets.text.TextInputWidget
+import com.chronoio.chrono.core_utils.ext.isCaretAt
+import com.chronoio.chrono.core_utils.text.BackspaceKeyDetector
+import com.chronoio.chrono.presentation.editor.editor.model.Alignment
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.editor.model.Focusable
+import timber.log.Timber
+
+/**
+ * Provides contract and default implementation for for editable blocks' common behavior.
+ * @see [BlockView.Text], [BlockView.Title], [BlockView.Code]
+ */
+interface TextHolder {
+
+    /**
+     * Block's parent view.
+     */
+    val root: View
+
+    /**
+     * Block's content widget.
+     * Common behavior is applied to this widget.
+     */
+    val content: TextInputWidget
+
+    val selectionView: View
+
+    fun setCursor(item: BlockView.Cursor) {
+        Timber.d("Setting cursor: $item")
+        item.cursor?.let { cursor ->
+            val length = content.text?.length ?: 0
+            val validCursor = cursor.coerceIn(0, length)
+            if (length > 0 && validCursor <= length) {
+                // Moving the caret to where it already is would notify the IME about a
+                // selection change it did not ask for, which can end an in-progress
+                // composition. Rebinds routinely re-apply an unchanged cursor.
+                if (!content.isCaretAt(validCursor)) {
+                    content.setSelection(validCursor)
+                }
+            } else {
+                Timber.w("Invalid cursor position: cursor=$cursor, textLength=$length")
+            }
+        }
+    }
+
+    fun setAlignment(alignment: Alignment) {
+        content.gravity = when (alignment) {
+            Alignment.START -> Gravity.START
+            Alignment.CENTER -> Gravity.CENTER
+            Alignment.END -> Gravity.END
+        }
+    }
+
+    fun setTextColor(color: ThemeColor) {
+        content.setTextColor(color)
+    }
+
+    fun setTextColor(color: Int) {
+        content.setTextColor(color)
+    }
+
+    fun enableReadMode() {
+        content.enableReadMode()
+        //content.selectionWatcher = null
+    }
+
+    fun enableEditMode() {
+        content.enableEditMode()
+    }
+
+    fun select(item: BlockView.Selectable) {
+        selectionView.isSelected = item.isSelected
+    }
+
+    fun setFocus(item: Focusable) {
+        if (item.isFocused) {
+            focus()
+        } else {
+            content.clearFocus()
+        }
+    }
+
+    fun focus() {
+        Timber.d("Requesting focus")
+        content.apply {
+            this.setFocus()
+        }
+    }
+
+    fun enableBackspaceDetector(
+        onEmptyBlockBackspaceClicked: () -> Unit,
+        onNonEmptyBlockBackspaceClicked: () -> Unit
+    ) {
+        content.setOnKeyListener(
+            BackspaceKeyDetector {
+                if (content.text.toString().isEmpty()) {
+                    onEmptyBlockBackspaceClicked()
+                } else {
+                    onNonEmptyBlockBackspaceClicked()
+                }
+            }
+        )
+    }
+
+    fun setTextInputClickListener(onTextInputClicked: () -> Unit) {
+        content.setOnClickListener { onTextInputClicked() }
+    }
+}

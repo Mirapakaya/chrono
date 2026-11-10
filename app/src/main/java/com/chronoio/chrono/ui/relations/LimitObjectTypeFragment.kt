@@ -1,0 +1,154 @@
+package com.chronoio.chrono.ui.relations
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.features.relations.ObjectTypeAddAdapter
+import com.chronoio.chrono.core_ui.reactive.textChanges
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetFragment
+import com.chronoio.chrono.databinding.FragmentObjectTypeChangeBinding
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.di.feature.DefaultComponentParam
+import com.chronoio.chrono.presentation.relations.LimitObjectTypeViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+
+class LimitObjectTypeFragment : BaseBottomSheetFragment<FragmentObjectTypeChangeBinding>() {
+
+    private val ctx get() = arg<Id>(CTX_KEY)
+    private val space get() = arg<Id>(SPACE_KEY)
+    private val flow get() = arg<Id>(FLOW_TYPE)
+
+    private val objectTypeAdapter = ObjectTypeAddAdapter {
+        vm.onObjectTypeClicked(it)
+    }
+
+    private val vm by viewModels<LimitObjectTypeViewModel> { factory }
+
+    @Inject
+    lateinit var factory: LimitObjectTypeViewModel.Factory
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        binding.recycler.apply {
+            adapter = objectTypeAdapter
+            layoutManager = LinearLayoutManager(context)
+        }
+        binding.btnBottom.visible()
+        binding.btnBottom.setOnClickListener {
+            vm.onAddClicked()
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    binding
+                        .searchObjectTypeInput
+                        .textChanges()
+                        .collect {
+                            vm.onSearchInputChanged(it.toString())
+                        }
+                }
+                launch {
+                    vm.views.collectLatest {
+                        objectTypeAdapter.submitList(it)
+                    }
+                }
+                launch {
+                    vm.count.collectLatest {
+                        binding.btnBottom.setNumber(it.toString())
+                    }
+                }
+                launch {
+                    vm.isDismissed.collectLatest { isDismissed ->
+                        if (isDismissed) dismiss()
+                    }
+                }
+            }
+        }
+        expand()
+    }
+
+    override fun injectDependencies() {
+        val param = DefaultComponentParam(
+            ctx = ctx,
+            space = SpaceId(space)
+        )
+        when(flow) {
+            FLOW_OBJECT -> {
+                componentManager().limitObjectTypeObjectComponent.get(param).inject(this)
+            }
+            FLOW_DV -> {
+                componentManager().limitObjectTypeDataViewComponent.get(param).inject(this)
+            }
+            FLOW_BLOCK -> {
+                componentManager().limitObjectTypeBlockComponent.get(param).inject(this)
+            }
+            FLOW_LIBRARY -> {
+                componentManager().limitObjectTypeLibraryComponent.get(ctx).inject(this)
+            }
+            FLOW_SET_OR_COLLECTION -> {
+                componentManager().limitObjectTypeSetOrCollectionComponent.get(param).inject(this)
+            }
+        }
+    }
+
+    override fun releaseDependencies() {
+        when(flow) {
+            FLOW_OBJECT -> {
+                componentManager().limitObjectTypeObjectComponent.release()
+            }
+            FLOW_DV -> {
+                componentManager().limitObjectTypeDataViewComponent.release()
+            }
+            FLOW_BLOCK -> {
+                componentManager().limitObjectTypeBlockComponent.release()
+            }
+            FLOW_LIBRARY -> {
+                componentManager().limitObjectTypeLibraryComponent.release()
+            }
+            FLOW_SET_OR_COLLECTION -> {
+                componentManager().limitObjectTypeSetOrCollectionComponent.release()
+            }
+        }
+    }
+
+    override fun inflateBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?
+    ): FragmentObjectTypeChangeBinding = FragmentObjectTypeChangeBinding.inflate(
+        inflater, container, false
+    )
+
+    companion object {
+        private const val CTX_KEY = "arg.limit-object-type.ctx"
+        private const val SPACE_KEY = "arg.limit-object-type.space"
+        private const val FLOW_TYPE = "arg.limit-object-type.flow"
+        const val FLOW_OBJECT = "arg.limit-object-type.flow-object"
+        const val FLOW_SET_OR_COLLECTION = "arg.limit-object-type.flow-set-or-collection"
+        const val FLOW_LIBRARY = "arg.limit-object-type.flow-library"
+        const val FLOW_DV = "arg.limit-object-type.flow-dv"
+        const val FLOW_BLOCK = "arg.limit-object-type.flow-block"
+
+        fun args(
+            ctx: Id,
+            space: Id,
+            flow: String
+        ) = bundleOf(
+            CTX_KEY to ctx,
+            SPACE_KEY to space,
+            FLOW_TYPE to flow
+        )
+    }
+}

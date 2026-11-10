@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <View
+            android:id="@+id/dragger"
+            android:layout_width="48dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:background="@drawable/dragger" />
+
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/scrollView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            app:layout_constraintBottom_toTopOf="@id/rvContainer"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <LinearLayout
+                android:id="@+id/lvOptions"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuDescriptionItem
+                    android:id="@+id/optionDescription"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_obj_settings_description_24"
+                    app:title="@string/description" />
+
+                <View
+                    android:id="@+id/descriptionDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuTemplateNamePrefillItem
+                    android:id="@+id/optionTemplateNamePrefill"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+
+                <View
+                    android:id="@+id/templateNamePrefillDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary"
+                    android:visibility="gone" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/optionIcon"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_obj_settings_icon_24"
+                    app:title="@string/icon" />
+
+                <View
+                    android:id="@+id/iconDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/optionCover"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_obj_settings_cover_24"
+                    app:subtitle="@string/cover_description"
+                    app:title="@string/cover" />
+
+                <View
+                    android:id="@+id/coverDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/optionRelations"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_properties_purple_24"
+                    app:title="@string/properties" />
+
+                <View
+                    android:id="@+id/relationsDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/publishToWeb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_object_menu_publish_to_web"
+                    app:title="@string/publish_to_web" />
+
+                <View
+                    android:id="@+id/publishToWebDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/optionHistory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_obj_settings_history_24"
+                    app:title="@string/history" />
+
+                <View
+                    android:id="@+id/historyDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/objectDiagnostics"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    app:icon="@drawable/ic_object_menu_diagnostics"
+                    app:title="@string/object_diagnostics" />
+
+                <View
+                    android:id="@+id/objectDiagnosticsDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/debugGoroutines"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_object_menu_debug_goroutines"
+                    app:title="Debug Goroutines"
+                    tools:visibility="visible" />
+
+                <View
+                    android:id="@+id/debugGoroutinesDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:background="@color/shape_primary"
+                    android:visibility="gone" />
+
+                <com.chronoio.chrono.core_ui.widgets.ObjectMenuItemWidget
+                    android:id="@+id/objectLayoutConflict"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/default_ripple"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_attention_24"
+                    app:showArrow="false"
+                    app:title="@string/object_conflict_menu_item_title"
+                    tools:visibility="visible" />
+
+            </LinearLayout>
+
+        </androidx.core.widget.NestedScrollView>
+
+        <FrameLayout
+            android:id="@+id/rvContainer"
+            android:layout_width="match_parent"
+            android:layout_height="108dp"
+            android:layout_marginTop="12dp"
+            android:layout_weight="0">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvActions"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center_vertical" />
+
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
+
+        <View
+            android:id="@+id/anchor"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+    </LinearLayout>
+
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/objectLayoutConflictScreen"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal" />
+
+</FrameLayout>

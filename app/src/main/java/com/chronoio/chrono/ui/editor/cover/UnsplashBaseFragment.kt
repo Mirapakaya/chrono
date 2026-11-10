@@ -1,0 +1,184 @@
+package com.chronoio.chrono.ui.editor.cover
+
+import android.graphics.Rect
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.EditText
+import androidx.core.os.bundleOf
+import androidx.core.widget.doAfterTextChanged
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.features.cover.UnsplashImageAdapter
+import com.chronoio.chrono.core_ui.features.editor.modal.DocCoverGalleryAdapter
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.dimen
+import com.chronoio.chrono.core_utils.ext.gone
+import com.chronoio.chrono.core_utils.ext.invisible
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetTextInputFragment
+import com.chronoio.chrono.databinding.FragmentUnsplashBinding
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.di.feature.DefaultComponentParam
+import com.chronoio.chrono.presentation.editor.cover.UnsplashViewModel
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+abstract class UnsplashBaseFragment : BaseBottomSheetTextInputFragment<FragmentUnsplashBinding>() {
+
+    val ctx get() = arg<String>(CTX_KEY)
+    val space get() = arg<String>(SPACE_KEY)
+
+    override val textInput: EditText get() = binding.searchToolbar.binding.filterInputField
+
+    @Inject
+    lateinit var factory: UnsplashViewModel.Factory
+
+    private val vm by viewModels<UnsplashViewModel> { factory }
+
+    private val unsplashImageAdapter by lazy {
+        UnsplashImageAdapter(
+            onImageClicked = { img ->
+                vm.onImageSelected(ctx = ctx, img = img)
+            }
+        )
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val spacing = requireContext().dimen(R.dimen.cover_gallery_item_spacing).toInt()
+        binding.unsplashRecycler.apply {
+            adapter = unsplashImageAdapter
+            layoutManager = GridLayoutManager(context, 2)
+            addItemDecoration(
+                object : RecyclerView.ItemDecoration() {
+                    override fun getItemOffsets(
+                        outRect: Rect,
+                        view: View,
+                        parent: RecyclerView,
+                        state: RecyclerView.State
+                    ) {
+                        val position = parent.getChildAdapterPosition(view)
+                        val holder = parent.findViewHolderForLayoutPosition(position)
+                        if (holder !is DocCoverGalleryAdapter.ViewHolder.Header) {
+                            outRect.left = spacing
+                            outRect.right = spacing
+                            outRect.top = spacing * 2
+                            outRect.bottom = 0
+                        }
+                    }
+                }
+            )
+        }
+        binding.searchToolbar.binding.filterInputField.doAfterTextChanged {
+            vm.onQueryChanged(it.toString())
+        }
+        lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    vm.isCompleted.collect { isCompleted ->
+                        if (isCompleted) onCompleted()
+                    }
+                }
+                launch {
+                    vm.isFailed.collect { isFailed ->
+                        if (isFailed) binding.tvError.visible() else binding.tvError.gone()
+                    }
+                }
+                launch {
+                    vm.images.collect { unsplashImageAdapter.submitList(it) }
+                }
+                launch {
+                    vm.isLoading.collect { isLoading ->
+                        if (isLoading)
+                            binding.searchToolbar.binding.progressBar.visible()
+                        else
+                            binding.searchToolbar.binding.progressBar.invisible()
+                    }
+                }
+            }
+        }
+    }
+
+    abstract fun onCompleted()
+
+    override fun inflateBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?
+    ): FragmentUnsplashBinding = FragmentUnsplashBinding.inflate(
+        inflater, container, false
+    )
+
+    companion object {
+        private const val CTX_KEY = "arg.object.cover.unsplash.ctx"
+        private const val SPACE_KEY = "arg.object.cover.unsplash.space"
+
+        fun args(
+            ctx: Id,
+            space: Id
+        ) = bundleOf(
+            CTX_KEY to ctx,
+            SPACE_KEY to space
+        )
+    }
+}
+
+class ObjectUnsplashFragment : UnsplashBaseFragment() {
+    override fun injectDependencies() {
+        componentManager()
+            .objectUnsplashComponent
+            .get(
+                params = DefaultComponentParam(
+                    ctx = ctx,
+                    space = SpaceId(space)
+                )
+            )
+            .inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().objectUnsplashComponent.release()
+    }
+
+    override fun onCompleted() {
+        findNavController().popBackStack(
+            R.id.pageScreen,
+            false
+        )
+    }
+}
+
+class ObjectSetUnsplashFragment : UnsplashBaseFragment() {
+
+    override fun onCompleted() {
+        findNavController().popBackStack(
+            R.id.objectSetScreen,
+            false
+        )
+    }
+
+    override fun injectDependencies() {
+        componentManager()
+            .objectSetUnsplashComponent
+            .get(
+                params = DefaultComponentParam(
+                    ctx = ctx,
+                    space = SpaceId(space)
+                )
+            )
+            .inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().objectSetUnsplashComponent.release()
+    }
+}

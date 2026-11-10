@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Anytype is an Android client for a local-first, block-based collaborative workspace. The app uses Clean Architecture with sophisticated modular design, Jetpack Compose (hybrid with traditional Views), and integrates with a Go backend via JNI middleware.
+Chrono is an Android client for a local-first, block-based collaborative workspace. The app uses Clean Architecture with sophisticated modular design, Jetpack Compose (hybrid with traditional Views), and integrates with a Go backend via JNI middleware.
 
 ## Common Development Commands
 

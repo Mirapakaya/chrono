@@ -1,0 +1,2116 @@
+package com.chronoio.chrono.core_ui
+
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListUpdateCallback
+import com.chronoio.chrono.core_models.RelationFormat
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Companion.CALLOUT_ICON_CHANGED
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Companion.DECORATION_CHANGED
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Companion.MARKUP_CHANGED
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Companion.TABLE_CELLS_CHANGED
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Companion.TABLE_CELLS_SELECTION_CHANGED
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Companion.TEXT_CHANGED
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil.Payload
+import com.chronoio.chrono.core_ui.features.editor.diffSnapshot
+import com.chronoio.chrono.presentation.editor.editor.Markup
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.presentation.relations.ObjectRelationView
+import com.chronoio.chrono.presentation.sets.model.FileView
+import com.chronoio.chrono.presentation.sets.model.ObjectView
+import com.chronoio.chrono.presentation.sets.model.StatusView
+import com.chronoio.chrono.presentation.sets.model.TagView
+import com.chronoio.chrono.test_utils.MockDataFactory
+import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+class BlockViewDiffUtilTest {
+
+    @Test
+    fun `two blocks should be considered different based on their id`() {
+
+        val index = 0
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = MockDataFactory.randomUuid(),
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock = oldBlock.copy(id = MockDataFactory.randomUuid())
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        assertEquals(expected = false, actual = diff.areItemsTheSame(index, index))
+    }
+
+    @Test
+    fun `two blocks should be considered the same by their id but different by their content`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString()
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        assertEquals(expected = true, actual = diff.areItemsTheSame(index, index))
+        assertEquals(expected = false, actual = diff.areContentsTheSame(index, index))
+    }
+
+    @Test
+    fun `two blocks should be considered different based only on their UI-representation`() {
+
+        val index = 0
+        val indent = 0
+
+        val id = MockDataFactory.randomUuid()
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            indent = indent
+        )
+
+        val newBlock = BlockView.Text.Header.One(
+            id = id,
+            text = text,
+            indent = indent
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        assertEquals(expected = true, actual = diff.areItemsTheSame(index, index))
+        assertEquals(expected = false, actual = diff.areContentsTheSame(index, index))
+    }
+
+    @Test
+    fun `should return change payload containing only marks because text did not change`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            marks = emptyList()
+        )
+
+        val newBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            marks = listOf(
+                Markup.Mark.Bold(
+                    from = MockDataFactory.randomInt(),
+                    to = MockDataFactory.randomInt()
+                )
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(MARKUP_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should return change payload containing only text because marks did not change`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val marks = listOf(
+            Markup.Mark.Bold(
+                from = MockDataFactory.randomInt(),
+                to = MockDataFactory.randomInt()
+            )
+        )
+
+        val oldBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString(),
+            marks = marks
+        )
+
+        val newBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString(),
+            marks = marks
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(TEXT_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should return change payload containing text and marks because both changed`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString(),
+            marks = emptyList()
+        )
+
+        val newBlock: BlockView = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString(),
+            marks = listOf(
+                Markup.Mark.Bold(
+                    from = MockDataFactory.randomInt(),
+                    to = MockDataFactory.randomInt()
+                )
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(TEXT_CHANGED, MARKUP_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should return empty payload if types differ`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val indent = 0
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock: BlockView = BlockView.Text.Header.One(
+            id = id,
+            text = text,
+            indent = indent
+        )
+
+        val newBlock: BlockView = BlockView.Text.Header.One(
+            id = id,
+            text = text,
+            indent = indent
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertNull(actual = payload)
+    }
+
+    @Test
+    fun `there should be a number change detected`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Numbered(
+            id = id,
+            text = text,
+            marks = emptyList(),
+            number = 1,
+            isFocused = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            number = 2
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.NUMBER_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should return change payload containing background-color update`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            marks = emptyList(),
+            isFocused = MockDataFactory.randomBoolean()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            background = ThemeColor.BLUE
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.BACKGROUND_COLOR_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect indent change for a paragraph`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            marks = emptyList(),
+            indent = 0,
+            isFocused = MockDataFactory.randomBoolean()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            indent = 1
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.INDENT_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect toggle empty state change for a paragraph`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Toggle(
+            id = id,
+            text = text,
+            marks = emptyList(),
+            indent = 0,
+            isFocused = MockDataFactory.randomBoolean(),
+            isEmpty = true
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isEmpty = false
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.TOGGLE_EMPTY_STATE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect toggle state change`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Toggle(
+            id = id,
+            text = text,
+            toggled = false
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            toggled = true
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.TOGGLE_STATE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect focus change for title block`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Title.Basic(
+            id = id,
+            text = text,
+            isFocused = false
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isFocused = true
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.FOCUS_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect read-write mode changes in paragraph`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            mode = BlockView.Mode.EDIT
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            mode = BlockView.Mode.READ
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.READ_WRITE_MODE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect read-write mode changes in title`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Title.Basic(
+            id = id,
+            text = text,
+            mode = BlockView.Mode.EDIT,
+            isFocused = false
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            mode = BlockView.Mode.READ
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.READ_WRITE_MODE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect read-write mode changes in description`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Description(
+            id = id,
+            text = text,
+            mode = BlockView.Mode.EDIT
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            mode = BlockView.Mode.READ
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.READ_WRITE_MODE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect selection changes in paragraph`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            text = text,
+            isSelected = true
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isSelected = false
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.SELECTION_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect selection changes in file view`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Media.File(
+            id = id,
+            targetObjectId = MockDataFactory.randomString(),
+            indent = MockDataFactory.randomInt(),
+            mime = MockDataFactory.randomString(),
+            size = MockDataFactory.randomLong(),
+            name = MockDataFactory.randomString(),
+            url = MockDataFactory.randomString(),
+            isSelected = false
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isSelected = true
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.SELECTION_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect selection changes in page view`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.LinkToObject.Default.Text(
+            id = id,
+            indent = MockDataFactory.randomInt(),
+            isSelected = false,
+            icon = ObjectIcon.None
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isSelected = true
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.SELECTION_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect selection changes in bookmark view`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Media.Bookmark(
+            id = id,
+            targetObjectId = MockDataFactory.randomString(),
+            description = MockDataFactory.randomString(),
+            faviconUrl = MockDataFactory.randomString(),
+            imageUrl = MockDataFactory.randomString(),
+            indent = MockDataFactory.randomInt(),
+            title = MockDataFactory.randomString(),
+            url = MockDataFactory.randomString(),
+            isSelected = false,
+            isPreviousBlockMedia = false
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isSelected = true
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.SELECTION_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect cursor change in paragraph view`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            text = MockDataFactory.randomString(),
+            cursor = null
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            cursor = 2
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.CURSOR_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect cursor change in title view`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Title.Basic(
+            id = id,
+            text = MockDataFactory.randomString(),
+            cursor = null,
+            isFocused = true
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            cursor = 2
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.CURSOR_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect icon change in page title block`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Title.Basic(
+            id = id,
+            text = MockDataFactory.randomString(),
+            image = MockDataFactory.randomUuid()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            image = null,
+            emoji = MockDataFactory.randomUuid()
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.TITLE_ICON_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect icon change in profile title block`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Title.Profile(
+            id = id,
+            text = MockDataFactory.randomString(),
+            image = MockDataFactory.randomUuid(),
+            isFocused = false
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            image = null,
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.TITLE_ICON_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+//    @Test
+//    fun `should detect loading-state change in link block`() {
+//
+//        val index = 0
+//
+//        val id = MockDataFactory.randomUuid()
+//
+//        val oldBlock = BlockView.LinkToObject.Loading(
+//            id = id
+//        )
+//
+//        val newBlock: BlockView = oldBlock.copy(
+//            isLoading = false
+//        )
+//
+//        val old = listOf(oldBlock)
+//
+//        val new = listOf(newBlock)
+//
+//        val diff = BlockViewDiffUtil(old = old, new = new)
+//
+//        val payload = diff.getChangePayload(index, index)
+//
+//        val expected = Payload(
+//            changes = listOf(BlockViewDiffUtil.LOADING_STATE_CHANGED)
+//        )
+//
+//        assertEquals(
+//            expected = expected,
+//            actual = payload
+//        )
+//    }
+
+    @Test
+    fun `should detect search highlight changes in paragraph block`() {
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = id,
+            searchFields = emptyList(),
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            searchFields = listOf(
+                BlockView.Searchable.Field(
+                    key = MockDataFactory.randomString(),
+                    highlights = listOf(1..2, 1..3),
+                    target = IntRange.EMPTY
+                )
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.SEARCH_HIGHLIGHT_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect checkbox change for todo-layout title block`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+
+        val text = MockDataFactory.randomString()
+
+        val oldBlock = BlockView.Title.Todo(
+            id = id,
+            text = text,
+            isChecked = true
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            isChecked = false
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.TITLE_CHECKBOX_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect latex changes`() {
+
+        val index = 0
+
+        val oldBlock = BlockView.Latex(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            latex = MockDataFactory.randomString(),
+            indent = MockDataFactory.randomInt()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            latex = MockDataFactory.randomString()
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.LATEX_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in the name of the relation`() {
+
+        val index = 0
+
+        val view = ObjectRelationView.Default(
+            id = MockDataFactory.randomUuid(),
+            key = Relations.TYPE,
+            value = null,
+            format = RelationFormat.values().random(),
+            name = MockDataFactory.randomString(),
+            system = false,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = view,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = view.copy(
+                name = MockDataFactory.randomString()
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_NAME_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in default relation value`() {
+
+        val index = 0
+
+        val view = ObjectRelationView.Default(
+            id = MockDataFactory.randomUuid(),
+            key = Relations.TYPE,
+            value = null,
+            format = RelationFormat.values().random(),
+            name = MockDataFactory.randomString(),
+            system = false,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = view,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = view.copy(
+                value = MockDataFactory.randomString()
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_VALUE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in checkbox relation value`() {
+
+        val index = 0
+
+        val view = ObjectRelationView.Checkbox(
+            id = MockDataFactory.randomUuid(),
+            key = Relations.TYPE,
+            name = MockDataFactory.randomString(),
+            isChecked = MockDataFactory.randomBoolean(),
+            system = false,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = view,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = view.copy(
+                isChecked = !view.isChecked
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_VALUE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in status relation value`() {
+
+        val index = 0
+
+        val oldStatus = StatusView(
+            id = MockDataFactory.randomUuid(),
+            status = MockDataFactory.randomUuid(),
+            color = ""
+        )
+
+        val newStatus = StatusView(
+            id = MockDataFactory.randomUuid(),
+            status = MockDataFactory.randomUuid(),
+            color = ""
+        )
+
+        val oldView = ObjectRelationView.Status(
+            id = MockDataFactory.randomUuid(),
+            key = Relations.TYPE,
+            name = MockDataFactory.randomString(),
+            status = listOf(oldStatus),
+            system = false,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = oldView,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = oldView.copy(
+                status = listOf(newStatus)
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_VALUE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in tag relation value`() {
+
+        val index = 0
+
+        val oldTag = TagView(
+            id = MockDataFactory.randomUuid(),
+            tag = MockDataFactory.randomString(),
+            color = ""
+        )
+
+        val newTag = TagView(
+            id = MockDataFactory.randomUuid(),
+            tag = MockDataFactory.randomString(),
+            color = ""
+        )
+
+        val oldView = ObjectRelationView.Tags(
+            id = MockDataFactory.randomUuid(),
+            key = Relations.TYPE,
+            name = MockDataFactory.randomString(),
+            tags = listOf(oldTag),
+            system = true,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = oldView,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = oldView.copy(
+                tags = listOf(newTag)
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_VALUE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in object relation value`() {
+
+        val index = 0
+
+        val oldObject = ObjectView.Default(
+            id = MockDataFactory.randomUuid(),
+            name = MockDataFactory.randomString(),
+            types = emptyList(),
+            icon = ObjectIcon.None
+        )
+
+        val newObject = oldObject.copy(
+            name = MockDataFactory.randomString()
+        )
+
+        val oldView = ObjectRelationView.Object(
+            id = MockDataFactory.randomUuid(),
+            key = Relations.TYPE,
+            name = MockDataFactory.randomString(),
+            objects = listOf(oldObject),
+            system = true,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = oldView,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = oldView.copy(
+                objects = listOf(newObject)
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_VALUE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should detect changes in file-relation value`() {
+
+        val index = 0
+
+        val oldFile = FileView(
+            id = MockDataFactory.randomUuid(),
+            name = MockDataFactory.randomString(),
+            mime = MockDataFactory.randomString(),
+            ext = MockDataFactory.randomString(),
+            icon = ObjectIcon.File(null, null)
+        )
+
+        val newFile = oldFile.copy(
+            name = MockDataFactory.randomString()
+        )
+
+        val oldView = ObjectRelationView.File(
+            key = MockDataFactory.randomUuid(),
+            id = MockDataFactory.randomUuid(),
+            name = MockDataFactory.randomString(),
+            files = listOf(oldFile),
+            system = false,
+            readOnly = false
+        )
+
+        val oldBlock = BlockView.Relation.Related(
+            id = MockDataFactory.randomUuid(),
+            isSelected = MockDataFactory.randomBoolean(),
+            indent = MockDataFactory.randomInt(),
+            view = oldView,
+            decorations = emptyList()
+        )
+
+        val newBlock: BlockView = oldBlock.copy(
+            view = oldView.copy(
+                files = listOf(newFile)
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        val expected = Payload(
+            changes = listOf(BlockViewDiffUtil.RELATION_VALUE_CHANGED)
+        )
+
+        assertEquals(
+            expected = expected,
+            actual = payload
+        )
+    }
+
+    @Test
+    fun `should return text change payload for title basic`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+        val newText = MockDataFactory.randomString()
+
+        val oldBlock: BlockView = BlockView.Title.Basic(
+            id = id,
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock: BlockView = BlockView.Title.Basic(
+            id = id,
+            text = newText
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(TEXT_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should return text change payload for title todo`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+        val newText = MockDataFactory.randomString()
+
+        val oldBlock: BlockView = BlockView.Title.Todo(
+            id = id,
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock: BlockView = BlockView.Title.Todo(
+            id = id,
+            text = newText
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(TEXT_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should return text change payload for title profile`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+        val newText = MockDataFactory.randomString()
+
+        val oldBlock: BlockView = BlockView.Title.Profile(
+            id = id,
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock: BlockView = BlockView.Title.Profile(
+            id = id,
+            text = newText
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(TEXT_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should return text change payload for title archive`() {
+
+        val index = 0
+
+        val id = MockDataFactory.randomUuid()
+        val newText = MockDataFactory.randomString()
+
+        val oldBlock: BlockView = BlockView.Title.Archive(
+            id = id,
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock: BlockView = BlockView.Title.Archive(
+            id = id,
+            text = newText
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(TEXT_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should detect decoration change for paragraph`() {
+        val index = 0
+
+        val oldBlock = StubParagraphView(
+            decorations = listOf(
+                BlockView.Decoration(
+                    background = ThemeColor.DEFAULT
+                )
+            )
+        )
+
+        val newBlock = oldBlock.copy(
+            decorations = listOf(
+                BlockView.Decoration(
+                    background = ThemeColor.YELLOW
+                )
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(DECORATION_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should not detect decoration change for paragraph`() {
+        val index = 0
+
+        val oldBlock = StubParagraphView(
+            decorations = listOf(
+                BlockView.Decoration(
+                    background = ThemeColor.DEFAULT
+                )
+            )
+        )
+
+        val newBlock = oldBlock.copy(
+            decorations = listOf(
+                BlockView.Decoration(
+                    background = ThemeColor.DEFAULT
+                )
+            )
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = null
+        )
+    }
+
+    @Test
+    fun `should detect icon change for callout`() {
+        val index = 0
+
+        val oldBlock = StubCalloutView(
+            icon = ObjectIcon.Basic.Emoji("stub")
+        )
+
+        val newBlock = oldBlock.copy(
+            icon = ObjectIcon.None
+        )
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = Payload(listOf(CALLOUT_ICON_CHANGED))
+        )
+    }
+
+    @Test
+    fun `should not detect icon change for callout`() {
+        val index = 0
+
+        val oldBlock = StubCalloutView(
+            icon = ObjectIcon.Basic.Emoji("stub")
+        )
+
+        val newBlock = oldBlock
+
+        val old = listOf(oldBlock)
+
+        val new = listOf(newBlock)
+
+        val diff = BlockViewDiffUtil(old = old, new = new)
+
+        val payload = diff.getChangePayload(index, index)
+
+        assertEquals(
+            actual = payload,
+            expected = null
+        )
+    }
+
+    @Test
+    fun `when two table blocks are equal - should be no payloads`() {
+        //SETUP
+        val index = 0
+        val tableId = MockDataFactory.randomUuid()
+        val oldBlock = StubTwoRowsThreeColumnsSimpleTable(tableId = tableId)
+        val newBlock = oldBlock
+
+        //TESTING
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+        val payload = diff.getChangePayload(index, index)
+
+        //ASSERT
+        assertEquals(
+            actual = payload,
+            expected = null
+        )
+    }
+
+    @Test
+    fun `when two table blocks have different texts in cell - should be table cells changed payload`() {
+        //SETUP
+        val tableId = MockDataFactory.randomUuid()
+        val oldBlock = StubTwoRowsThreeColumnsSimpleTable(tableId = tableId)
+        val oldCells = oldBlock.cells
+        val newCells = oldCells.mapIndexed { index, cell ->
+            if (index == 0) cell.copy(
+                block = cell.block?.copy(text = MockDataFactory.randomString())
+            ) else {
+                cell
+            }
+        }
+        val newBlock = oldBlock.copy(cells = newCells)
+
+        //TESTING
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+        val payload = diff.getChangePayload(0, 0)
+
+        //EXPECTED
+        val expectedPayloads = Payload(listOf(TABLE_CELLS_CHANGED))
+
+        //ASSERT
+        assertEquals(
+            actual = payload,
+            expected = expectedPayloads
+        )
+    }
+
+    @Test
+    fun `when two table blocks have different tabs - should be table cells selection changed payload`() {
+        //SETUP
+        val tableId = MockDataFactory.randomUuid()
+        val oldBlock = StubTwoRowsThreeColumnsSimpleTable(
+            tableId = tableId,
+            tab = BlockView.Table.Tab.CELL
+        )
+        val newBlock = oldBlock.copy(
+            tab = BlockView.Table.Tab.ROW
+        )
+
+        //TESTING
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+        val payload = diff.getChangePayload(0, 0)
+
+        //EXPECTED
+        val expectedPayloads = Payload(listOf(TABLE_CELLS_SELECTION_CHANGED))
+
+        //ASSERT
+        assertEquals(
+            actual = payload,
+            expected = expectedPayloads
+        )
+    }
+
+    @Test
+    fun `when table block have different cells selection state - should be table cells selection changed payload`() {
+        //SETUP
+        val tableId = MockDataFactory.randomUuid()
+        val rowId1 = MockDataFactory.randomUuid()
+        val columnId1 = MockDataFactory.randomUuid()
+        val columnId2 = MockDataFactory.randomUuid()
+
+        val oldBlock = StubTwoRowsThreeColumnsSimpleTable(
+            tableId = tableId,
+            rowId1 = rowId1,
+            columnId1 = columnId1,
+            columnId2 = columnId2,
+            tab = BlockView.Table.Tab.CELL,
+            selectedCellsIds = listOf("$rowId1-$columnId1")
+        )
+        val newBlock = oldBlock.copy(
+            tab = BlockView.Table.Tab.CELL,
+            selectedCellsIds = listOf("$rowId1-$columnId1", "$rowId1-$columnId2")
+        )
+
+        //TESTING
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+        val payload = diff.getChangePayload(0, 0)
+
+        //EXPECTED
+        val expectedPayloads = Payload(listOf(TABLE_CELLS_SELECTION_CHANGED))
+
+        //ASSERT
+        assertEquals(
+            actual = payload,
+            expected = expectedPayloads
+        )
+    }
+
+    @Test
+    fun `when table block have different row lists - should be nullable payload`() {
+        //SETUP
+        val tableId = MockDataFactory.randomUuid()
+
+        val oldBlock = StubTableView(
+            tableId = tableId,
+            tab = BlockView.Table.Tab.CELL,
+            rowSize = 10,
+            columnSize = 10
+        )
+        val newBlock = StubTableView(
+            tableId = tableId,
+            tab = BlockView.Table.Tab.CELL,
+            rowSize = 11,
+            columnSize = 10
+        )
+
+        //TESTING
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+        val payload = diff.getChangePayload(0, 0)
+
+        //EXPECTED
+        val expectedPayloads = null
+
+        //ASSERT
+        assertEquals(
+            actual = payload,
+            expected = expectedPayloads
+        )
+    }
+
+    @Test
+    fun `when table block have different column lists - should be nullable payload`() {
+        //SETUP
+        val tableId = MockDataFactory.randomUuid()
+
+        val oldBlock = StubTableView(
+            tableId = tableId,
+            tab = BlockView.Table.Tab.CELL,
+            rowSize = 10,
+            columnSize = 10
+        )
+        val newBlock = StubTableView(
+            tableId = tableId,
+            tab = BlockView.Table.Tab.CELL,
+            rowSize = 10,
+            columnSize = 11
+        )
+
+        //TESTING
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+        val payload = diff.getChangePayload(0, 0)
+
+        //EXPECTED
+        val expectedPayloads = null
+
+        //ASSERT
+        assertEquals(
+            actual = payload,
+            expected = expectedPayloads
+        )
+    }
+
+    @Test
+    fun `diff snapshot should not alias table cell paragraphs mutated in place on the main thread`() {
+
+        val tableId = MockDataFactory.randomUuid()
+
+        val table = StubTwoRowsThreeColumnsSimpleTable(tableId = tableId)
+
+        val originalCellBlock = table.cells.first().block!!
+        val originalText = originalCellBlock.text
+
+        val snapshot = listOf<BlockView>(table).diffSnapshot()
+
+        // Simulate the main-thread TextWatcher mutating the live cell instance
+        // (TableEditableCellsAdapter sets text/marks/isFocused in place).
+        originalCellBlock.text = originalText + "typed"
+        originalCellBlock.isFocused = true
+
+        val snapshotCellBlock = (snapshot.first() as BlockView.Table).cells.first().block!!
+
+        assertEquals(expected = originalText, actual = snapshotCellBlock.text)
+        assertEquals(expected = false, actual = snapshotCellBlock.isFocused)
+    }
+
+    //region Block-identity aliases (DROID-4557)
+
+    @Test
+    fun `aliased id swap should be treated as the same item`() {
+
+        val oldId = MockDataFactory.randomUuid()
+        val newId = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(id = oldId, text = "ㅎ", isFocused = true)
+        val newBlock = oldBlock.copy(id = newId)
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(oldBlock),
+            new = listOf(newBlock),
+            aliases = mapOf(oldId to newId)
+        )
+
+        assertEquals(expected = true, actual = diff.areItemsTheSame(0, 0))
+    }
+
+    @Test
+    fun `aliased pair with no other delta should yield an empty but non-null payload`() {
+
+        val oldId = MockDataFactory.randomUuid()
+        val newId = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(id = oldId, text = "ㅎ", isFocused = true)
+        val newBlock = oldBlock.copy(id = newId)
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(oldBlock),
+            new = listOf(newBlock),
+            aliases = mapOf(oldId to newId)
+        )
+
+        // A null payload makes RecyclerView do a full rebind, which re-runs
+        // setText/setSelection on the focused widget and resets the IME composing region.
+        assertEquals(expected = Payload(emptyList()), actual = diff.getChangePayload(0, 0))
+    }
+
+    @Test
+    fun `aliased pair with a text delta should still yield TEXT_CHANGED`() {
+
+        val oldId = MockDataFactory.randomUuid()
+        val newId = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(id = oldId, text = "ㅎ")
+        val newBlock = oldBlock.copy(id = newId, text = "한")
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(oldBlock),
+            new = listOf(newBlock),
+            aliases = mapOf(oldId to newId)
+        )
+
+        assertEquals(
+            expected = Payload(listOf(TEXT_CHANGED)),
+            actual = diff.getChangePayload(0, 0)
+        )
+    }
+
+    @Test
+    fun `alias should be inert when the old id is still present in the new list`() {
+
+        // The trailing-placeholder id is reused across placeholder sessions, so its alias
+        // outlives the swap it described.
+        val virtual = "virtual-trailing-block"
+        val materialized = MockDataFactory.randomUuid()
+
+        val existing = BlockView.Text.Paragraph(id = materialized, text = "한글")
+        val placeholder = BlockView.Text.Paragraph(id = virtual, text = "")
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(existing, placeholder),
+            new = listOf(existing, placeholder),
+            aliases = mapOf(virtual to materialized)
+        )
+
+        // Old placeholder must NOT be matched to the pre-existing materialized row.
+        assertEquals(expected = false, actual = diff.areItemsTheSame(1, 0))
+        assertEquals(expected = true, actual = diff.areItemsTheSame(1, 1))
+    }
+
+    @Test
+    fun `alias should resolve transitively across a chain`() {
+
+        val virtual = "virtual-trailing-block"
+        val materialized = MockDataFactory.randomUuid()
+        val forked = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(id = virtual, text = "ㅎ")
+        val newBlock = oldBlock.copy(id = forked)
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(oldBlock),
+            new = listOf(newBlock),
+            aliases = mapOf(virtual to materialized, materialized to forked)
+        )
+
+        assertEquals(expected = true, actual = diff.areItemsTheSame(0, 0))
+    }
+
+    @Test
+    fun `alias should be dropped when two old rows resolve onto the same new row`() {
+
+        // A chain plus a live placeholder can make both the virtual id and the
+        // materialized id resolve to the same forked id. Matching both to one new row
+        // would break DiffUtil's contract, so neither alias may apply.
+        val virtual = "virtual-trailing-block"
+        val materialized = MockDataFactory.randomUuid()
+        val forked = MockDataFactory.randomUuid()
+
+        val oldPlaceholder = BlockView.Text.Paragraph(id = virtual, text = "")
+        val oldMaterialized = BlockView.Text.Paragraph(id = materialized, text = "ㅎ")
+        val newForked = BlockView.Text.Paragraph(id = forked, text = "ㅎ")
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(oldMaterialized, oldPlaceholder),
+            new = listOf(newForked),
+            aliases = mapOf(virtual to materialized, materialized to forked)
+        )
+
+        assertEquals(expected = false, actual = diff.areItemsTheSame(0, 0))
+        assertEquals(expected = false, actual = diff.areItemsTheSame(1, 0))
+    }
+
+    @Test
+    fun `alias should be inert when the target has not arrived in the new list`() {
+
+        val oldId = MockDataFactory.randomUuid()
+        val newId = MockDataFactory.randomUuid()
+        val unrelated = MockDataFactory.randomUuid()
+
+        val oldBlock = BlockView.Text.Paragraph(id = oldId, text = "ㅎ")
+        val newBlock = BlockView.Text.Paragraph(id = unrelated, text = "ㅎ")
+
+        val diff = BlockViewDiffUtil(
+            old = listOf(oldBlock),
+            new = listOf(newBlock),
+            aliases = mapOf(oldId to newId)
+        )
+
+        assertEquals(expected = false, actual = diff.areItemsTheSame(0, 0))
+    }
+
+    @Test
+    fun `aliased swap should dispatch a change and never a remove plus insert`() {
+
+        // This is the mechanism behind DROID-4557: a remove makes RecyclerView detach the
+        // focused row's View, and ViewGroup.removeDetachedView clears its focus, which
+        // ends the IME composition mid-syllable.
+        val oldId = MockDataFactory.randomUuid()
+        val newId = MockDataFactory.randomUuid()
+        val untouched = BlockView.Text.Paragraph(id = MockDataFactory.randomUuid(), text = "a")
+
+        val oldBlock = BlockView.Text.Paragraph(id = oldId, text = "ㅎ", isFocused = true)
+        val newBlock = oldBlock.copy(id = newId)
+
+        val recorded = mutableListOf<String>()
+        val callback = object : ListUpdateCallback {
+            override fun onInserted(position: Int, count: Int) {
+                recorded += "inserted($position,$count)"
+            }
+
+            override fun onRemoved(position: Int, count: Int) {
+                recorded += "removed($position,$count)"
+            }
+
+            override fun onMoved(fromPosition: Int, toPosition: Int) {
+                recorded += "moved($fromPosition,$toPosition)"
+            }
+
+            override fun onChanged(position: Int, count: Int, payload: Any?) {
+                recorded += "changed($position,$count,$payload)"
+            }
+        }
+
+        DiffUtil
+            .calculateDiff(
+                BlockViewDiffUtil(
+                    old = listOf(untouched, oldBlock),
+                    new = listOf(untouched, newBlock),
+                    aliases = mapOf(oldId to newId)
+                )
+            )
+            .dispatchUpdatesTo(callback)
+
+        assertEquals(
+            expected = listOf("changed(1,1,${Payload(emptyList())})"),
+            actual = recorded
+        )
+    }
+
+    @Test
+    fun `an unaliased swap should dispatch a remove plus insert`() {
+
+        // Baseline: without the alias the same swap tears the focused row down. Guards
+        // against the alias silently becoming a no-op.
+        val untouched = BlockView.Text.Paragraph(id = MockDataFactory.randomUuid(), text = "a")
+        val oldBlock = BlockView.Text.Paragraph(
+            id = MockDataFactory.randomUuid(),
+            text = "ㅎ",
+            isFocused = true
+        )
+        val newBlock = oldBlock.copy(id = MockDataFactory.randomUuid())
+
+        val recorded = mutableListOf<String>()
+        val callback = object : ListUpdateCallback {
+            override fun onInserted(position: Int, count: Int) {
+                recorded += "inserted"
+            }
+
+            override fun onRemoved(position: Int, count: Int) {
+                recorded += "removed"
+            }
+
+            override fun onMoved(fromPosition: Int, toPosition: Int) {
+                recorded += "moved"
+            }
+
+            override fun onChanged(position: Int, count: Int, payload: Any?) {
+                recorded += "changed"
+            }
+        }
+
+        DiffUtil
+            .calculateDiff(
+                BlockViewDiffUtil(
+                    old = listOf(untouched, oldBlock),
+                    new = listOf(untouched, newBlock)
+                )
+            )
+            .dispatchUpdatesTo(callback)
+
+        assertEquals(expected = listOf("removed", "inserted"), actual = recorded)
+    }
+
+    @Test
+    fun `an empty alias map should preserve the default id-only behaviour`() {
+
+        val oldBlock = BlockView.Text.Paragraph(
+            id = MockDataFactory.randomUuid(),
+            text = MockDataFactory.randomString()
+        )
+
+        val newBlock = oldBlock.copy(id = MockDataFactory.randomUuid())
+
+        val diff = BlockViewDiffUtil(old = listOf(oldBlock), new = listOf(newBlock))
+
+        assertEquals(expected = false, actual = diff.areItemsTheSame(0, 0))
+        // Non-aliased pairs must keep the null-payload full-rebind safety net.
+        assertNull(diff.getChangePayload(0, 0))
+    }
+
+    //endregion
+}

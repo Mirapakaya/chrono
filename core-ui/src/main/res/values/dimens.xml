@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <dimen name="default_document_item_padding_start">8dp</dimen>
+    <dimen name="default_document_item_padding_end">8dp</dimen>
+
+    <dimen name="default_toast_top_gravity_offset">16dp</dimen>
+
+    <dimen name="default_toolbar_height">48dp</dimen>
+    <dimen name="default_nav_panel_height">52dp</dimen>
+    <dimen name="default_editor_item_offset">48dp</dimen>
+
+    <!-- Navigation redesign (DROID-4318) -->
+    <dimen name="nav_circular_button_size">44dp</dimen>
+    <dimen name="nav_pill_height">40dp</dimen>
+    <dimen name="nav_pill_horizontal_padding">16dp</dimen>
+    <dimen name="nav_top_toolbar_height">44dp</dimen>
+    <dimen name="nav_fab_button_size">44dp</dimen>
+    <dimen name="nav_fab_margin">16dp</dimen>
+
+    <dimen name="main_bottom_toolbar_icon_width">72dp</dimen>
+    <dimen name="main_bottom_toolbar_icon_height">52dp</dimen>
+
+    <dimen name="default_note_title_offset">72dp</dimen>
+
+    <dimen name="modal_rect_margin_top">6dp</dimen>
+
+    <!-- Item property -->
+    <dimen name="dp_2">2dp</dimen>
+    <dimen name="dp_3">3dp</dimen>
+    <dimen name="dp_4">4dp</dimen>
+    <dimen name="dp_6">6dp</dimen>
+    <dimen name="dp_8">8dp</dimen>
+    <dimen name="dp_10">10dp</dimen>
+    <dimen name="dp_1">1dp</dimen>
+    <dimen name="dp_16">16dp</dimen>
+    <dimen name="dp_12">12dp</dimen>
+    <dimen name="dp_32">32dp</dimen>
+    <dimen name="dp_20">20dp</dimen>
+    <dimen name="dp_24">24dp</dimen>
+    <dimen name="dp_104">104dp</dimen>
+    <dimen name="dp_40">40dp</dimen>
+    <dimen name="dp_46">46dp</dimen>
+    <dimen name="dp_48">48dp</dimen>
+    <dimen name="dp_54">54dp</dimen>
+    <dimen name="dp_64">64dp</dimen>
+    <dimen name="dp_72">72dp</dimen>
+    <dimen name="dp_80">80dp</dimen>
+    <dimen name="dp_51">51dp</dimen>
+    <dimen name="dp_60">60dp</dimen>
+    <dimen name="dp_92">92dp</dimen>
+    <dimen name="dp_102">102dp</dimen>
+    <dimen name="dp_120">120dp</dimen>
+    <dimen name="dp_203">203dp</dimen>
+    <dimen name="dp_443">443dp</dimen>
+
+    <dimen name="roundedTextBorderRadius">4dp</dimen>
+    <dimen name="roundedTextBorderWidth">1dp</dimen>
+
+    <dimen name="cover_gallery_item_spacing">8dp</dimen>
+
+    <dimen name="default_block_type_width">24dp</dimen>
+    <dimen name="block_style_toolbar_circle_size">52dp</dimen>
+    <dimen name="default_document_content_padding_start">12dp</dimen>
+    <dimen name="default_document_content_padding_end">12dp</dimen>
+    <dimen name="default_document_item_margin_top">1dp</dimen>
+    <dimen name="default_document_item_margin_bottom">1dp</dimen>
+    <dimen name="video_default_margin_start">@dimen/dp_8</dimen>
+
+    <dimen name="default_style_color_circle_inner_radius">22dp</dimen>
+    <dimen name="default_style_color_outer_stroke_width">2dp</dimen>
+    <dimen name="default_style_color_slanted_line_height">16dp</dimen>
+
+    <dimen name="mention_span_image_size_default">20dp</dimen>
+    <dimen name="mention_span_image_size_header_three">20dp</dimen>
+    <dimen name="mention_span_image_size_header_two">24dp</dimen>
+    <dimen name="mention_span_image_size_header_one">28dp</dimen>
+    <dimen name="mention_span_image_padding_default">6dp</dimen>
+    <dimen name="mention_span_image_padding_header_three">5dp</dimen>
+    <dimen name="mention_span_image_padding_header_two">7dp</dimen>
+    <dimen name="mention_span_image_padding_header_one">8dp</dimen>
+    <dimen name="mention_span_initials_size_default">13sp</dimen>
+    <dimen name="mention_span_initials_size_header_three">13sp</dimen>
+    <dimen name="mention_span_initials_size_header_two">16sp</dimen>
+    <dimen name="mention_span_initials_size_header_one">19sp</dimen>
+
+    <dimen name="mention_suggester_item_height">56dp</dimen>
+    <dimen name="mention_section_item_height">36dp</dimen>
+    <dimen name="mention_list_padding_top">4dp</dimen>
+    <dimen name="mention_list_padding_bottom">5dp</dimen>
+    <dimen name="mention_divider_height">1dp</dimen>
+
+    <dimen name="viewer_grid_header_width">144dp</dimen>
+
+    <dimen name="dv_viewer_filter_item_height">72dp</dimen>
+    <dimen name="db_viewer_filter_condition_item_height">48dp</dimen>
+    <dimen name="default_dragger_width">48dp</dimen>
+    <dimen name="default_dragger_height">4dp</dimen>
+    <dimen name="dv_grid_cell_height">20dp</dimen>
+    <dimen name="dv_grid_cell_description_height">22dp</dimen>
+    <dimen name="dv_grid_cell_width">144dp</dimen>
+    <dimen name="dv_grid_name_margin_end">16dp</dimen>
+
+    <dimen name="dv_tag_left_right_padding">5dp</dimen>
+
+    <dimen name="relation_view_padding_top">5dp</dimen>
+    <dimen name="relation_view_padding_bottom">7dp</dimen>
+
+    <dimen name="slash_widget_item_height">55dp</dimen>
+    <dimen name="data_view_divider_height">0.5dp</dimen>
+    <dimen name="object_icon_card_emoji_size">28dp</dimen>
+    <dimen name="object_icon_card_rectangle_image_radius">2dp</dimen>
+
+
+    <!-- Object items is full screen lists -->
+    <dimen name="list_item_object_icon_width">48dp</dimen>
+    <dimen name="list_item_object_icon_height">48dp</dimen>
+    <dimen name="list_item_object_icon_margin_start">16dp</dimen>
+    <dimen name="list_item_object_icon_margin_top">10dp</dimen>
+    <dimen name="list_item_object_icon_margin_bottom">10dp</dimen>
+    <dimen name="list_item_object_title_margin_top">13dp</dimen>
+    <dimen name="list_item_object_title_margin_start">80dp</dimen>
+    <dimen name="list_item_object_title_margin_end">20dp</dimen>
+    <dimen name="list_item_object_subtitle_margin_top">34dp</dimen>
+    <dimen name="list_item_object_subtitle_margin_start">16dp</dimen>
+    <dimen name="list_item_object_subtitle_margin_end">16dp</dimen>
+    <dimen name="list_item_object_emoji_size">28dp</dimen>
+    <dimen name="list_item_object_checkbox_size">22dp</dimen>
+    <dimen name="list_item_object_initials_size">28sp</dimen>
+    <dimen name="list_item_object_image_corner_radius">2dp</dimen>
+    <dimen name="list_item_object_image_corner_radius_small">1dp</dimen>
+
+    <!-- Object items is half screen lists -->
+    <dimen name="list_item_object_half_icon_width">40dp</dimen>
+    <dimen name="list_item_object_half_icon_height">40dp</dimen>
+    <dimen name="list_item_object_half_icon_margin_start">0dp</dimen>
+    <dimen name="list_item_object_half_icon_margin_top">8dp</dimen>
+    <dimen name="list_item_object_half_icon_margin_bottom">8dp</dimen>
+    <dimen name="list_item_object_half_title_margin_top">9dp</dimen>
+    <dimen name="list_item_object_half_title_margin_start">52dp</dimen>
+    <dimen name="list_item_object_half_title_margin_end">0dp</dimen>
+    <dimen name="list_item_object_half_subtitle_margin_top">29dp</dimen>
+    <dimen name="list_item_object_half_subtitle_margin_start">52dp</dimen>
+    <dimen name="list_item_object_half_subtitle_margin_end">0dp</dimen>
+    <dimen name="list_item_object_half_emoji_size">24dp</dimen>
+    <dimen name="list_item_object_half_checkbox_size">22dp</dimen>
+    <dimen name="list_item_object_half_initials_size">24sp</dimen>
+    <dimen name="default_cover_height">188dp</dimen>
+    <dimen name="dp_14">14dp</dimen>
+    <dimen name="defaultGalleryViewTextSize">12sp</dimen>
+    <dimen name="defaultGalleryViewAvatarTextSize">11sp</dimen>
+    <dimen name="default_wallpaper_select_item_height">208dp</dimen>
+
+    <!-- Editor, block: graphic + text -->
+    <dimen name="default_graphic_text_text_first_line_margin_start">28dp</dimen>
+
+    <!-- Editor, block: media placeholder -->
+    <dimen name="default_media_placeholder_card_padding_end">12dp</dimen>
+    <dimen name="default_media_placeholder_card_padding_start">12dp</dimen>
+    <dimen name="default_media_placeholder_title_icon_padding">8dp</dimen>
+
+    <!-- Editor, block: table of contents -->
+    <dimen name="def_toc_item_padding_start">20dp</dimen>
+
+    <!-- Editor, drag shadow -->
+    <dimen name="drag_shadow_corner_radius">6dp</dimen>
+    <dimen name="drag_shadow_elevation">12dp</dimen>
+    <dimen name="drag_shadow_padding_height_text">23dp</dimen>
+    <dimen name="drag_shadow_padding_width_text">4dp</dimen>
+    <dimen name="drag_shadow_padding_height_other">28dp</dimen>
+    <dimen name="drag_shadow_padding_width_other">10dp</dimen>
+    <dimen name="drag_shadow_max_size">150dp</dimen>
+
+    <!-- Editor, block: bookmark -->
+    <dimen name="card_block_extra_space_top">10dp</dimen>
+    <dimen name="card_block_extra_space_bottom">10dp</dimen>
+
+    <!-- Editor, block: highlight -->
+
+    <dimen name="default_highlight_content_margin_top">6dp</dimen>
+    <dimen name="highlight_line_width">2dp</dimen>
+
+    <!-- Editor, indentation -->
+    <dimen name="indent">28dp</dimen>
+    <dimen name="default_indent">20dp</dimen>
+    <dimen name="default_graphic_container_width">24dp</dimen>
+    <dimen name="default_graphic_container_right_offset">4dp</dimen>
+    <dimen name="callout_block_extra_space_top">7dp</dimen>
+    <dimen name="callout_block_extra_space_bottom">7dp</dimen>
+    <dimen name="default_callout_card_radius">2dp</dimen>
+    <dimen name="default_callout_icon_size">20dp</dimen>
+    <dimen name="default_callout_internal_top_padding">12dp</dimen>
+    <dimen name="default_callout_internal_bottom_padding">12dp</dimen>
+    <dimen name="callout_background_offset">20dp</dimen>
+    <dimen name="selection_left_right_offset">12dp</dimen>
+    <dimen name="divider_extra_space_bottom">2dp</dimen>
+
+    <dimen name="item_block_table_cell_width">140dp</dimen>
+    <dimen name="item_block_table_cell_height">63dp</dimen>
+    <dimen name="item_block_table_margin_top">10dp</dimen>
+    <dimen name="item_block_table_margin_bottom">10dp</dimen>
+
+    <!-- Relations in lists(document relations, slash menu relations -->
+    <dimen name="object_settings_relations_item_height">48dp</dimen>
+    <dimen name="object_slash_menu_relations_item_height">44dp</dimen>
+
+    <dimen name="block_text_markup_underline_height">0.5dp</dimen>
+
+    <dimen name="block_data_view_height">96dp</dimen>
+
+    <dimen name="default_dv_gallery_first_line_margin_start">22dp</dimen>
+    <dimen name="default_collection_dv_header_height">56dp</dimen>
+    <dimen name="default_dv_list_first_line_margin_start">26dp</dimen>
+
+    <!-- DataView, Gallery items-->
+    <dimen name="dv_gallery_cover_height">102dp</dimen>
+    <dimen name="dv_gallery_title_min_height">40dp</dimen>
+    <dimen name="dv_gallery_relation_height">16dp</dimen>
+    <dimen name="dv_gallery_relation_margin_top">4dp</dimen>
+
+    <!-- DataView, List items, relations-->
+    <dimen name="dv_list_gallery_item_relation_height">15dp</dimen>
+    <dimen name="dv_list_gallery_item_relation_count_margin_start">4dp</dimen>
+
+    <dimen name="relation_value_objects_text_max_width">150dp</dimen>
+
+</resources>

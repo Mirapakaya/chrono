@@ -1,0 +1,101 @@
+package com.chronoio.chrono.presentation.templates
+
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.DVSort
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectTypeIds
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.RelationFormat
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.library.StoreSearchParams
+import com.chronoio.chrono.domain.library.StorelessSubscriptionContainer
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+
+interface ObjectTypeTemplatesContainer {
+    suspend fun subscribeToTemplates(
+        type: Id,
+        space: SpaceId,
+        subscription: Id
+    ): Flow<List<ObjectWrapper.Basic>>
+    suspend fun unsubscribeFromTemplates(subId: Id)
+}
+
+class DefaultObjectTypeTemplatesContainer(
+    private val storage: StorelessSubscriptionContainer
+) : ObjectTypeTemplatesContainer {
+
+    override suspend fun subscribeToTemplates(
+        type: Id,
+        space: SpaceId,
+        subscription: Id
+    ): Flow<List<ObjectWrapper.Basic>> {
+        return if (type.isBlank()) {
+            emptyFlow()
+        } else {
+            val params = StoreSearchParams(
+                space = space,
+                subscription = subscription,
+                sorts = listOf(
+                    DVSort(
+                        relationKey = Relations.CREATED_DATE,
+                        type = Block.Content.DataView.Sort.Type.DESC,
+                        relationFormat = RelationFormat.DATE
+                    )
+                ),
+                filters = listOf(
+                    DVFilter(
+                        relation = Relations.IS_ARCHIVED,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    ),
+                    DVFilter(
+                        relation = Relations.IS_DELETED,
+                        condition = DVFilterCondition.NOT_EQUAL,
+                        value = true
+                    ),
+                    DVFilter(
+                        relation = Relations.TYPE_UNIQUE_KEY,
+                        condition = DVFilterCondition.EQUAL,
+                        value = ObjectTypeIds.TEMPLATE
+                    ),
+                    DVFilter(
+                        relation = Relations.TARGET_OBJECT_TYPE,
+                        condition = DVFilterCondition.EQUAL,
+                        value = type
+                    ),
+                    DVFilter(
+                        relation = Relations.ID,
+                        condition = DVFilterCondition.NOT_EMPTY
+                    )
+                ),
+                keys = listOf(
+                    Relations.ID,
+                    Relations.SPACE_ID,
+                    Relations.TYPE_UNIQUE_KEY,
+                    Relations.NAME,
+                    Relations.PLURAL_NAME,
+                    Relations.ICON_EMOJI,
+                    Relations.ICON_NAME,
+                    Relations.ICON_IMAGE,
+                    Relations.ICON_OPTION,
+                    Relations.COVER_ID,
+                    Relations.COVER_TYPE,
+                    Relations.IS_ARCHIVED,
+                    Relations.IS_DELETED,
+                    Relations.CREATED_DATE,
+                    Relations.TARGET_OBJECT_TYPE,
+                    Relations.TYPE
+                ),
+            )
+            storage.subscribe(params)
+        }
+    }
+
+    override suspend fun unsubscribeFromTemplates(subId: Id) {
+        storage.unsubscribe(listOf(subId))
+    }
+}

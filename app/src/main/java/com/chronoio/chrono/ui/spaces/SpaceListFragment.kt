@@ -1,0 +1,159 @@
+package com.chronoio.chrono.ui.spaces
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_ui.features.multiplayer.SpaceListScreen
+import com.chronoio.chrono.core_ui.foundation.Warning
+import com.chronoio.chrono.core_utils.ext.setupBottomSheetBehavior
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.presentation.spaces.SpaceListViewModel
+import com.chronoio.chrono.ui.multiplayer.LeaveSpaceWarningScreen
+import javax.inject.Inject
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class SpaceListFragment : BaseBottomSheetComposeFragment() {
+
+    @Inject
+    lateinit var factory: SpaceListViewModel.Factory
+
+    private val vm by viewModels<SpaceListViewModel> { factory }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            SpaceListScreen(
+                state = vm.state.collectAsStateWithLifecycle().value,
+                onDeleteSpaceClicked = vm::onDeleteSpaceClicked,
+                onLeaveSpaceClicked = vm::onLeaveSpaceClicked,
+                onCancelJoinRequestClicked = vm::onCancelJoinSpaceClicked,
+                onCreateSpaceClicked = {
+                    runCatching {
+                        findNavController().navigate(
+                            R.id.actionCreateSpaceFromVault
+                        )
+                    }.onFailure {
+                        Timber.e(it, "Error while opening create-space screen from vault")
+                    }
+                }
+            )
+
+            val bottomSheetState = rememberModalBottomSheetState()
+            val scope = rememberCoroutineScope()
+
+            when(val warning = vm.warning.collectAsStateWithLifecycle().value) {
+                is SpaceListViewModel.Warning.CancelSpaceJoinRequest -> {
+                    ModalBottomSheet(
+                        onDismissRequest = { vm.onWarningDismissed() },
+                        dragHandle = {},
+                        containerColor = colorResource(id = R.color.background_secondary),
+                        sheetState = bottomSheetState
+                    ) {
+                        Warning(
+                            actionButtonText = stringResource(R.string.cancel),
+                            cancelButtonText = stringResource(R.string.multiplayer_do_not_cancel_join_request),
+                            title = stringResource(R.string.multiplayer_cancel_join_request),
+                            subtitle = stringResource(R.string.multiplayer_cancel_join_request_msg),
+                            onNegativeClick = {
+                                scope.launch {
+                                    bottomSheetState.hide()
+                                }.invokeOnCompletion {
+                                    vm.onWarningDismissed()
+                                }
+                            },
+                            onPositiveClick = {
+                                scope.launch {
+                                    bottomSheetState.hide()
+                                }.invokeOnCompletion {
+                                    vm.onCancelJoinRequestAccepted(warning.space)
+                                }
+                            },
+                            isInProgress = false,
+                            footerHeight = 24.dp
+                        )
+                    }
+                }
+                is SpaceListViewModel.Warning.DeleteSpace -> {
+                    ModalBottomSheet(
+                        onDismissRequest = { vm.onWarningDismissed() },
+                        dragHandle = {},
+                        containerColor = colorResource(id = R.color.background_secondary),
+                        sheetState = bottomSheetState
+                    ) {
+                        DeleteSpaceWarningScreen(
+                            onDeleteClick = {
+                                scope.launch {
+                                    bottomSheetState.hide()
+                                }.invokeOnCompletion {
+                                    vm.onDeleteSpaceAccepted(warning.space)
+                                }
+                            }
+                        )
+                    }
+                }
+                is SpaceListViewModel.Warning.LeaveSpace -> {
+                    ModalBottomSheet(
+                        onDismissRequest = { vm.onWarningDismissed() },
+                        dragHandle = {},
+                        containerColor = colorResource(id = R.color.background_secondary),
+                        sheetState = bottomSheetState
+                    ) {
+                        LeaveSpaceWarningScreen(
+                            onLeaveClicked = {
+                                scope.launch {
+                                    bottomSheetState.hide()
+                                }.invokeOnCompletion {
+                                    vm.onLeaveSpaceAccepted(warning.space)
+                                }
+                            }
+                        )
+                    }
+                }
+                is SpaceListViewModel.Warning.None -> {
+                   // Do nothing.
+                }
+            }
+            LaunchedEffect(Unit) {
+                vm.toasts.collect { msg ->
+                    toast(msg)
+                }
+            }
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        setupBottomSheetBehavior(DEFAULT_PADDING_TOP)
+    }
+
+    override fun injectDependencies() {
+        componentManager().spaceListComponent.get().inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().spaceListComponent.release()
+    }
+}

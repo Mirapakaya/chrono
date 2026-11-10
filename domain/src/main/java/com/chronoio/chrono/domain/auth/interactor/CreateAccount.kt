@@ -1,0 +1,66 @@
+package com.chronoio.chrono.domain.auth.interactor
+
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.Command
+import com.chronoio.chrono.core_models.Config
+import com.chronoio.chrono.domain.account.AwaitAccountStartManager
+import com.chronoio.chrono.domain.auth.repo.AuthRepository
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.base.ResultInteractor
+import com.chronoio.chrono.domain.config.ConfigStorage
+import com.chronoio.chrono.domain.platform.InitialParamsProvider
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import javax.inject.Inject
+
+/**
+ * Creates an account, then stores it and sets as current user account.
+ */
+open class CreateAccount @Inject constructor(
+    private val repository: AuthRepository,
+    // TODO rename config storage
+    private val configStorage: ConfigStorage,
+    private val initialParamsProvider: InitialParamsProvider,
+    private val awaitAccountStartManager: AwaitAccountStartManager,
+    private val spaceManager: SpaceManager,
+    dispatcher: AppCoroutineDispatchers
+) : ResultInteractor<CreateAccount.Params, CreateAccount.Result>(dispatcher.io) {
+
+    override suspend fun doWork(params: Params): CreateAccount.Result {
+        repository.setInitialParams(initialParamsProvider.toCommand())
+
+        val networkMode = repository.getNetworkMode()
+
+        val command = Command.AccountCreate(
+            name = params.name,
+            avatarPath = params.avatarPath,
+            icon = params.iconGradientValue,
+            networkMode = networkMode.networkMode,
+            networkConfigFilePath = networkMode.storedFilePath,
+        )
+        val setup = repository.createAccount(command)
+        with(repository) {
+            saveAccount(setup.account)
+            setCurrentAccount(setup.account.id)
+        }
+        configStorage.set(config = setup.config, accountId = setup.account.id)
+        spaceManager.set(setup.config.space)
+        awaitAccountStartManager.setState(AwaitAccountStartManager.State.Started)
+        return Result(account = setup.account, config = setup.config)
+    }
+
+    /**
+     * @property avatarPath optional avatar image file path
+     * @property name username
+     * @property iconGradientValue random icon gradient value for new account/space background
+     */
+    class Params(
+        val name: String,
+        val avatarPath: String? = null,
+        val iconGradientValue: Int
+    )
+
+    data class Result(
+        val account: Account,
+        val config: Config
+    )
+}

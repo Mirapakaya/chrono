@@ -1,0 +1,47 @@
+package com.chronoio.chrono.core_ui.widgets.dv
+
+import android.content.Context
+import android.util.AttributeSet
+import android.view.View
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.presentation.sets.model.Viewer
+
+class ListViewWidget @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : RecyclerView(context, attrs) {
+
+    var onListItemClicked: (Id) -> Unit = {}
+    var onListItemLongClicked: (Id, View) -> Unit = { _, _ -> }
+    var onTaskCheckboxClicked: (Id) -> Unit = {}
+
+    private val listViewAdapter = ListViewAdapter(
+        onListItemClicked = { onListItemClicked(it) },
+        onListItemLongClicked = { id, view -> onListItemLongClicked(id, view) },
+        onTaskCheckboxClicked = { onTaskCheckboxClicked(it) }
+    )
+
+    init {
+        layoutManager = LinearLayoutManager(context)
+        adapter = listViewAdapter
+        val divider = AppCompatResources.getDrawable(context, R.drawable.divider_relations)
+        if (divider != null) {
+            addItemDecoration(
+                DividerItemDecoration(context, DividerItemDecoration.VERTICAL).apply {
+                    setDrawable(divider)
+                }
+            )
+        }
+    }
+
+    val currentItems: List<Viewer.ListView.Item> get() = listViewAdapter.currentList
+
+    fun setViews(views: List<Viewer.ListView.Item>, onCommitted: (() -> Unit)? = null) {
+        listViewAdapter.submitList(views) { onCommitted?.invoke() }
+    }
+}

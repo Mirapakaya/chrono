@@ -1,0 +1,239 @@
+package com.chronoio.chrono.core_ui.features.sets
+
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_models.DVFilterQuickOption
+import com.chronoio.chrono.core_models.ThemeColor
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemCreateFilterCheckboxBinding
+import com.chronoio.chrono.core_ui.databinding.ItemCreateFilterDateBinding
+import com.chronoio.chrono.core_ui.databinding.ItemCreateFilterObjectBinding
+import com.chronoio.chrono.core_ui.databinding.ItemCreateFilterStatusBinding
+import com.chronoio.chrono.core_ui.databinding.ItemCreateFilterTagBinding
+import com.chronoio.chrono.core_ui.extensions.dark
+import com.chronoio.chrono.core_ui.extensions.getPrettyName
+import com.chronoio.chrono.core_ui.extensions.light
+import com.chronoio.chrono.core_utils.ext.invisible
+import com.chronoio.chrono.core_utils.ext.setDrawableColor
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.presentation.sets.filter.CreateFilterView
+
+class CreateFilterAdapter(
+    private val onItemClicked: (CreateFilterView) -> Unit
+) : RecyclerView.Adapter<CreateFilterAdapter.ViewHolder>() {
+
+    private var views: List<CreateFilterView> = emptyList()
+
+    override fun onCreateViewHolder(
+        parent: ViewGroup,
+        viewType: Int
+    ): ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return when (viewType) {
+            R.layout.item_create_filter_tag -> {
+                ViewHolder.Tag(
+                    binding = ItemCreateFilterTagBinding.inflate(
+                        inflater, parent, false
+                    )
+                ).apply {
+                    itemView.setOnClickListener {
+                        val pos = bindingAdapterPosition
+                        if (pos != RecyclerView.NO_POSITION) {
+                            onItemClicked(views[pos])
+                        }
+                    }
+                }
+            }
+            R.layout.item_create_filter_date -> {
+                ViewHolder.Date(
+                    binding = ItemCreateFilterDateBinding.inflate(
+                        inflater, parent, false
+                    )
+                ).apply {
+                    itemView.setOnClickListener {
+                        val pos = bindingAdapterPosition
+                        if (pos != RecyclerView.NO_POSITION) {
+                            onItemClicked(views[pos])
+                        }
+                    }
+                }
+            }
+            R.layout.item_create_filter_status -> {
+                ViewHolder.Status(
+                    binding = ItemCreateFilterStatusBinding.inflate(
+                        inflater, parent, false
+                    )
+                ).apply {
+                    itemView.setOnClickListener {
+                        val pos = bindingAdapterPosition
+                        if (pos != RecyclerView.NO_POSITION) {
+                            onItemClicked(views[pos])
+                        }
+                    }
+                }
+            }
+            R.layout.item_create_filter_object -> {
+                ViewHolder.Object(
+                    binding = ItemCreateFilterObjectBinding.inflate(
+                        inflater, parent, false
+                    )
+                ).apply {
+                    itemView.setOnClickListener {
+                        val pos = bindingAdapterPosition
+                        if (pos != RecyclerView.NO_POSITION) {
+                            onItemClicked(views[pos])
+                        }
+                    }
+                }
+            }
+            R.layout.item_create_filter_checkbox -> {
+                ViewHolder.Checkbox(
+                    binding = ItemCreateFilterCheckboxBinding.inflate(
+                        inflater, parent, false
+                    )
+                ).apply {
+                    itemView.setOnClickListener {
+                        val pos = bindingAdapterPosition
+                        if (pos != RecyclerView.NO_POSITION) {
+                            onItemClicked(views[pos])
+                        }
+                    }
+                }
+            }
+            else -> throw IllegalStateException("Unexpected view type: $viewType")
+        }
+    }
+
+    override fun onBindViewHolder(
+        holder: ViewHolder,
+        position: Int
+    ) = when (holder) {
+        is ViewHolder.Tag -> holder.bind(views[position] as CreateFilterView.Tag)
+        is ViewHolder.Status -> holder.bind(views[position] as CreateFilterView.Status)
+        is ViewHolder.Date -> holder.bind(views[position] as CreateFilterView.Date)
+        is ViewHolder.Object -> holder.bind(views[position] as CreateFilterView.Object)
+        is ViewHolder.Checkbox -> holder.bind(views[position] as CreateFilterView.Checkbox)
+    }
+
+    override fun getItemCount(): Int = views.size
+
+    override fun getItemViewType(position: Int): Int = when (views[position]) {
+        is CreateFilterView.Tag -> R.layout.item_create_filter_tag
+        is CreateFilterView.Status -> R.layout.item_create_filter_status
+        is CreateFilterView.Date -> R.layout.item_create_filter_date
+        is CreateFilterView.Object -> R.layout.item_create_filter_object
+        is CreateFilterView.Checkbox -> R.layout.item_create_filter_checkbox
+    }
+
+    fun update(update: List<CreateFilterView>) {
+        views = update
+        notifyDataSetChanged()
+    }
+
+    sealed class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        class Tag(val binding: ItemCreateFilterTagBinding) : ViewHolder(binding.root) {
+            fun bind(item: CreateFilterView.Tag) = with(binding) {
+                ivSelectTagIcon.isSelected = item.isSelected
+                tvTagName.text = item.name
+                val color = ThemeColor.values().find { v -> v.code == item.color }
+                val defaultTextColor = itemView.resources.getColor(R.color.text_primary, null)
+                val defaultBackground = itemView.resources.getColor(R.color.shape_primary, null)
+                if (color != null && color != ThemeColor.DEFAULT) {
+                    tvTagName.background.setDrawableColor(
+                        itemView.resources.light(
+                            color,
+                            defaultTextColor
+                        )
+                    )
+                    tvTagName.setTextColor(itemView.resources.dark(color, defaultBackground))
+                } else {
+                    tvTagName.background.setDrawableColor(defaultBackground)
+                    tvTagName.setTextColor(defaultTextColor)
+                }
+            }
+        }
+
+        class Status(val binding: ItemCreateFilterStatusBinding) : ViewHolder(binding.root) {
+            fun bind(item: CreateFilterView.Status) = with(binding) {
+                ivSelectStatusIcon.isSelected = item.isSelected
+                tvStatusName.text = item.name
+                val color = ThemeColor.values().find { v -> v.code == item.color }
+                val defaultTextColor = itemView.resources.getColor(R.color.text_primary, null)
+                if (color != null && color != ThemeColor.DEFAULT) {
+                    tvStatusName.setTextColor(itemView.resources.dark(color, defaultTextColor))
+                } else {
+                    tvStatusName.setTextColor(defaultTextColor)
+                }
+            }
+        }
+
+        class Date(val binding: ItemCreateFilterDateBinding) : ViewHolder(binding.root) {
+            fun bind(item: CreateFilterView.Date) = with(binding) {
+                tvDateTitle.text = when (item.type) {
+                    DVFilterQuickOption.EXACT_DATE -> itemView.resources.getString(R.string.dates_filter_exact_day)
+                    DVFilterQuickOption.YESTERDAY -> itemView.resources.getString(R.string.yesterday)
+                    DVFilterQuickOption.TODAY -> itemView.resources.getString(R.string.today)
+                    DVFilterQuickOption.TOMORROW -> itemView.resources.getString(R.string.tomorrow)
+                    DVFilterQuickOption.LAST_WEEK -> itemView.resources.getString(R.string.dates_filter_last_week)
+                    DVFilterQuickOption.CURRENT_WEEK -> itemView.resources.getString(R.string.dates_filter_current_week)
+                    DVFilterQuickOption.NEXT_WEEK -> itemView.resources.getString(R.string.dates_filter_next_week)
+                    DVFilterQuickOption.LAST_MONTH -> itemView.resources.getString(R.string.dates_filter_last_month)
+                    DVFilterQuickOption.CURRENT_MONTH -> itemView.resources.getString(R.string.dates_filter_current_month)
+                    DVFilterQuickOption.NEXT_MONTH -> itemView.resources.getString(R.string.dates_filter_next_month)
+                    DVFilterQuickOption.DAYS_AGO -> itemView.resources.getString(R.string.number_days_ago)
+                    DVFilterQuickOption.DAYS_AHEAD -> itemView.resources.getString(R.string.number_days_from)
+                    DVFilterQuickOption.LAST_YEAR -> itemView.resources.getString(R.string.dates_filter_last_year)
+                    DVFilterQuickOption.CURRENT_YEAR -> itemView.resources.getString(R.string.dates_filter_current_year)
+                    DVFilterQuickOption.NEXT_YEAR -> itemView.resources.getString(R.string.dates_filter_next_year)
+                }
+                when (item.type) {
+                    DVFilterQuickOption.EXACT_DATE -> {
+                        tvDate.visible()
+                        tvDate.text = item.relativeDate?.getPrettyName(
+                            resources = itemView.resources
+                        )
+                    }
+                    DVFilterQuickOption.DAYS_AGO, DVFilterQuickOption.DAYS_AHEAD -> {
+                        tvDate.visible()
+                        tvDate.text = item.value.toString()
+                    }
+                    else -> {
+                        tvDate.invisible()
+                    }
+                }
+                if (item.isSelected) {
+                    iconChecked.visible()
+                } else {
+                    tvDate.invisible()
+                    iconChecked.invisible()
+                }
+            }
+        }
+
+        class Object(val binding: ItemCreateFilterObjectBinding) : ViewHolder(binding.root) {
+            fun bind(item: CreateFilterView.Object) = with(binding) {
+                tvObjectName.text = item.name
+                tvObjectType.text = item.typeName
+                ivSelectObjectIcon.isSelected = item.isSelected
+                objectIconWidget.setIcon(item.icon)
+            }
+        }
+
+        class Checkbox(val binding: ItemCreateFilterCheckboxBinding) : ViewHolder(binding.root) {
+            fun bind(item: CreateFilterView.Checkbox) = with(binding) {
+                tvCheckbox.text = if (item.isChecked) {
+                    itemView.resources.getString(R.string.dv_filter_checkbox_checked)
+                } else {
+                    itemView.resources.getString(R.string.dv_filter_checkbox_not_checked)
+                }
+                if (item.isSelected) {
+                    iconChecked.visible()
+                } else {
+                    iconChecked.invisible()
+                }
+            }
+        }
+    }
+}

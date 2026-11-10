@@ -1,0 +1,485 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import android.util.Log
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Event
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.domain.block.interactor.SplitBlock
+import com.chronoio.chrono.domain.block.interactor.UpdateText
+import com.chronoio.chrono.domain.event.interactor.InterceptEvents
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.render.parseThemeBackgroundColor
+import com.chronoio.chrono.presentation.util.DefaultCoroutineTestRule
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.jraska.livedata.test
+import kotlin.test.assertEquals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import net.lachlanmckee.timberjunit.TimberTestRule
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+import org.mockito.kotlin.verifyNoMoreInteractions
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+
+class EditorTitleTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule(UnconfinedTestDispatcher())
+
+    @get:Rule
+    val timberTestRule: TimberTestRule = TimberTestRule.builder()
+        .minPriority(Log.DEBUG)
+        .showThread(true)
+        .showTimestamp(false)
+        .onlyLogWhenTestFails(true)
+        .build()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+        stubCopy()
+        stubSplitBlock()
+        stubCreateBlock(root)
+    }
+
+    @After
+    fun after() {
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    val title = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Text(
+            text = MockDataFactory.randomString(),
+            style = Block.Content.Text.Style.TITLE,
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @Test
+    fun `should not open action menu for title block`() = runTest {
+
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        val toasts = mutableListOf<String>()
+
+        val toastSubscription = launch { vm.toasts.collect { toasts.add(it) } }
+        val commandTestObserver = vm.commands.test()
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            advanceUntilIdle()
+            onBlockFocusChanged(title.id, true)
+            advanceUntilIdle()
+            onBlockToolbarBlockActionsClicked()
+            advanceUntilIdle()
+        }
+
+        commandTestObserver.assertNoValue().assertHistorySize(0)
+
+        assertEquals(
+            expected = 1,
+            actual = toasts.size
+        )
+        assertEquals(
+            expected = EditorViewModel.CANNOT_OPEN_ACTION_MENU_FOR_TITLE_ERROR,
+            actual = toasts.first()
+        )
+
+        toastSubscription.cancel()
+    }
+
+    @Test
+    fun `should start updating title on title-text-changed event without delay`() = runTest {
+
+        // SETUP
+
+        val page = listOf(
+            Block(
+                id = root,
+                fields = Block.Fields.empty(),
+                content = Block.Content.Smart,
+                children = listOf(header.id)
+            ),
+            header,
+            title
+        )
+
+        stubInterceptEvents()
+        stubOpenDocument(page)
+        stubUpdateText()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        // TESTING
+
+        val update = MockDataFactory.randomString()
+
+        vm.onTitleBlockTextChanged(title.id, update)
+
+        verifyBlocking(updateText) {
+            invoke(
+                UpdateText.Params(
+                    context = root,
+                    text = update,
+                    target = title.id,
+                    marks = emptyList()
+                )
+            )
+        }
+
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+
+        verifyNoMoreInteractions(updateText)
+    }
+
+    @Test
+    fun `should send split intent when split happens in title`() {
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomUuid(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.values().random()
+            )
+        )
+
+        val document = listOf(page, header, title, block)
+
+        stubOpenDocument(document = document)
+        stubUpdateText()
+        stubCreateBlock(root)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+        
+        // TESTING
+
+        vm.onBlockFocusChanged(
+            id = title.id,
+            hasFocus = true
+        )
+
+        val text = MockDataFactory.randomString()
+
+        vm.onEnterKeyClicked(
+            target = title.id,
+            text = text,
+            marks = emptyList(),
+            range = 2..2
+        )
+
+        verifyBlocking(updateText, times(1)) {
+            invoke(
+                params = eq(
+                    UpdateText.Params(
+                        context = root,
+                        text = text,
+                        marks = emptyList(),
+                        target = title.id
+                    )
+                )
+            )
+        }
+
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+
+        verifyBlocking(splitBlock, times(1)) {
+            invoke(
+                params = eq(
+                    SplitBlock.Params(
+                        context = root,
+                        block = title,
+                        range = 2..2,
+                        isToggled = null
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `should update emoji in title`() = runTest  {
+        // SETUP
+
+        val delay = 500L
+        val emoji = "\uD83D\uDE0D"
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomUuid(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.BULLET
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val document = listOf(page, header, title, block)
+
+        stubOpenDocument(document = document)
+        stubUpdateText()
+        val events = flow<List<Event>> {
+            delay(delay)
+            emit(
+                listOf(Event.Command.Details.Amend(
+                    context = root,
+                    target = root,
+                    details = mapOf(
+                        Relations.ID to root,
+                        Relations.ICON_EMOJI to emoji
+                    )
+                ))
+            )
+        }
+        stubInterceptEvents(flow = events)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        // TESTING
+
+        val before = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    text = title.content<Block.Content.Text>().text,
+                    isFocused = false,
+                    emoji = null,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Bulleted(
+                    id = block.id,
+                    text = block.content<Block.Content.Text>().text,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = block.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        // Checking that title has no emoji
+        assertEquals(expected = before, actual = vm.state.value)
+
+        // Moving time forward to receive granular change event
+        advanceUntilIdle()
+
+        val after = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    text = title.content<Block.Content.Text>().text,
+                    isFocused = false,
+                    emoji = emoji,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Bulleted(
+                    id = block.id,
+                    text = block.content<Block.Content.Text>().text,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = block.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        // Checking that title has emoji
+        assertEquals(expected = after, actual = vm.state.value)
+    }
+
+    @Test
+    fun `should update emoji and then update text in title`() = runTest  {
+        // SETUP
+
+        val delay = 500L
+        val emoji = "\uD83D\uDE0D"
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomUuid(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.BULLET
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val document = listOf(page, header, title, block)
+
+        stubOpenDocument(document = document)
+        stubUpdateText()
+        val events = flow<List<Event>> {
+            delay(delay)
+            emit(
+                listOf(Event.Command.Details.Amend(
+                    context = root,
+                    target = root,
+                    details = mapOf(
+                        Relations.ID to root,
+                        Relations.ICON_EMOJI to emoji
+                    )
+                ))
+            )
+        }
+        stubInterceptEvents(flow = events)
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        // TESTING
+
+        // Moving time forward to receive granular change event
+        advanceUntilIdle()
+
+        val newText = MockDataFactory.randomString()
+        //Update title text
+        vm.onTitleBlockTextChanged(id = title.id, text = newText)
+
+        val after = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    text = newText,
+                    isFocused = false,
+                    emoji = emoji,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Bulleted(
+                    id = block.id,
+                    text = block.content<Block.Content.Text>().text,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = block.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        // Checking that title has new text and emoji
+        assertEquals(expected = after, actual = vm.state.value)
+    }
+ }

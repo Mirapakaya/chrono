@@ -1,0 +1,338 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id 'com.google.devtools.ksp'
+    alias(libs.plugins.compose.compiler)
+    id "com.google.firebase.appdistribution"
+    id 'androidx.navigation.safeargs.kotlin'
+    id 'com.google.gms.google-services'
+    alias(libs.plugins.licensee)
+}
+
+licensee {
+    // Allow common open source licenses
+    allow("Apache-2.0")
+    allow("MIT")
+    allow("BSD-3-Clause")
+    allow("CC0-1.0") // Reactive Streams, via ML Kit GenAI
+
+    // Google/Android SDK Terms
+    allowUrl("https://developer.android.com/studio/terms.html") {
+        because("Google/Android SDK Terms - standard for Google Play Services and Android libraries")
+    }
+
+    // Google ML Kit Terms
+    allowUrl("https://developers.google.com/ml-kit/terms") {
+        because("Google ML Kit components required for barcode scanning")
+    }
+
+    // Facebook Shimmer (BSD-licensed)
+    allowUrl("https://github.com/facebook/shimmer-android/blob/master/LICENSE") {
+        because("Facebook Shimmer is BSD-licensed")
+    }
+
+    // BouncyCastle
+    allowUrl("https://www.bouncycastle.org/licence.html") {
+        because("BouncyCastle is MIT-licensed")
+    }
+
+    // Allow specific dependencies
+    allowDependency("com.github.anyproto", "any-crypto-kotlin", "1.0.2") {
+        because("any-crypto-kotlin is MIT-licensed (verified in repository)")
+    }
+    allowDependency("com.github.komputing", "KBase58", "0.4") {
+        because("KBase58 is MIT-licensed (verified in repository)")
+    }
+    allowDependency("com.github.chrisbanes", "PhotoView", "2.3.0") {
+        because("PhotoView is Apache-2.0 licensed (verified in repository); JitPack metadata may be missing")
+    }
+
+    // Internal Anytype middleware library
+    allowDependency("io.anyproto", "anytype-heart-android", libs.versions.middlewareVersion.get()) {
+        because("Internal Anytype library")
+    }
+}
+
+apply from: "$rootDir/versioning.gradle"
+
+def apikeyPropertiesFile = rootProject.file("apikeys.properties")
+def apikeyProperties = new Properties()
+apikeyProperties.load(new FileInputStream(apikeyPropertiesFile))
+
+def useReleaseKeystore = rootProject.file("scripts/release/app-release.jks").exists()
+
+def localProperties = new Properties()
+localProperties.with {
+    def lp = "local.properties"
+    if (new File(lp).exists()) it.load(new FileInputStream(lp))
+}
+
+android {
+    def config = rootProject.ext
+
+    compileSdk = config.compile_sdk
+
+    androidResources {
+        generateLocaleConfig = true
+    }
+
+    defaultConfig {
+        applicationId = config.application_id
+        minSdk = config.min_sdk
+        targetSdk = config.target_sdk
+        versionCode getBuildVersionCode()
+        versionName getBuildVersionName()
+        testInstrumentationRunner config.test_runner
+        buildConfigField "boolean", "USE_NEW_WINDOW_INSET_API", "true"
+        buildConfigField "boolean", "USE_EDGE_TO_EDGE", "true"
+        buildConfigField "boolean", "SHOW_CHATS", "true"
+        buildConfigField "boolean", "LOG_FROM_MW_LIBRARY", localProperties.getProperty("LOG_FROM_MW_LIBRARY", "false")
+        buildConfigField "boolean", "LOG_MW_INTERACTION", localProperties.getProperty("LOG_MW_INTERACTION", "true")
+        buildConfigField "boolean", "LOG_DASHBOARD_REDUCER", localProperties.getProperty("LOG_DASHBOARD_REDUCER", "false")
+        buildConfigField "boolean", "LOG_EDITOR_VIEWMODEL_EVENTS", localProperties.getProperty("LOG_EDITOR_VIEWMODEL_EVENTS", "false")
+        buildConfigField "boolean", "LOG_EDITOR_CONTROL_PANEL", localProperties.getProperty("LOG_EDITOR_CONTROL_PANEL", "false")
+        buildConfigField "boolean", "ENABLE_STRICT_MODE", "false"
+        resValue "string", "SENTRY_DSN", config.sentryApiKey
+        externalNativeBuild {
+            cmake {
+                // Specify any cpp flags if needed
+                cppFlags "-std=c++11"
+            }
+       }
+    }
+    
+    externalNativeBuild {
+        cmake {
+            // Provide the path to your CMakeLists.txt file
+            path "src/main/cpp/CMakeLists.txt"
+        }
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['LICENSE.txt', 'META-INF/DEPENDENCIES', 'META-INF/ASL2.0', 'META-INF/NOTICE', 'META-INF/LICENSE']
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (useReleaseKeystore) {
+                def keystorePropertiesFile = rootProject.file("signing.properties")
+                def keystoreProperties = new Properties()
+                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+
+                storeFile rootProject.file("scripts/release/app-release.jks")
+                keyAlias keystoreProperties['RELEASE_KEY_ALIAS']
+                keyPassword keystoreProperties['RELEASE_KEY_PASSWORD']
+                storePassword keystoreProperties['RELEASE_STORE_PASSWORD']
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
+            buildConfigField "boolean", "SHOW_CHATS", "true"
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField("String", "AMPLITUDE_KEY", apikeyProperties['amplitude.release'])
+            if (useReleaseKeystore) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
+        }
+
+        debug {
+            applicationIdSuffix ".dev"
+            debuggable true
+            buildConfigField "boolean", "SHOW_CHATS", "true"
+            buildConfigField("String", "AMPLITUDE_KEY", apikeyProperties['amplitude.debug'])
+            //signingConfig signingConfigs.debug
+            firebaseAppDistribution {
+                artifactType = "AAB"
+                groups = "anytype-q&a, android-team, product-review, nightly-ops"
+                serviceCredentialsFile = "$rootDir/scripts/distribution/anytype-debug-service-account-key.json"
+            }
+        }
+
+        applicationVariants.configureEach { variant ->
+            if (variant.buildType.name == 'release') {
+                variant.outputs.configureEach { output ->
+                    def appName = 'chrono'
+                    def versionName = variant.versionName
+                    def originalOutputFileName = outputFileName
+                    outputFileName = originalOutputFileName
+                        .replace("app-", "${appName}-${versionName}-")
+                        .replace("-release", "")
+                        .replace("-universal", "")
+                }
+            }
+        }
+    }
+
+    buildFeatures {
+        viewBinding = true
+        compose = true
+        buildConfig = true
+    }
+
+    splits {
+        // Configures multiple APKs based on ABI.
+        abi {
+            // Enables building multiple APKs per ABI.
+            enable project.hasProperty("enableAbiSplits") && project.getProperty("enableAbiSplits").toBoolean()
+            reset()
+            include "armeabi-v7a", "arm64-v8a"
+            universalApk true
+        }
+    }
+
+    ndkVersion "28.1.13356709"
+    namespace 'com.chronoio.chrono'
+}
+
+dependencies {
+
+    implementation project(':domain')
+    implementation project(':core-models')
+    implementation project(':localization')
+    implementation project(':data')
+    implementation project(':device')
+    implementation project(':persistence')
+    implementation project(':middleware')
+    implementation project(':presentation')
+    implementation project(':clipboard')
+    implementation project(':core-utils')
+    implementation project(':core-ui')
+    implementation project(':core-ai')
+    implementation project(':library-page-icon-picker-widget')
+    implementation project(':library-emojifier')
+    implementation project(':analytics')
+    implementation project(':feature-ui-settings')
+    implementation project(':crash-reporting')
+    implementation project(':payments')
+    implementation project(':feature-chats')
+    implementation project(':feature-discussions')
+    implementation project(':gallery-experience')
+    implementation project(':feature-all-content')
+    implementation project(':feature-date')
+    implementation project(':feature-object-type')
+    implementation project(':feature-properties')
+    implementation project(':feature-vault')
+    implementation project(':feature-search')
+    implementation project(':feature-create-object')
+    implementation project(':feature-os-widgets')
+
+    //Compile time dependencies
+    ksp libs.daggerCompiler
+    compileOnly libs.javaxAnnotation
+    compileOnly libs.javaxInject
+
+    //Application dependencies
+    implementation libs.kotlin
+    implementation libs.coroutinesAndroid
+    implementation libs.fragment
+    implementation libs.navigation
+    implementation libs.navigationUi
+    implementation libs.appcompat
+    implementation libs.design
+    implementation libs.recyclerView
+    implementation libs.constraintLayout
+    implementation libs.composeConstraintLayout
+    implementation libs.coilCompose
+    implementation libs.coilSvg
+    implementation libs.coilGif
+    implementation libs.coilNetwork
+    implementation libs.coilVideo
+    implementation libs.coilCache
+    implementation libs.telephotoZoomableImage
+    implementation libs.dagger
+    implementation libs.timber
+    implementation libs.gson
+    implementation libs.pickT
+    implementation libs.emoji2
+    implementation libs.navigationCompose
+    implementation libs.playBilling
+    implementation libs.lifecycleProcess
+    implementation libs.kotlinxSerializationJson
+
+    implementation libs.lifecycleViewModel
+    implementation libs.lifecycleRuntime
+    implementation libs.lifecycleLiveData
+    implementation libs.lifecycleCompose
+
+    implementation libs.compose
+    implementation libs.fragmentCompose
+    implementation libs.composeFoundation
+    implementation libs.composeMaterial
+    implementation libs.composeMaterial3
+    implementation libs.composeAccompanistPager
+    implementation libs.composeAccompanistThemeAdapter
+    implementation libs.composeAccompanistPagerIndicators
+    implementation libs.composeAccompanistPermissions
+    implementation libs.composeAccompanistNavigation
+    implementation libs.preference
+    implementation libs.activityCompose
+    implementation libs.composeReorderable
+
+    implementation libs.room
+
+    implementation platform(libs.firebaseBom)
+    implementation libs.firebaseMessaging
+
+    implementation libs.exoPlayerCore
+    implementation libs.exoPlayerUi
+
+    implementation libs.amplitude
+
+    implementation libs.shimmerLayout
+    implementation libs.photoView
+    // ML Kit Barcode Scanning + CameraX
+    implementation libs.mlkit.barcode.scanning
+    implementation libs.camerax.core
+    implementation libs.camerax.camera2
+    implementation libs.camerax.lifecycle
+    implementation libs.camerax.view
+
+    implementation libs.androidxSecurityCrypto
+    implementation libs.middleware
+    implementation libs.customTabs
+
+    implementation libs.wireRuntime
+
+    //Unit/Integration tests dependencies
+    testImplementation libs.androidXTestCore
+    testImplementation libs.junit
+    testImplementation libs.robolectric
+    testImplementation libs.kotlinTest
+    testImplementation libs.mockitoKotlin
+    testImplementation project(':test:utils')
+
+    //Acceptance tests dependencies
+    androidTestImplementation project(':test:android-utils')
+    androidTestImplementation libs.mockitoAndroid
+    androidTestImplementation libs.mockitoKotlin
+    androidTestImplementation libs.espressoContrib
+    androidTestImplementation libs.androidJUnit
+    androidTestImplementation libs.kotlinTest
+    androidTestImplementation libs.testRules
+    androidTestImplementation libs.disableAnimation
+    androidTestImplementation libs.navigationTesting
+    androidTestImplementation project(":test:utils")
+    androidTestImplementation project(":test:core-models-stub")
+
+    androidTestImplementation(libs.coroutineTesting) {
+        exclude group: "org.jetbrains.kotlinx", module: "kotlinx-coroutines-debug"
+    }
+
+    // Keep FragmentScenario's test runtime in the instrumentation APK. Putting it in
+    // debug pins older androidx.test dependencies through AGP consistent resolution.
+    androidTestImplementation libs.fragmentTesting
+    debugImplementation "androidx.fragment:fragment-testing-manifest:${libs.versions.fragmentVersion.get()}"
+    debugImplementation libs.composeTooling
+    implementation libs.composeToolingPreview
+}

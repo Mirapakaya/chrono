@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <FrameLayout
+        android:id="@+id/topBackButton"
+        android:layout_width="@dimen/nav_circular_button_size"
+        android:layout_height="@dimen/nav_circular_button_size"
+        android:layout_marginStart="16dp"
+        android:background="@drawable/bg_nav_circular_button"
+        android:elevation="2dp"
+        tools:targetApi="28">
+
+        <ImageView
+            android:id="@+id/ivTopBackButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_default_top_back" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/statusBadgeContainer"
+        android:layout_width="@dimen/nav_circular_button_size"
+        android:layout_height="@dimen/nav_circular_button_size"
+        android:layout_gravity="end"
+        android:layout_marginEnd="64dp"
+        android:background="@drawable/bg_nav_circular_button"
+        android:elevation="2dp"
+        tools:targetApi="28">
+
+        <com.chronoio.chrono.core_ui.widgets.StatusBadgeWidget
+            android:id="@+id/statusBadge"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="center"
+            android:scaleType="center"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginStart="68dp"
+        android:layout_marginEnd="116dp"
+        android:paddingHorizontal="8dp"
+        android:background="@drawable/bg_nav_pill_container"
+        android:elevation="2dp">
+
+        <LinearLayout
+            android:id="@+id/titleContainer"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_gravity="center"
+            tools:targetApi="28"
+            tools:visibility="gone">
+
+            <com.chronoio.chrono.core_ui.widgets.ObjectIconWidget
+                android:id="@+id/ivTopToolbarIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="6dp"
+                android:visibility="gone"
+                app:checkboxSize="18dp"
+                app:emojiSize="18dp"
+                app:imageSize="18dp"
+                app:initialTextSize="11sp"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/tvTopToolbarTitle"
+                style="@style/TextView.ContentStyle.PreviewTitles.2.Regular"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:drawablePadding="6dp"
+                android:ellipsize="end"
+                android:gravity="center_vertical"
+                android:maxLines="1"
+                android:singleLine="true"
+                tools:text="Your favorite movies" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvTemplates"
+            style="@style/TextView.UXStyle.Captions.1.Medium"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:drawableEnd="@drawable/ic_templates_expand"
+            android:drawablePadding="@dimen/dp_2"
+            android:gravity="center_vertical"
+            android:visibility="invisible"
+            tools:text="This type has 2 templates"
+            tools:visibility="gone">
+
+        </TextView>
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/threeDotsButton"
+        android:layout_width="@dimen/nav_circular_button_size"
+        android:layout_height="@dimen/nav_circular_button_size"
+        android:layout_gravity="end"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_nav_circular_button"
+        android:elevation="2dp"
+        tools:targetApi="28">
+
+        <ImageView
+            android:id="@+id/ivThreeDots"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_action_more" />
+
+    </FrameLayout>
+
+</merge>

@@ -1,0 +1,606 @@
+package com.chronoio.chrono.presentation.home
+
+import app.cash.turbine.test
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.StubConfig
+import com.chronoio.chrono.core_models.StubObject
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.config.Gateway
+import com.chronoio.chrono.domain.debugging.Logger
+import com.chronoio.chrono.domain.library.StoreSearchByIdsParams
+import com.chronoio.chrono.domain.library.StorelessSubscriptionContainer
+import com.chronoio.chrono.domain.misc.DateProvider
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.objects.GetDateObjectByTimestamp
+import com.chronoio.chrono.domain.objects.ObjectWatcher
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.primitives.FieldParserImpl
+import com.chronoio.chrono.domain.resources.StringResourceProvider
+import com.chronoio.chrono.domain.spaces.GetSpaceView
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.domain.misc.UrlBuilderImpl
+import com.chronoio.chrono.presentation.util.DefaultCoroutineTestRule
+import com.chronoio.chrono.presentation.widgets.TreePath
+import com.chronoio.chrono.presentation.widgets.SectionType
+import com.chronoio.chrono.presentation.widgets.TreeWidgetContainer
+import com.chronoio.chrono.presentation.widgets.Widget
+import com.chronoio.chrono.presentation.widgets.WidgetView
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertEquals
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+
+class TreeWidgetContainerTest {
+
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule()
+
+    @Mock
+    lateinit var gateway: Gateway
+
+    @Mock
+    lateinit var storelessSubscriptionContainer: StorelessSubscriptionContainer
+
+    @Mock
+    lateinit var objectWatcher: ObjectWatcher
+
+    @Mock
+    lateinit var getSpaceView: GetSpaceView
+
+    val dispatchers = AppCoroutineDispatchers(
+        io = coroutineTestRule.dispatcher,
+        main = coroutineTestRule.dispatcher,
+        computation = coroutineTestRule.dispatcher
+    )
+
+    private lateinit var urlBuilder: UrlBuilder
+
+    lateinit var fieldParser: FieldParser
+
+    @Mock
+    lateinit var logger: Logger
+
+    @Mock
+    lateinit var dateProvider: DateProvider
+
+    @Mock
+    lateinit var storeOfObjectTypes: StoreOfObjectTypes
+
+    @Mock
+    lateinit var getDateObjectByTimestamp: GetDateObjectByTimestamp
+
+    @Mock
+    lateinit var stringResourceProvider: StringResourceProvider
+
+    private val config = StubConfig()
+    private val workspace = config.spaceView
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        fieldParser = FieldParserImpl(dateProvider, logger, getDateObjectByTimestamp, stringResourceProvider)
+        urlBuilder = UrlBuilderImpl(gateway = gateway)
+    }
+
+    @Test
+    fun `should search for data for source object links when no data is available about expanded branches`() =
+        runTest {
+
+            // SETUP
+
+            val link1 = StubObject()
+            val link2 = StubObject()
+            val link3 = StubObject()
+            val links = listOf(link1, link2, link3)
+
+            val source = StubObject(
+                links = links.map { it.id }
+            )
+
+            val widget = Widget.Tree(
+                id = MockDataFactory.randomUuid(),
+                source = Widget.Source.Default(source),
+                config = config,
+                icon = ObjectIcon.None,
+                sectionType = SectionType.TYPES
+            )
+
+            val expanded = flowOf(emptyList<TreePath>())
+
+            val container = TreeWidgetContainer(
+                container = storelessSubscriptionContainer,
+                widget = widget,
+                expandedBranches = expanded,
+                isWidgetCollapsed = flowOf(false),
+                urlBuilder = urlBuilder,
+                isSessionActive = flowOf(true),
+                objectWatcher = objectWatcher,
+                getSpaceView = getSpaceView,
+                fieldParser = fieldParser,
+                storeOfObjectTypes = storeOfObjectTypes
+            )
+
+            stubObjectSearch(
+                widget = widget,
+                targets = links.map { it.id },
+                results = links
+            )
+
+            // TESTING
+
+            container.view.test {
+                val first = awaitItem()
+                awaitItem()
+                awaitComplete()
+                verifyBlocking(storelessSubscriptionContainer, times(1)) {
+                    subscribe(
+                        StoreSearchByIdsParams(
+                            space = SpaceId(config.space),
+                            subscription = widget.id,
+                            targets = links.map { it.id },
+                            keys = TreeWidgetContainer.keys
+                        )
+                    )
+                }
+            }
+        }
+
+    @Test
+    fun `should search for data for source object links when it is expanded`() = runTest {
+
+        // SETUP
+
+        val link1 = StubObject(
+            id = "A",
+            links = listOf(
+                "A1",
+                "A2",
+                "A3"
+            )
+        )
+        val link2 = StubObject(id = "B")
+        val link3 = StubObject(id = "C")
+
+        val links = listOf(link1, link2, link3)
+
+        val source = StubObject(
+            id = "root",
+            links = links.map { it.id }
+        )
+
+        val widget = Widget.Tree(
+            id = "widget",
+            source = Widget.Source.Default(source),
+            config = config,
+            icon = ObjectIcon.None,
+            sectionType = SectionType.TYPES
+        )
+
+        val expanded = flowOf(
+            emptyList(),
+            listOf(
+                widget.id + "/" + widget.source.id + "/" + link1.id
+            )
+        )
+
+        val container = TreeWidgetContainer(
+            container = storelessSubscriptionContainer,
+            widget = widget,
+            expandedBranches = expanded,
+            isWidgetCollapsed = flowOf(false),
+            urlBuilder = urlBuilder,
+            isSessionActive = flowOf(true),
+            objectWatcher = objectWatcher,
+            getSpaceView = getSpaceView,
+            fieldParser = fieldParser,
+            storeOfObjectTypes = storeOfObjectTypes
+        )
+
+        stubObjectSearch(
+            widget = widget,
+            targets = links.map { it.id },
+            results = links
+        )
+
+        stubObjectSearch(
+            widget = widget,
+            targets = links.map { it.id } + link1.links,
+            results = emptyList()
+        )
+
+        // TESTING
+
+        container.view.test {
+            val first = awaitItem()
+            awaitItem()
+            awaitItem()
+            awaitComplete()
+            verifyBlocking(storelessSubscriptionContainer, times(1)) {
+                subscribe(
+                    StoreSearchByIdsParams(
+                        space = SpaceId(config.space),
+                        subscription = widget.id,
+                        targets = links.map { it.id },
+                        keys = TreeWidgetContainer.keys
+                    )
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `should define correct indent level for children of children of source objects`() =
+        runTest {
+
+            // SETUP
+
+            val layout = ObjectType.Layout.BASIC.code.toDouble()
+
+            val linkA = StubObject(
+                id = "A",
+                links = listOf(
+                    "A1",
+                    "A2",
+                    "A3"
+                ),
+                layout = layout
+            )
+            val linkA1 = StubObject(id = "A1", layout = layout)
+            val linkA2 = StubObject(id = "A2", layout = layout)
+            val linkA3 = StubObject(id = "A3", layout = layout)
+            val linkB = StubObject(id = "B", layout = layout)
+            val linkC = StubObject(id = "C", layout = layout)
+
+            val sourceLinks = listOf(linkA, linkB, linkC)
+
+            val source = StubObject(
+                id = "root",
+                links = sourceLinks.map { it.id }
+            )
+
+            val widget = Widget.Tree(
+                id = "widget",
+                source = Widget.Source.Default(source),
+                config = config,
+                icon = ObjectIcon.None,
+                sectionType = SectionType.TYPES
+            )
+
+            val delayBeforeExpanded = 100L
+
+            val expanded = flow {
+                emit(emptyList())
+                delay(delayBeforeExpanded)
+                emit(listOf(widget.id + "/" + widget.source.id + "/" + linkA.id))
+            }
+
+            val container = TreeWidgetContainer(
+                container = storelessSubscriptionContainer,
+                widget = widget,
+                expandedBranches = expanded,
+                isWidgetCollapsed = flowOf(false),
+                urlBuilder = urlBuilder,
+                isSessionActive = flowOf(true),
+                objectWatcher = objectWatcher,
+                getSpaceView = getSpaceView,
+                fieldParser = fieldParser,
+                storeOfObjectTypes = storeOfObjectTypes
+            )
+
+            stubObjectSearch(
+                widget = widget,
+                targets = sourceLinks.map { it.id },
+                results = sourceLinks
+            )
+
+            stubObjectSearch(
+                widget = widget,
+                targets = sourceLinks.map { it.id } + linkA.links,
+                results = sourceLinks + listOf(linkA1, linkA2, linkA3)
+            )
+
+            // TESTING
+
+            container.view.test {
+                val first = awaitItem()
+                val firstTimeState = awaitItem()
+                assertEquals(
+                    expected = WidgetView.Tree(
+                        id = widget.id,
+                        source = widget.source,
+                        name = WidgetView.Name.Default(
+                            fieldParser.getObjectName((widget.source as Widget.Source.Default).obj)
+                        ),
+                        elements = listOf(
+                            WidgetView.Tree.Element(
+                                id = sourceLinks[0].id,
+                                indent = 0,
+                                obj = sourceLinks[0],
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[0].id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Branch(isExpanded = false),
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(sourceLinks[0])
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 0,
+                                id = sourceLinks[1].id,
+                                obj = sourceLinks[1],
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[1].id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(sourceLinks[1])
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 0,
+                                id = sourceLinks[2].id,
+                                obj = sourceLinks[2],
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[2].id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(sourceLinks[2])
+                                )
+                            )
+                        ),
+                        isExpanded = true,
+                        sectionType = SectionType.TYPES
+                    ),
+                    actual = firstTimeState
+                )
+                // Should be using coroutine delay instead, but it does not work currently.
+                Thread.sleep(delayBeforeExpanded * 2)
+                val secondTimeState = awaitItem()
+                assertEquals(
+                    expected = WidgetView.Tree(
+                        id = widget.id,
+                        source = widget.source,
+                        name = WidgetView.Name.Default(
+                            fieldParser.getObjectName((widget.source as Widget.Source.Default).obj)
+                        ),
+                        elements = listOf(
+                            WidgetView.Tree.Element(
+                                indent = 0,
+                                id = sourceLinks[0].id,
+                                obj = sourceLinks[0],
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[0].id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Branch(isExpanded = true),
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(sourceLinks[0])
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 1,
+                                id = linkA1.id,
+                                obj = linkA1,
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[0].id + "/" + linkA1.id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(linkA1)
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 1,
+                                id = linkA2.id,
+                                obj = linkA2,
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[0].id + "/" + linkA2.id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(linkA2)
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 1,
+                                id = linkA3.id,
+                                obj = linkA3,
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[0].id + "/" + linkA3.id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(linkA3)
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 0,
+                                id = sourceLinks[1].id,
+                                obj = sourceLinks[1],
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[1].id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(sourceLinks[1])
+                                )
+                            ),
+                            WidgetView.Tree.Element(
+                                indent = 0,
+                                id = sourceLinks[2].id,
+                                obj = sourceLinks[2],
+                                path = widget.id + "/" + widget.source.id + "/" + sourceLinks[2].id,
+                                elementIcon = WidgetView.Tree.ElementIcon.Leaf,
+                                objectIcon = ObjectIcon.TypeIcon.Fallback.DEFAULT,
+                                name = WidgetView.Name.Default(
+                                    prettyPrintName = fieldParser.getObjectName(sourceLinks[2])
+                                )
+                            )
+                        ),
+                        isExpanded = true,
+                        sectionType = SectionType.TYPES
+                    ),
+                    actual = secondTimeState
+                )
+                awaitComplete()
+            }
+        }
+
+    @Test
+    fun `should start subscription with empty keys if source is archived`() = runTest {
+
+        // SETUP
+
+        val link1 = StubObject()
+        val link2 = StubObject()
+        val link3 = StubObject()
+        val links = listOf(link1, link2, link3)
+
+        val source = StubObject(
+            links = links.map { it.id },
+            isArchived = true
+        )
+
+        val widget = Widget.Tree(
+            id = MockDataFactory.randomUuid(),
+            source = Widget.Source.Default(source),
+            config = config,
+            icon = ObjectIcon.None,
+            sectionType = SectionType.TYPES
+        )
+
+        val expanded = flowOf(emptyList<TreePath>())
+
+        val container = TreeWidgetContainer(
+            container = storelessSubscriptionContainer,
+            widget = widget,
+            expandedBranches = expanded,
+            isWidgetCollapsed = flowOf(false),
+            urlBuilder = urlBuilder,
+            isSessionActive = flowOf(true),
+            objectWatcher = objectWatcher,
+            getSpaceView = getSpaceView,
+            fieldParser = fieldParser,
+            storeOfObjectTypes = storeOfObjectTypes
+        )
+
+        stubObjectSearch(
+            widget = widget,
+            targets = emptyList(),
+            results = links
+        )
+
+        // TESTING
+
+        container.view.test {
+            val first = awaitItem()
+            awaitItem()
+            awaitComplete()
+            verifyBlocking(storelessSubscriptionContainer, times(1)) {
+                subscribe(
+                    StoreSearchByIdsParams(
+                        space = SpaceId(config.space),
+                        subscription = widget.id,
+                        targets = emptyList(),
+                        keys = TreeWidgetContainer.keys
+                    )
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `should start subscription with empty keys if source is deleted`() = runTest {
+
+        // SETUP
+
+        val link1 = StubObject()
+        val link2 = StubObject()
+        val link3 = StubObject()
+        val links = listOf(link1, link2, link3)
+
+        val source = StubObject(
+            links = links.map { it.id },
+            isDeleted = true
+        )
+        
+        stringResourceProvider.stub {
+            onBlocking {
+                getDeletedObjectTitle()
+            } doReturn "Deleted object"
+        }
+
+        val widget = Widget.Tree(
+            id = MockDataFactory.randomUuid(),
+            source = Widget.Source.Default(source),
+            config = config,
+            icon = ObjectIcon.None,
+            sectionType = SectionType.TYPES
+        )
+
+        val expanded = flowOf(emptyList<TreePath>())
+
+        val container = TreeWidgetContainer(
+            container = storelessSubscriptionContainer,
+            widget = widget,
+            expandedBranches = expanded,
+            isWidgetCollapsed = flowOf(false),
+            urlBuilder = urlBuilder,
+            isSessionActive = flowOf(true),
+            objectWatcher = objectWatcher,
+            getSpaceView = getSpaceView,
+            fieldParser = fieldParser,
+            storeOfObjectTypes = storeOfObjectTypes
+        )
+
+        stubObjectSearch(
+            widget = widget,
+            targets = emptyList(),
+            results = links
+        )
+
+        // TESTING
+
+        container.view.test {
+            val first = awaitItem()
+            awaitItem()
+            awaitComplete()
+            verifyBlocking(storelessSubscriptionContainer, times(1)) {
+                subscribe(
+                    StoreSearchByIdsParams(
+                        space = SpaceId(config.space),
+                        subscription = widget.id,
+                        targets = emptyList(),
+                        keys = TreeWidgetContainer.keys
+                    )
+                )
+            }
+        }
+    }
+
+    private fun stubObjectSearch(
+        widget: Widget.Tree,
+        targets: List<Id>,
+        results: List<ObjectWrapper.Basic>,
+    ) {
+        storelessSubscriptionContainer.stub {
+            on {
+                subscribe(
+                    StoreSearchByIdsParams(
+                        space = SpaceId(config.space),
+                        subscription = widget.id,
+                        targets = targets,
+                        keys = TreeWidgetContainer.keys
+                    )
+                )
+            } doReturn flowOf(results)
+        }
+    }
+}

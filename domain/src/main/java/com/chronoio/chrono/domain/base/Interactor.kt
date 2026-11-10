@@ -1,0 +1,110 @@
+package com.chronoio.chrono.domain.base
+
+import com.chronoio.chrono.domain.base.Interactor.Status
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+
+/**
+ * Interactor, whose invocation [Status] can be observed.
+ * It can be used as alternative for [BaseUseCase].
+ * @property context coroutine's context for this operation.
+ */
+abstract class Interactor<in P>(
+    private val context: CoroutineContext = Dispatchers.IO
+) {
+
+    operator fun invoke(params: P): Flow<Status> {
+        return flow {
+            emit(Status.Started)
+            withContext(context) { run(params) }
+            emit(Status.Success)
+        }.catch { t ->
+            emit(Status.Error(t))
+        }
+    }
+
+    protected abstract suspend fun run(params: P)
+
+    /**
+     * Invocation status for operation.
+     */
+    sealed class Status {
+        /**
+         * Operation is running now.
+         */
+        object Started : Status()
+
+        /**
+         * Operation completed successfully.
+         */
+        object Success : Status()
+
+        /**
+         * Operation terminated with error, represented as a [Throwable].
+         */
+        data class Error(val throwable: Throwable) : Status()
+    }
+}
+
+@Deprecated(
+    "Use ResultInteractor instead",
+    replaceWith = ReplaceWith("ResultInteractor<P, R>")
+)
+abstract class ResultatInteractor<in P, out R> {
+    operator fun invoke(params: P): Flow<Resultat<R>> {
+        return flow {
+            emit(Resultat.Loading())
+            val r = execute(params)
+            emit(Resultat.Success(r))
+        }.catch { t ->
+            emit(Resultat.Failure(t))
+        }
+    }
+
+    protected abstract suspend fun execute(params: P): R
+}
+
+abstract class FlowInteractor<in P, R>(
+    private val context: CoroutineContext
+) {
+    protected abstract fun build() : Flow<R>
+    protected abstract fun build(params: P) : Flow<R>
+    fun flow() : Flow<R> = build().flowOn(context)
+    fun flow(params: P) : Flow<R> = build(params).flowOn(context)
+}
+
+
+abstract class ResultInteractor<in P, R>(
+    private val context: CoroutineContext
+) {
+    @Throws(Exception::class)
+    fun asFlow(params: P): Flow<R> = flow { emit(doWork(params)) }.flowOn(context)
+
+    fun stream(params: P): Flow<Resultat<R>> {
+        return flow {
+            emit(Resultat.Loading())
+            val r = doWork(params)
+            emit(Resultat.Success(r))
+        }.catch { t ->
+            emit(Resultat.Failure(t))
+        }.flowOn(context)
+    }
+
+    suspend fun run(params: P) = doWork(params)
+
+    /*
+    * N.B. Executes on the caller's thread.
+    * */
+    suspend fun execute(params: P): Resultat<R> = runCatchingL { doWork(params) }
+
+    suspend fun async(params: P): Resultat<R> = withContext(context) {
+        runCatchingL { doWork(params) }
+    }
+
+    protected abstract suspend fun doWork(params: P): R
+}

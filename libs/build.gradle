@@ -1,0 +1,14 @@
+plugins {
+    id 'maven-publish'
+}
+
+publishing {
+    publications {
+        create("myLocalPublication", MavenPublication) {
+            artifact(file('lib.aar'))
+            groupId = 'io.anyproto'
+            artifactId = 'anytype-heart-android'
+            version = '0.99'
+        }
+    }
+}

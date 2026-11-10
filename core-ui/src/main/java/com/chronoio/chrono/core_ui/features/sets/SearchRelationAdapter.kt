@@ -1,0 +1,38 @@
+package com.chronoio.chrono.core_ui.features.sets
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import com.chronoio.chrono.core_ui.common.AbstractAdapter
+import com.chronoio.chrono.core_ui.common.AbstractViewHolder
+import com.chronoio.chrono.core_ui.databinding.ItemSearchRelationBinding
+import com.chronoio.chrono.core_ui.extensions.icon
+import com.chronoio.chrono.presentation.sets.model.SimpleRelationView
+
+class SearchRelationAdapter(
+    private val onRelationClicked: (SimpleRelationView) -> Unit
+) : AbstractAdapter<SimpleRelationView>(emptyList()) {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ViewHolder(
+        binding = ItemSearchRelationBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+    ).apply {
+        itemView.setOnClickListener { onRelationClicked(items[bindingAdapterPosition]) }
+    }
+
+    class ViewHolder(
+        val binding: ItemSearchRelationBinding
+    ) : AbstractViewHolder<SimpleRelationView>(binding.root) {
+        override fun bind(item: SimpleRelationView) = with(binding) {
+            val icon: Int? = item.icon()
+            if (icon != null) {
+                ivRelation.setImageResource(icon)
+            } else {
+                ivRelation.setImageDrawable(null)
+            }
+            tvRelationName.text = item.title
+        }
+    }
+}

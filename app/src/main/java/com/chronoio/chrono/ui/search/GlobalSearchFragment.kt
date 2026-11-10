@@ -1,0 +1,247 @@
+package com.chronoio.chrono.ui.search
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.material.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.fragment.findNavController
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.misc.OpenObjectNavigation
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.extensions.isKeyboardVisible
+import com.chronoio.chrono.core_utils.clipboard.copyPlainTextToClipboard
+import com.chronoio.chrono.core_utils.ext.argString
+import com.chronoio.chrono.core_utils.ext.setupBottomSheetBehavior
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.intents.ActivityCustomTabsHelper
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetComposeFragment
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.presentation.search.GlobalSearchViewModel
+import com.chronoio.chrono.ui.base.navigation
+import com.chronoio.chrono.ui.chats.ChatFragment
+import com.chronoio.chrono.ui.date.DateObjectFragment
+import com.chronoio.chrono.ui.editor.EditorFragment
+import com.chronoio.chrono.ui.media.MediaActivity
+import com.chronoio.chrono.ui.profile.ParticipantFragment
+import com.chronoio.chrono.ui.sets.ObjectSetFragment
+import com.chronoio.chrono.ui.settings.typography
+import javax.inject.Inject
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class GlobalSearchFragment : BaseBottomSheetComposeFragment() {
+
+    @Inject
+    lateinit var factory: GlobalSearchViewModel.Factory
+
+    private val vm by viewModels<GlobalSearchViewModel> { factory }
+
+    private val space get() = argString(ARG_SPACE)
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            MaterialTheme(
+                typography = typography
+            ) {
+                val scope = rememberCoroutineScope()
+                GlobalSearchScreen(
+                    state = vm.state.collectAsStateWithLifecycle().value,
+                    onQueryChanged = vm::onQueryChanged,
+                    onObjectClicked = {
+                        if (isKeyboardVisible()) {
+                            scope.launch {
+                                delay(KEYBOARD_HIDE_DELAY)
+                                vm.onObjectClicked(it)
+                            }
+                        } else {
+                            vm.onObjectClicked(it)
+                        }
+                    },
+                    onShowRelatedClicked = vm::onShowRelatedClicked,
+                    onClearRelatedClicked = vm::onClearRelatedObjectClicked,
+                    onOpenObjectAsObject = vm::onOpenObjectAsObject,
+                    onOpenInBrowser = vm::onOpenInBrowser,
+                    onOpenFile = vm::onOpenFile,
+                    onPinObject = vm::onPinObject,
+                    onCopyLink = vm::onCopyLink,
+                    onDuplicateObject = vm::onDuplicateObject,
+                    onMoveToBin = vm::onMoveToBin,
+                )
+            }
+            LaunchedEffect(Unit) {
+                vm.toasts.collect { msg -> toast(msg) }
+            }
+            LaunchedEffect(Unit) {
+                vm.commands.collect { command ->
+                    when (command) {
+                        is GlobalSearchViewModel.SearchCommand.Browse -> {
+                            try {
+                                ActivityCustomTabsHelper.openUrl(
+                                    activity = requireActivity(),
+                                    url = command.url
+                                )
+                            } catch (e: Throwable) {
+                                Timber.e(e, "Error opening URL: ${command.url}")
+                            }
+                        }
+                        is GlobalSearchViewModel.SearchCommand.PlayMedia -> {
+                            runCatching {
+                                val mediaType = when (command.layout) {
+                                    ObjectType.Layout.IMAGE -> MediaActivity.TYPE_IMAGE
+                                    ObjectType.Layout.VIDEO -> MediaActivity.TYPE_VIDEO
+                                    ObjectType.Layout.AUDIO -> MediaActivity.TYPE_AUDIO
+                                    else -> {
+                                        Timber.w("PlayMedia dispatched with unsupported layout: ${command.layout}")
+                                        return@runCatching
+                                    }
+                                }
+                                MediaActivity.start(
+                                    context = requireContext(),
+                                    mediaType = mediaType,
+                                    obj = command.targetObjectId,
+                                    name = command.name,
+                                    space = space
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while launching media viewer")
+                            }
+                        }
+                        is GlobalSearchViewModel.SearchCommand.CopyLinkToClipboard -> {
+                            requireContext().copyPlainTextToClipboard(
+                                plainText = command.link,
+                                label = "Object link",
+                                successToast = getString(R.string.link_copied)
+                            )
+                        }
+                    }
+                }
+            }
+            LaunchedEffect(Unit) {
+                vm.navigation.collect { nav ->
+                    when (nav) {
+                        is OpenObjectNavigation.OpenEditor -> {
+                            findNavController().navigate(
+                                R.id.objectNavigation,
+                                EditorFragment.args(
+                                    ctx = nav.target,
+                                    space = nav.space
+                                )
+                            )
+                        }
+                        is OpenObjectNavigation.OpenDataView -> {
+                            findNavController().navigate(
+                                R.id.dataViewNavigation,
+                                ObjectSetFragment.args(
+                                    ctx = nav.target,
+                                    space = nav.space
+                                )
+                            )
+                        }
+                        is OpenObjectNavigation.OpenParticipant -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.participantScreen,
+                                    ParticipantFragment.args(
+                                        objectId = nav.target,
+                                        space = nav.space
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.w("Error while opening participant screen")
+                            }
+                        }
+                        is OpenObjectNavigation.OpenChat -> {
+                            findNavController().navigate(
+                                R.id.chatScreen,
+                                ChatFragment.args(
+                                    ctx = nav.target,
+                                    space = nav.space,
+                                    popUpToVault = false
+                                )
+                            )
+                        }
+                        OpenObjectNavigation.NonValidObject -> {
+                            toast(getString(R.string.error_non_valid_object))
+                        }
+                        is OpenObjectNavigation.OpenDateObject -> {
+                            runCatching {
+                                findNavController().navigate(
+                                    R.id.dateObjectScreen,
+                                    DateObjectFragment.args(
+                                        objectId = nav.target,
+                                        space = nav.space
+                                    )
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Failed to navigate to date object screen")
+                            }
+                        }
+                        is OpenObjectNavigation.UnexpectedLayoutError -> {
+                            toast(getString(R.string.error_unexpected_layout))
+                        }
+                        is OpenObjectNavigation.OpenType -> {
+                            runCatching {
+                                navigation().openObjectType(
+                                    objectId = nav.target,
+                                    space = nav.space
+                                )
+                            }.onFailure {
+                                Timber.e(it, "Error while opening object type from ")
+                            }
+                        }
+                        is OpenObjectNavigation.OpenBookmarkUrl -> {
+                            try {
+                                ActivityCustomTabsHelper.openUrl(
+                                    activity = requireActivity(),
+                                    url = nav.url
+                                )
+                            } catch (e: Throwable) {
+                                Timber.e(e, "Error opening bookmark URL: ${nav.url}")
+                                toast("Failed to open URL")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        setupBottomSheetBehavior(DEFAULT_PADDING_TOP)
+    }
+
+    override fun injectDependencies() {
+        val params = GlobalSearchViewModel.VmParams(
+            space = SpaceId(space)
+        )
+        componentManager().globalSearchComponent.get(params).inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().globalSearchComponent.release()
+    }
+
+    companion object {
+        const val KEYBOARD_HIDE_DELAY = 300L
+
+        const val ARG_SPACE = "arg.global.search.space"
+        fun args(space: Id): Bundle = bundleOf(ARG_SPACE to space)
+    }
+}

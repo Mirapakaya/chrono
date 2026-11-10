@@ -19,7 +19,7 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper
 ext.compile_sdk = Integer.parseInt(project.findProperty("sdk.compile") ?: "36")
 ext.target_sdk = Integer.parseInt(project.findProperty("sdk.target") ?: "36")
 ext.min_sdk = Integer.parseInt(project.findProperty("sdk.min") ?: "26")
-ext.application_id = project.findProperty("app.applicationId") ?: "io.anytype.app"
+ext.application_id = project.findProperty("app.applicationId") ?: "com.chronoio.chrono"
 ext.test_runner = project.findProperty("app.testRunner") ?: "androidx.test.runner.AndroidJUnitRunner"
 ext.onCi = project.findProperty("com.anytype.ci")?.toBoolean() ?: false
 

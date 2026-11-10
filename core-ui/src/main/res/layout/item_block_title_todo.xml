@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <ImageView
+        android:id="@+id/cover"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/default_cover_height"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/content_description_document_cover"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:background="@color/orange"
+        tools:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/todoTitleCheckbox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/dp_32"
+        android:paddingStart="@dimen/dp_20"
+        android:paddingEnd="@dimen/dp_6"
+        android:paddingTop="3dp"
+        android:src="@drawable/ic_todo_title_checkbox_selector"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/cover"
+        app:layout_goneMarginTop="@dimen/dp_80" />
+
+    <com.chronoio.chrono.core_ui.widgets.text.TextInputWidget
+        android:id="@+id/title"
+        style="@style/BlockTitleContentStyle"
+        android:layout_width="0dp"
+        android:layout_marginStart="6dp"
+        android:layout_marginTop="32dp"
+        android:layout_marginEnd="20dp"
+        android:hint="@string/untitled"
+        android:paddingTop="0dp"
+        app:ignoreDragAndDrop="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/todoTitleCheckbox"
+        app:layout_constraintTop_toBottomOf="@+id/cover"
+        app:onlyPasteAsPlaneText="true"
+        app:layout_goneMarginTop="@dimen/dp_80"
+        tools:text="Check new Android version multiline"
+        tools:visibility="visible" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

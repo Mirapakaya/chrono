@@ -1,0 +1,324 @@
+package com.chronoio.chrono.presentation.linking
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.ext.rangeIntersection
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_utils.tools.UrlValidator
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.objects.StoreOfObjectTypes
+import com.chronoio.chrono.domain.primitives.FieldParser
+import com.chronoio.chrono.domain.search.SearchObjects
+import com.chronoio.chrono.presentation.analytics.AnalyticSpaceHelperDelegate
+import com.chronoio.chrono.presentation.editor.Editor
+import com.chronoio.chrono.presentation.extension.sendAnalyticsSearchResultEvent
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.core_models.SupportedLayouts
+import com.chronoio.chrono.presentation.objects.toLinkToObjectView
+import com.chronoio.chrono.presentation.objects.toLinkToView
+import com.chronoio.chrono.presentation.search.ObjectSearchConstants
+import com.chronoio.chrono.presentation.search.ObjectSearchViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class LinkToObjectOrWebViewModel(
+    private val vmParams: VmParams,
+    private val urlBuilder: UrlBuilder,
+    private val searchObjects: SearchObjects,
+    private val storeOfObjectTypes: StoreOfObjectTypes,
+    private val analytics: Analytics,
+    private val stores: Editor.Storage,
+    private val urlValidator: UrlValidator,
+    private val analyticSpaceHelperDelegate: AnalyticSpaceHelperDelegate,
+    private val fieldParser: FieldParser,
+    private val spaceViews: SpaceViewSubscriptionContainer
+) : ViewModel(), AnalyticSpaceHelperDelegate by analyticSpaceHelperDelegate {
+
+    val viewState = MutableStateFlow<ViewState>(ViewState.Init)
+    val commands = MutableSharedFlow<Command>(replay = 0)
+    private val userInput = MutableStateFlow(ObjectSearchViewModel.EMPTY_QUERY)
+    private val searchQuery = userInput
+        .debounce(SEARCH_INPUT_DEBOUNCE)
+        .distinctUntilChanged()
+
+//    private val objectTypes get() = storeOfObjectTypes.getAll()
+
+    private val _markupLinkParam = MutableStateFlow<String?>(null)
+    val markupLinkParam: StateFlow<String?> = _markupLinkParam
+    private val _markupObjectParam = MutableStateFlow<String?>(null)
+    val markupObjectParam: StateFlow<String?> = _markupObjectParam
+    private var clipboardUrl: String? = null
+
+    private val jobs = mutableListOf<Job>()
+
+    fun onStart(blockId: Id, rangeStart: Int, rangeEnd: Int, clipboardUrl: String?, ignore: Id) {
+        this.clipboardUrl = clipboardUrl
+        setupBlockInRangeMarkupParam(blockId, rangeStart, rangeEnd)
+        startObservingViewState(ignore)
+    }
+
+    fun onStop() {
+        viewState.value = ViewState.Success(emptyList())
+        clipboardUrl = null
+        jobs.forEach { it.cancel() }
+        jobs.clear()
+    }
+
+    private fun startObservingViewState(ignore: Id) {
+        jobs += viewModelScope.launch {
+            searchQuery.collectLatest { query ->
+                val params = getSearchObjectsParams(ignore).copy(fulltext = query)
+                searchObjects(params).process(
+                    success = { searchResponse ->
+                        val result = proceedWithSearchObjectsResponse(searchResponse)
+                        viewState.value = ViewState.Success(result)
+                    },
+                    failure = { Timber.e(it, "Error while searching for objects") }
+                )
+            }
+        }
+    }
+
+    private suspend fun proceedWithSearchObjectsResponse(searchResponse: List<ObjectWrapper.Basic>): List<LinkToItemView> {
+        val linkUrl = _markupLinkParam.value
+        val linkObject = _markupObjectParam.value
+        val input = userInput.value
+        return when {
+            input.isBlank() && linkUrl != null -> {
+                listOf(
+                    LinkToItemView.Subheading.LinkedTo,
+                    LinkToItemView.LinkedTo.Url(linkUrl),
+                    LinkToItemView.Subheading.Actions,
+                    LinkToItemView.RemoveLink,
+                    LinkToItemView.CopyLink(linkUrl)
+                )
+            }
+            input.isBlank() && linkObject != null -> {
+                val obj = searchResponse.firstOrNull { it.id == linkObject }
+                if (obj != null) {
+                    listOf(
+                        LinkToItemView.Subheading.LinkedTo,
+                        obj.toLinkToObjectView(
+                            urlBuilder = urlBuilder,
+                            objectTypes = storeOfObjectTypes.getAll(),
+                            fieldParser = fieldParser,
+                            storeOfObjectTypes = storeOfObjectTypes
+                        ),
+                        LinkToItemView.Subheading.Actions,
+                        LinkToItemView.RemoveLink
+                    )
+
+                } else {
+                    listOf(
+                        LinkToItemView.Subheading.Actions,
+                        LinkToItemView.RemoveLink
+                    )
+                }
+            }
+            else -> {
+                val isOneToOneSpace = spaceViews.get(vmParams.space)?.isOneToOneSpace == true
+                val supportedLayouts = SupportedLayouts.getLayouts(isOneToOneSpace)
+                val filteredSearchResponse =
+                    searchResponse
+                        .filter { supportedLayouts.contains(it.layout) }
+
+                val objectViews = filteredSearchResponse.toLinkToView(
+                    urlBuilder = urlBuilder,
+                    objectTypes = storeOfObjectTypes.getAll(),
+                    fieldParser = fieldParser,
+                    storeOfObjectTypes = storeOfObjectTypes
+                )
+                val views = mutableListOf<LinkToItemView>()
+                if (clipboardUrl != null && userInput.value.isBlank()) {
+                    views.add(LinkToItemView.Subheading.Web)
+                    views.add(LinkToItemView.PasteFromClipboard)
+                }
+                if (userInput.value.isNotEmpty() && urlValidator.isValid(userInput.value)) {
+                    views.add(LinkToItemView.Subheading.Web)
+                    views.add(LinkToItemView.WebItem(userInput.value))
+                }
+                views.add(LinkToItemView.Subheading.Objects)
+                views.addAll(objectViews)
+                views.add(LinkToItemView.CreateObject(userInput.value))
+                views
+            }
+        }
+    }
+
+    private fun setupBlockInRangeMarkupParam(blockId: Id, rangeStart: Int, rangeEnd: Int) {
+        val block = stores.document.get().firstOrNull { it.id == blockId }
+        val content = block?.content
+        if (content is Block.Content.Text) {
+            val text = content.text
+            if (rangeStart >= 0 && rangeEnd <= text.length && (rangeStart != rangeEnd)) {
+                val range = IntRange(start = rangeStart, endInclusive = rangeEnd)
+                val marks = block.content.asText().marks
+                val filteredMarks = marks.filter { mark ->
+                    (mark.type == Block.Content.Text.Mark.Type.LINK
+                            || mark.type == Block.Content.Text.Mark.Type.OBJECT)
+                            && mark.rangeIntersection(range) > 0
+                }
+                if (filteredMarks.isNotEmpty()) {
+                    if (filteredMarks[0].type == Block.Content.Text.Mark.Type.LINK) {
+                        _markupLinkParam.value = filteredMarks[0].param
+                    }
+                    if (filteredMarks[0].type == Block.Content.Text.Mark.Type.OBJECT) {
+                        _markupObjectParam.value = filteredMarks[0].param
+                    }
+                }
+            } else {
+                viewState.value = ViewState.ErrorSelection
+            }
+        } else {
+            viewState.value = ViewState.ErrorSelectedBlock
+        }
+    }
+
+    fun onClicked(item: LinkToItemView) {
+        Timber.d("onClicked, item:[$item] ")
+        viewModelScope.launch {
+            when (item) {
+                is LinkToItemView.CreateObject -> {
+                    commands.emit(Command.CreateAndSetObjectAsLink(objectName = item.title))
+                }
+                is LinkToItemView.Object -> {
+                    onObjectClickEvent(item.position)
+                    commands.emit(Command.SetObjectAsLink(objectId = item.id))
+                }
+                is LinkToItemView.WebItem -> {
+                    commands.emit(Command.SetUrlAsLink(url = item.url))
+                }
+                is LinkToItemView.CopyLink -> {
+                    commands.emit(Command.CopyLink(link = item.link))
+                }
+                is LinkToItemView.LinkedTo.Object -> {
+                    commands.emit(Command.OpenObject(objectId = item.id))
+                }
+                is LinkToItemView.LinkedTo.Url -> {
+                    commands.emit(Command.OpenUrl(url = item.url))
+                }
+                LinkToItemView.PasteFromClipboard -> {
+                    clipboardUrl?.let {
+                        commands.emit(Command.SetUrlAsLink(url = it))
+                    }
+                }
+                LinkToItemView.RemoveLink -> {
+                    commands.emit(Command.RemoveLink)
+                }
+                is LinkToItemView.Subheading -> {}
+            }
+        }
+    }
+
+    private fun onObjectClickEvent(position: Int) {
+        viewModelScope.launch {
+            sendAnalyticsSearchResultEvent(
+                analytics = analytics,
+                pos = position + 1,
+                length = userInput.value.length,
+                spaceParams = provideParams(vmParams.space.id)
+            )
+        }
+    }
+
+    fun getSearchObjectsParams(ignore: Id) = SearchObjects.Params(
+        space = vmParams.space,
+        limit = ObjectSearchViewModel.SEARCH_LIMIT,
+        filters = buildList {
+            val isOneToOneSpace = spaceViews.get(vmParams.space)?.isOneToOneSpace == true
+            addAll(
+                ObjectSearchConstants.getFilterLinkTo(
+                    ignore = ignore,
+                    isOneToOneSpace = isOneToOneSpace
+                )
+            )
+        },
+        sorts = ObjectSearchConstants.sortLinkTo,
+        fulltext = ObjectSearchViewModel.EMPTY_QUERY,
+        keys = ObjectSearchConstants.defaultKeys
+    )
+
+    fun onSearchTextChanged(searchText: String) {
+        userInput.value = searchText
+    }
+
+    data class VmParams(
+        val space: SpaceId
+    )
+
+    sealed class Command {
+        data object Exit : Command()
+        data class SetUrlAsLink(val url: String) : Command()
+        data class SetObjectAsLink(val objectId: Id) : Command()
+        data class CreateAndSetObjectAsLink(val objectName: String) : Command()
+        data class CopyLink(val link: String) : Command()
+        data object RemoveLink : Command()
+        data class OpenObject(val objectId: Id) : Command()
+        data class OpenUrl(val url: String) : Command()
+    }
+
+    sealed class ViewState {
+        data class Success(
+            val items: List<LinkToItemView>
+        ) : ViewState()
+
+        object Init : ViewState()
+        data class SetFilter(val filter: String) : ViewState()
+        object ErrorSelectedBlock : ViewState()
+        object ErrorSelection : ViewState()
+    }
+
+    companion object {
+        const val SEARCH_INPUT_DEBOUNCE = 300L
+    }
+}
+
+sealed class LinkToItemView {
+    sealed class Subheading : LinkToItemView() {
+        object Objects : Subheading()
+        object Web : Subheading()
+        object LinkedTo : Subheading()
+        object Actions : Subheading()
+    }
+
+    data class WebItem(val url: String) : LinkToItemView()
+    data class CreateObject(val title: String) : LinkToItemView()
+    data class Object(
+        val id: Id,
+        val title: String?,
+        val subtitle: String?,
+        val type: String? = null,
+        val layout: ObjectType.Layout? = null,
+        val icon: ObjectIcon = ObjectIcon.None,
+        val position: Int = 0
+    ) : LinkToItemView()
+
+    sealed class LinkedTo : LinkToItemView() {
+        data class Url(val url: String) : LinkedTo()
+        data class Object(
+            val id: Id,
+            val title: String?,
+            val subtitle: String?,
+            val type: String? = null,
+            val layout: ObjectType.Layout? = null,
+            val icon: ObjectIcon = ObjectIcon.None
+        ) : LinkedTo()
+    }
+
+    data object RemoveLink : LinkToItemView()
+    data class CopyLink(val link: String) : LinkToItemView()
+    data object PasteFromClipboard : LinkToItemView()
+}

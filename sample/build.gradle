@@ -1,0 +1,86 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "com.google.devtools.ksp"
+    alias(libs.plugins.compose.compiler)
+    id 'com.google.gms.google-services'
+}
+
+android {
+    def config = rootProject.ext
+
+    compileSdk = config.compile_sdk
+
+    defaultConfig {
+        applicationId = "com.chronoio.chrono.sample"
+        minSdk = config.min_sdk
+        targetSdk = config.target_sdk
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = config.test_runner
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    buildFeatures {
+        viewBinding = true
+        compose = true
+        buildConfig = true
+    }
+
+    namespace 'com.chronoio.chrono.sample'
+}
+
+dependencies {
+
+    implementation project(':core-utils')
+    implementation project(':core-ui')
+    implementation project(':core-models')
+    implementation project(':presentation')
+
+    implementation libs.kotlin
+    implementation libs.appcompat
+    implementation libs.coroutinesAndroid
+    implementation libs.constraintLayout
+    implementation libs.androidxCore
+    implementation libs.timber
+    implementation libs.fragment
+    implementation libs.design
+    implementation libs.pickT
+
+    implementation libs.navigationCompose
+
+    implementation libs.compose
+    implementation libs.composeFoundation
+    implementation libs.composeMaterial3
+    implementation libs.composeToolingPreview
+    implementation libs.composeAccompanistPager
+    implementation libs.composeAccompanistThemeAdapter
+    implementation libs.composeAccompanistPagerIndicators
+    implementation libs.preference
+    implementation libs.activityCompose
+    implementation libs.composeReorderable
+
+    implementation libs.coilCompose
+    implementation libs.coilNetwork
+    debugImplementation libs.composeTooling
+
+    testImplementation libs.junit
+    testImplementation libs.kotlinTest
+    testImplementation libs.robolectric
+    testImplementation libs.androidXTestCore
+    testImplementation libs.mockitoKotlin
+
+    implementation "com.google.accompanist:accompanist-navigation-material:0.34.0"
+
+    implementation platform('com.google.firebase:firebase-bom:32.1.1')
+}

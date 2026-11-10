@@ -1,0 +1,330 @@
+package com.chronoio.chrono.ui_settings.account
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.analytics.base.sendEvent
+import com.chronoio.chrono.core_models.NetworkMode
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.core_models.membership.MembershipStatus
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.ui.AccountProfile
+import com.chronoio.chrono.core_models.ui.profileIcon
+import com.chronoio.chrono.core_utils.notifications.NotificationPermissionManager
+import com.chronoio.chrono.core_utils.notifications.NotificationPermissionManagerImpl
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.config.ConfigStorage
+import com.chronoio.chrono.domain.config.UserSettingsRepository
+import com.chronoio.chrono.domain.icon.RemoveObjectIcon
+import com.chronoio.chrono.domain.icon.SetDocumentImageIcon
+import com.chronoio.chrono.domain.icon.SetImageIcon
+import com.chronoio.chrono.domain.library.StorelessSubscriptionContainer
+import com.chronoio.chrono.domain.multiplayer.GenerateOneToOneChatLink
+import com.chronoio.chrono.domain.multiplayer.UserPermissionProvider
+import com.chronoio.chrono.domain.networkmode.GetNetworkMode
+import com.chronoio.chrono.domain.`object`.SetObjectDetails
+import com.chronoio.chrono.domain.search.ProfileSubscriptionManager
+import com.chronoio.chrono.presentation.common.BaseViewModel
+import com.chronoio.chrono.presentation.membership.provider.MembershipProvider
+import com.chronoio.chrono.presentation.profile.UiProfileQrCodeState
+import com.chronoio.chrono.ui_settings.BuildConfig
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+class ProfileSettingsViewModel(
+    private val analytics: Analytics,
+    private val container: StorelessSubscriptionContainer,
+    private val setObjectDetails: SetObjectDetails,
+    private val configStorage: ConfigStorage,
+    private val urlBuilder: UrlBuilder,
+    private val setImageIcon: SetDocumentImageIcon,
+    private val membershipProvider: MembershipProvider,
+    private val getNetworkMode: GetNetworkMode,
+    private val profileContainer: ProfileSubscriptionManager,
+    private val removeObjectIcon: RemoveObjectIcon,
+    private val notificationPermissionManager: NotificationPermissionManager,
+    private val userPermissionProvider: UserPermissionProvider,
+    private val generateOneToOneChatLink: GenerateOneToOneChatLink,
+    private val userSettingsRepository: UserSettingsRepository
+) : BaseViewModel() {
+
+    private val jobs = mutableListOf<Job>()
+
+    private var miscSectionClickCount = 0
+
+    val isLoggingOut = MutableStateFlow(false)
+    val debugSyncReportUri = MutableStateFlow<Uri?>(null)
+    val membershipStatusState = MutableStateFlow<MembershipStatus?>(null)
+    val showMembershipState = MutableStateFlow<ShowMembership?>(null)
+
+    val isDebugEnabled = MutableStateFlow(false)
+
+    val showExperimentalFeatures: Boolean = BuildConfig.DEBUG
+
+    val profileQrCodeState = MutableStateFlow<UiProfileQrCodeState>(UiProfileQrCodeState.Hidden)
+
+    val notificationsDisabled: StateFlow<Boolean> =
+        notificationPermissionManager.permissionState().map { state ->
+            when (state) {
+                is NotificationPermissionManagerImpl.PermissionState.Granted -> false
+                else -> true
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_SUBSCRIPTION_TIMEOUT), true)
+
+    val profileData = profileContainer
+        .observe()
+        .combine(userPermissionProvider.getCurrent()) { profile, spaceMember ->
+            Timber.d("profileData, profile:[$profile], spaceMember:[$spaceMember]")
+            AccountProfile.Data(
+                name = profile.name.orEmpty(),
+                icon = profile.profileIcon(urlBuilder),
+                identity = spaceMember?.identity,
+                globalName = spaceMember?.globalName
+            )
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(STOP_SUBSCRIPTION_TIMEOUT),
+            AccountProfile.Idle
+        )
+
+    init {
+        viewModelScope.launch {
+            isDebugEnabled.value = if (BuildConfig.DEBUG) {
+                true
+            } else {
+                userSettingsRepository.getDebugMenuEnabled()
+            }
+        }
+        viewModelScope.launch {
+            analytics.sendEvent(
+                eventName = EventsDictionary.screenSettingsAccount
+            )
+        }
+        viewModelScope.launch {
+            getNetworkMode.async(Unit).fold(
+                onSuccess = { result ->
+                    showMembershipState.value = when (result.networkMode) {
+                        NetworkMode.DEFAULT -> ShowMembership(true)
+                        NetworkMode.LOCAL -> ShowMembership(false)
+                        NetworkMode.CUSTOM -> ShowMembership(true)
+                    }
+                },
+                onFailure = { Timber.e(it, "Error while getting network mode") }
+            )
+        }
+        viewModelScope.launch {
+            membershipProvider.status().collect { status ->
+                membershipStatusState.value = status
+            }
+        }
+    }
+
+    fun onNameChange(name: String) {
+        Timber.d("onNameChange, name:[$name]")
+        viewModelScope.launch {
+            val profile = configStorage.getOrNull()?.profile
+            if (profile != null) {
+                setObjectDetails.execute(
+                    SetObjectDetails.Params(
+                        ctx = profile,
+                        details = mapOf(Relations.NAME to name)
+                    )
+                ).fold(
+                    onFailure = {
+                        Timber.e(it, "Error while updating object details")
+                    },
+                    onSuccess = {
+                        // do nothing
+                    }
+                )
+            } else {
+                Timber.w("Config storage missing")
+            }
+        }
+    }
+
+    fun onStop() {
+        Timber.d("onStop")
+        jobs.apply {
+            forEach { it.cancel() }
+            clear()
+        }
+    }
+
+    fun onPickedImageFromDevice(path: String) {
+        viewModelScope.launch {
+            val config = configStorage.getOrNull()
+            if (config != null) {
+                setImageIcon(
+                    SetImageIcon.Params(
+                        target = config.profile,
+                        path = path,
+                        spaceId = SpaceId(config.techSpace)
+                    )
+                ).process(
+                    failure = {
+                        Timber.e("Error while setting image icon")
+                    },
+                    success = {
+                        // do nothing
+                    }
+                )
+            } else {
+                Timber.e("Missing config while trying to set profile image")
+            }
+        }
+    }
+
+    fun onClearProfileImage() {
+        viewModelScope.launch {
+            val config = configStorage.getOrNull()
+            if (config != null) {
+                val params = RemoveObjectIcon.Params(objectId = config.profile)
+                removeObjectIcon.async(
+                    params = params
+                ).fold(
+                    onFailure = {
+                        Timber.e("Error while removing profile image")
+                    },
+                    onSuccess = {
+                        // do nothing
+                    }
+                )
+            } else {
+                Timber.e("Missing config while trying to unset profile image")
+            }
+        }
+    }
+
+    fun onMiscSectionClicked() {
+        if (BuildConfig.DEBUG || isDebugEnabled.value) return
+        miscSectionClickCount++
+        if (miscSectionClickCount >= ENABLE_DEBUG_MENU_CLICK_COUNT) {
+            isDebugEnabled.value = true
+            viewModelScope.launch {
+                userSettingsRepository.setDebugMenuEnabled(true)
+            }
+        }
+    }
+
+    fun refreshPermissionState() {
+        notificationPermissionManager.refreshPermissionState()
+    }
+
+    fun onShowQrCodeClicked() {
+        viewModelScope.launch {
+
+            val config = configStorage.getOrNull() ?: return@launch
+            val profile = (profileData.value as? AccountProfile.Data) ?: return@launch
+
+            val identity = profile.identity
+            val name = profile.name
+            val icon = profile.icon
+
+            if (identity == null || config.metaDataKey.isEmpty()) {
+                Timber.e("Cannot generate QR code: profile=$profile, identity=$identity")
+                sendToast("Failed to generate QR code")
+                return@launch
+            }
+
+            generateOneToOneChatLink.async(
+                GenerateOneToOneChatLink.Params(
+                    identity = identity,
+                    metaDataKey = config.metaDataKey,
+                    name = name
+                )
+            ).fold(
+                onSuccess = { linkData ->
+                    profileQrCodeState.value = UiProfileQrCodeState.ProfileLink(
+                        link = linkData.link,
+                        name = linkData.name,
+                        icon = icon,
+                        globalName = profile.globalName,
+                        identity = profile.identity
+                    )
+                },
+                onFailure = { error ->
+                    Timber.e(error, "Error generating 1-1 chat link")
+                    sendToast("Failed to generate QR code")
+                }
+            )
+        }
+    }
+
+    fun onHideQrCodeScreen() {
+        profileQrCodeState.value = UiProfileQrCodeState.Hidden
+    }
+
+    fun onQrCodeScanned(qrCode: String) {
+        viewModelScope.launch {
+            // First, dismiss the QR code sheet
+            profileQrCodeState.value = UiProfileQrCodeState.Hidden
+            // Emit command to process the scanned QR code
+            commands.emit(Command.ProcessScannedQrCode(qrCode))
+        }
+    }
+
+    sealed class Command {
+        data class ShareLink(val link: String) : Command()
+        data class ProcessScannedQrCode(val qrCode: String) : Command()
+    }
+
+    val commands = MutableSharedFlow<Command>(replay = 0)
+
+    class Factory(
+        private val analytics: Analytics,
+        private val container: StorelessSubscriptionContainer,
+        private val setObjectDetails: SetObjectDetails,
+        private val configStorage: ConfigStorage,
+        private val urlBuilder: UrlBuilder,
+        private val setDocumentImageIcon: SetDocumentImageIcon,
+        private val membershipProvider: MembershipProvider,
+        private val getNetworkMode: GetNetworkMode,
+        private val profileSubscriptionManager: ProfileSubscriptionManager,
+        private val removeObjectIcon: RemoveObjectIcon,
+        private val notificationPermissionManager: NotificationPermissionManager,
+        private val userPermissionProvider: UserPermissionProvider,
+        private val generateOneToOneChatLink: GenerateOneToOneChatLink,
+        private val userSettingsRepository: UserSettingsRepository
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return ProfileSettingsViewModel(
+                analytics = analytics,
+                container = container,
+                setObjectDetails = setObjectDetails,
+                configStorage = configStorage,
+                urlBuilder = urlBuilder,
+                setImageIcon = setDocumentImageIcon,
+                membershipProvider = membershipProvider,
+                getNetworkMode = getNetworkMode,
+                profileContainer = profileSubscriptionManager,
+                removeObjectIcon = removeObjectIcon,
+                notificationPermissionManager = notificationPermissionManager,
+                userPermissionProvider = userPermissionProvider,
+                generateOneToOneChatLink = generateOneToOneChatLink,
+                userSettingsRepository = userSettingsRepository
+            ) as T
+        }
+    }
+
+    companion object {
+        const val ENABLE_DEBUG_MENU_CLICK_COUNT = 5
+    }
+}
+
+private const val STOP_SUBSCRIPTION_TIMEOUT = 1_000L
+
+data class ShowMembership(val isShowing: Boolean)

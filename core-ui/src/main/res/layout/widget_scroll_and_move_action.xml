@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <com.chronoio.chrono.core_ui.views.ButtonSecondaryLarge
+        android:id="@+id/cancelScrollAndMove"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="6dp"
+        android:layout_weight="1"
+        android:text="@string/cancel" />
+
+    <com.chronoio.chrono.core_ui.views.ButtonPrimaryLarge
+        android:id="@+id/applyScrollAndMove"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="16dp"
+        android:layout_weight="1"
+        android:text="@string/move" />
+</merge>

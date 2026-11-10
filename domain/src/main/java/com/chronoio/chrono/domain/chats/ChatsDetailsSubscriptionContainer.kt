@@ -1,0 +1,218 @@
+package com.chronoio.chrono.domain.chats
+
+import com.chronoio.chrono.core_models.DVFilter
+import com.chronoio.chrono.core_models.DVFilterCondition
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.domain.account.AwaitAccountStartManager
+import com.chronoio.chrono.domain.base.AppCoroutineDispatchers
+import com.chronoio.chrono.domain.debugging.Logger
+import com.chronoio.chrono.domain.library.CrossSpaceSearchParams
+import com.chronoio.chrono.domain.library.CrossSpaceSubscriptionContainer
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.launch
+
+/**
+ * Container for subscribing to and observing all chat objects (Layout.CHAT_DERIVED).
+ * Maintains a global subscription to chat objects across all spaces.
+ */
+interface ChatsDetailsSubscriptionContainer {
+
+    fun start()
+    fun stop()
+    fun observe(): Flow<List<ObjectWrapper.Basic>>
+    fun observe(chatId: Id): Flow<ObjectWrapper.Basic>
+    
+    /**
+     * Observes all chats and maps to a property using the provided mapper.
+     * Applies distinctUntilChanged to only emit when the mapped value changes.
+     * 
+     * @param keys List of relation keys being observed (informational, for documentation)
+     * @param mapper Function to extract the desired property from the chats list
+     * @return Flow that emits only when the mapped value changes
+     */
+    fun <T> observe(
+        keys: List<String>,
+        mapper: (List<ObjectWrapper.Basic>) -> T
+    ): Flow<T>
+    
+    /**
+     * Observes a specific chat and maps to a property using the provided mapper.
+     * Applies distinctUntilChanged to only emit when the mapped value changes.
+     * 
+     * @param chatId The chat ID to observe
+     * @param keys List of relation keys being observed (informational, for documentation)
+     * @param mapper Function to extract the desired property from the chat
+     * @return Flow that emits only when the mapped value changes
+     */
+    fun <T> observe(
+        chatId: Id,
+        keys: List<String>,
+        mapper: (ObjectWrapper.Basic) -> T
+    ): Flow<T>
+
+    fun get(): List<ObjectWrapper.Basic>
+    fun get(chatId: Id): ObjectWrapper.Basic?
+
+    class Default @Inject constructor(
+        private val container: CrossSpaceSubscriptionContainer,
+        private val scope: CoroutineScope,
+        private val dispatchers: AppCoroutineDispatchers,
+        private val awaitAccountStart: AwaitAccountStartManager,
+        private val logger: Logger
+    ) : ChatsDetailsSubscriptionContainer {
+
+        private val data = MutableStateFlow<List<ObjectWrapper.Basic>>(emptyList())
+        private val jobs = mutableListOf<Job>()
+
+        init {
+            logger.logInfo("ChatsDetailsSubscriptionContainer initialized")
+            scope.launch {
+                awaitAccountStart.state().collect { state ->
+                    when (state) {
+                        AwaitAccountStartManager.State.Init -> {
+                            logger.logInfo("ChatsDetailsSubscriptionContainer, AwaitAccountStartManager.State.Init - waiting for account start")
+                            // Do nothing
+                        }
+
+                        AwaitAccountStartManager.State.Started -> {
+                            logger.logInfo("ChatsDetailsSubscriptionContainer, AwaitAccountStartManager.State.Started - starting chat details subscription")
+                            start()
+                        }
+
+                        AwaitAccountStartManager.State.Stopped -> {
+                            logger.logInfo("ChatsDetailsSubscriptionContainer, AwaitAccountStartManager.State.Stopped - stopping chat details subscription")
+                            stop()
+                        }
+                    }
+                }
+            }
+        }
+
+        override fun observe(): Flow<List<ObjectWrapper.Basic>> {
+            return data
+        }
+
+        override fun observe(chatId: Id): Flow<ObjectWrapper.Basic> {
+            return data.mapNotNull { all ->
+                all.firstOrNull { chat -> chat.id == chatId }
+            }
+        }
+
+        override fun get(): List<ObjectWrapper.Basic> {
+            return data.value
+        }
+
+        override fun get(chatId: Id): ObjectWrapper.Basic? {
+            return data.value.find { chat -> chat.id == chatId }
+        }
+        
+        override fun <T> observe(
+            keys: List<String>,
+            mapper: (List<ObjectWrapper.Basic>) -> T
+        ): Flow<T> {
+            return observe()
+                .map(mapper)
+                .distinctUntilChanged()
+        }
+        
+        override fun <T> observe(
+            chatId: Id,
+            keys: List<String>,
+            mapper: (ObjectWrapper.Basic) -> T
+        ): Flow<T> {
+            return observe(chatId)
+                .map(mapper)
+                .distinctUntilChanged()
+        }
+
+        override fun start() {
+            logger.logInfo("Starting ChatsDetailsSubscriptionContainer")
+            jobs += scope.launch(dispatchers.io) {
+                proceedWithSubscription()
+            }
+        }
+
+        private suspend fun proceedWithSubscription() {
+            container.subscribe(
+                CrossSpaceSearchParams(
+                    subscription = GLOBAL_CHATS_SUBSCRIPTION,
+                    keys = listOf(
+                        Relations.ID,
+                        // Search v2's Messages gate reads chat presence per space.
+                        Relations.SPACE_ID,
+                        Relations.NAME,
+                        Relations.PLURAL_NAME,
+                        Relations.ICON_EMOJI,
+                        Relations.ICON_IMAGE,
+                        Relations.ICON_OPTION
+                    ),
+                    filters = listOf(
+                        DVFilter(
+                            relation = Relations.LAYOUT,
+                            value = listOf(ObjectType.Layout.CHAT_DERIVED.code.toDouble()),
+                            condition = DVFilterCondition.IN
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_ARCHIVED,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_HIDDEN,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_DELETED,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        ),
+                        DVFilter(
+                            relation = Relations.IS_HIDDEN_DISCOVERY,
+                            condition = DVFilterCondition.NOT_EQUAL,
+                            value = true
+                        )
+                    )
+                )
+            ).catch { error ->
+                logger.logException(
+                    e = error,
+                    msg = "Failed to subscribe to chats details"
+                )
+            }.collect {
+                data.value = it
+            }
+        }
+
+        override fun stop() {
+            logger.logInfo("Stopping ChatsDetailsSubscriptionContainer")
+            jobs.forEach { it.cancel() }
+            scope.launch(dispatchers.io) {
+                runCatching {
+                    container.unsubscribe(GLOBAL_CHATS_SUBSCRIPTION)
+                }.onFailure { error ->
+                    logger.logException(
+                        e = error,
+                        msg = "Failed to unsubscribe from $GLOBAL_CHATS_SUBSCRIPTION"
+                    )
+                }
+                    .onSuccess { logger.logInfo("Successfully unsubscribed from $GLOBAL_CHATS_SUBSCRIPTION") }
+            }
+        }
+
+        companion object {
+            const val GLOBAL_CHATS_SUBSCRIPTION = "global-chats-details-subscription"
+        }
+    }
+}

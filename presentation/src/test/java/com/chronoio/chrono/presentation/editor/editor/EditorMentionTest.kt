@@ -1,0 +1,1570 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import android.util.Log
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import app.cash.turbine.test
+import com.chronoio.chrono.core_models.ObjectViewDetails
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Event
+import com.chronoio.chrono.core_models.ObjectType.Layout
+import com.chronoio.chrono.core_models.ObjectTypeIds
+import com.chronoio.chrono.core_models.Payload
+import com.chronoio.chrono.core_models.Relations
+import com.chronoio.chrono.core_models.ext.content
+import com.chronoio.chrono.domain.base.Either
+import com.chronoio.chrono.domain.base.Result
+import com.chronoio.chrono.domain.base.Resultat
+import com.chronoio.chrono.domain.event.interactor.InterceptEvents
+import com.chronoio.chrono.domain.icon.DocumentEmojiIconProvider
+import com.chronoio.chrono.presentation.editor.EditorViewModel
+import com.chronoio.chrono.presentation.editor.editor.control.ControlPanelState
+import com.chronoio.chrono.presentation.editor.editor.mention.MentionConst.MENTION_TITLE_EMPTY
+import com.chronoio.chrono.presentation.editor.editor.mention.MentionEvent
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.render.parseThemeBackgroundColor
+import com.chronoio.chrono.presentation.util.CoroutinesTestRule
+import com.chronoio.chrono.presentation.util.TXT
+import com.chronoio.chrono.test_utils.MockDataFactory
+import com.jraska.livedata.test
+import kotlin.test.assertEquals
+import kotlin.time.ExperimentalTime
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import net.lachlanmckee.timberjunit.TimberTestRule
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.Mockito
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+
+class EditorMentionTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = CoroutinesTestRule()
+
+    @Mock
+    lateinit var documentEmojiIconProvider: DocumentEmojiIconProvider
+
+    val title = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Text(
+            text = MockDataFactory.randomString(),
+            style = Block.Content.Text.Style.TITLE,
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @get:Rule
+    val timberTestRule: TimberTestRule = TimberTestRule.builder()
+        .minPriority(Log.DEBUG)
+        .showThread(true)
+        .showTimestamp(false)
+        .onlyLogWhenTestFails(true)
+        .build()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @Test
+    fun `should update text with cursor position`() {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTrigger = "@a"
+        val from = 11
+        val givenText = "page about $mentionTrigger music"
+        val mentionText = "Avant-Garde Jazz"
+        val mentionHash = "ryew78yfhiuwehudc"
+
+        val a = Block(
+            id = "dfhkshfjkhsdjhfjkhsjkd",
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 0,
+                            endInclusive = 3
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 5,
+                            endInclusive = 9
+                        ),
+                        type = Block.Content.Text.Mark.Type.ITALIC
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 14,
+                            endInclusive = 18
+                        ),
+                        type = Block.Content.Text.Mark.Type.STRIKETHROUGH
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        stubOpenDocument(
+            document,
+            details = ObjectViewDetails(
+                details = mapOf(
+                    mentionHash to mapOf(
+                        Relations.ID to mentionHash,
+                        Relations.LAYOUT to Layout.BASIC.code.toDouble(),
+                        Relations.NAME to mentionText
+                    ),
+                    root to mapOf(
+                        Relations.ID to root,
+                        Relations.TYPE to listOf(objType.id)
+                    ),
+                )
+            )
+        )
+        stubInterceptEvents()
+
+        updateText.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(Unit)
+        }
+
+        searchObjects.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(listOf())
+        }
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = a.id,
+                selection = IntRange(12, 12)
+            )
+            onMentionEvent(
+                MentionEvent.MentionSuggestStart(
+                    cursorCoordinate = 500,
+                    mentionStart = from
+                )
+            )
+            onCreateMentionInText(
+                id = mentionHash,
+                name = mentionText,
+                mentionTrigger = mentionTrigger
+            )
+        }
+
+        coroutineTestRule.advanceUntilIdle()
+
+        vm.state.test().apply {
+            assertEquals(
+                expected = ViewState.Success(
+                    blocks = listOf(
+                        BlockView.Title.Basic(
+                            id = title.id,
+                            isFocused = false,
+                            text = title.content<TXT>().text,
+                            mode = BlockView.Mode.EDIT,
+                            icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                        ),
+                        BlockView.Text.Paragraph(
+                            id = a.id,
+                            cursor = 28,
+                            isSelected = false,
+                            isFocused = true,
+                            marks = listOf(
+                                Markup.Mark.Bold(
+                                    from = 0,
+                                    to = 3
+                                ),
+                                Markup.Mark.Italic(
+                                    from = 5,
+                                    to = 9
+                                ),
+                                Markup.Mark.Mention.Base(
+                                    from = from,
+                                    to = from + mentionText.length,
+                                    param = mentionHash,
+                                    isArchived = false
+                                ),
+                                Markup.Mark.Strikethrough(
+                                    from = 29,
+                                    to = 33
+                                )
+                            ),
+                            indent = 0,
+                            text = "page about Avant-Garde Jazz  music",
+                            mode = BlockView.Mode.EDIT,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = a.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    )
+                ),
+                actual = this.value()
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should create new page with proper name, default type and add new mention with page id`() = runTest {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTrigger = "@Jazz"
+        val from = 11
+        val givenText = "page about $mentionTrigger music"
+        val newPageName = "Jazz"
+        val newPageId = MockDataFactory.randomUuid()
+        val emoji = "smile:emoji"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 0,
+                            endInclusive = 3
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubInterceptThreadStatus()
+        stubGetDefaultObjectType(type = ObjectTypeIds.NOTE)
+
+        updateText.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(Unit)
+        }
+
+        searchObjects.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(listOf())
+        }
+
+        Mockito.`when`(documentEmojiIconProvider.random()).thenReturn(emoji)
+
+        stubCreateObjectAsMentionOrLink(
+            name = newPageName,
+            id = newPageId
+        )
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = a.id,
+                selection = IntRange(12, 12)
+            )
+            onMentionEvent(
+                MentionEvent.MentionSuggestStart(
+                    cursorCoordinate = 500,
+                    mentionStart = from
+                )
+            )
+            onAddMentionNewPageClicked(
+                mentionText = mentionTrigger
+            )
+
+            advanceUntilIdle()
+        }
+
+        vm.state.test().apply {
+            assertValue(
+                ViewState.Success(
+                    blocks = listOf(
+                        BlockView.Title.Basic(
+                            id = title.id,
+                            isFocused = false,
+                            text = title.content<TXT>().text,
+                            mode = BlockView.Mode.EDIT,
+                            icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                        ),
+                        BlockView.Text.Paragraph(
+                            id = a.id,
+                            cursor = 16,
+                            isSelected = false,
+                            isFocused = true,
+                            marks = listOf(
+                                Markup.Mark.Bold(
+                                    from = 0,
+                                    to = 3
+                                ),
+                                Markup.Mark.Mention.Loading(
+                                    from = from,
+                                    to = from + newPageName.length,
+                                    param = newPageId
+                                )
+                            ),
+                            indent = 0,
+                            text = "page about Jazz  music",
+                            mode = BlockView.Mode.EDIT,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = a.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `should create new page with untitled name, default type and add new mention with page id`() = runTest {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTrigger = "@"
+        val from = 11
+        val givenText = "page about $mentionTrigger music"
+        val newPageName = ""
+        val newPageId = MockDataFactory.randomUuid()
+        val emoji = "smile:emoji"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(
+                            start = 0,
+                            endInclusive = 3
+                        ),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubGetDefaultObjectType(type = "_otarticle")
+
+        updateText.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(Unit)
+        }
+
+        searchObjects.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(listOf())
+        }
+
+        Mockito.`when`(documentEmojiIconProvider.random()).thenReturn(emoji)
+
+        stubCreateObjectAsMentionOrLink(
+            name = newPageName,
+            id = newPageId
+        )
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = a.id,
+                selection = IntRange(12, 12)
+            )
+            onMentionEvent(
+                MentionEvent.MentionSuggestStart(
+                    cursorCoordinate = 500,
+                    mentionStart = from
+                )
+            )
+            onAddMentionNewPageClicked(
+                mentionText = mentionTrigger
+            )
+
+            advanceUntilIdle()
+        }
+
+        coroutineTestRule.advanceUntilIdle()
+
+        vm.state.test().apply {
+            assertValue(
+                ViewState.Success(
+                    blocks = listOf(
+                        BlockView.Title.Basic(
+                            id = title.id,
+                            isFocused = false,
+                            text = title.content<TXT>().text,
+                            mode = BlockView.Mode.EDIT,
+                            icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                        ),
+                        BlockView.Text.Paragraph(
+                            id = a.id,
+                            cursor = from + MENTION_TITLE_EMPTY.length + 1,
+                            isSelected = false,
+                            isFocused = true,
+                            marks = listOf(
+                                Markup.Mark.Bold(
+                                    from = 0,
+                                    to = 3
+                                ),
+                                Markup.Mark.Mention.Loading(
+                                    from = from,
+                                    to = from + MENTION_TITLE_EMPTY.length,
+                                    param = newPageId
+                                )
+                            ),
+                            indent = 0,
+                            text = "page about Untitled  music",
+                            mode = BlockView.Mode.EDIT,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = a.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should close mention menu after back pressed event`() {
+        val mentionTrigger = "@Pag"
+        val from = 11
+        val givenText = "page about $mentionTrigger music"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+
+        updateText.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(Unit)
+        }
+
+        searchObjects.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(listOf())
+        }
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = a.id,
+                selection = IntRange(12, 12)
+            )
+            onMentionEvent(
+                MentionEvent.MentionSuggestStart(
+                    cursorCoordinate = 500,
+                    mentionStart = from
+                )
+            )
+            onMentionEvent(
+                MentionEvent.MentionSuggestText(
+                    text = "Pag"
+                )
+            )
+        }
+
+        vm.controlPanelViewState.test().assertValue(
+            ControlPanelState(
+                navigationToolbar = ControlPanelState.Toolbar.Navigation(
+                    isVisible = false
+                ),
+                mainToolbar = ControlPanelState.Toolbar.Main(
+                    isVisible = false
+                ),
+                styleTextToolbar = ControlPanelState.Toolbar.Styling.reset(),
+                multiSelect = ControlPanelState.Toolbar.MultiSelect(
+                    isVisible = false
+                ),
+                mentionToolbar = ControlPanelState.Toolbar.MentionToolbar(
+                    isVisible = true,
+                    cursorCoordinate = 500,
+                    mentionFilter = "Pag",
+                    mentionFrom = from,
+                    updateList = false
+                ),
+                slashWidget = ControlPanelState.Toolbar.SlashWidget.reset()
+            )
+        )
+
+        vm.apply {
+            onBackPressedCallback()
+        }
+
+        vm.controlPanelViewState.test().assertValue(
+            ControlPanelState(
+                navigationToolbar = ControlPanelState.Toolbar.Navigation(
+                    isVisible = false
+                ),
+                mainToolbar = ControlPanelState.Toolbar.Main(
+                    isVisible = true
+                ),
+                styleTextToolbar = ControlPanelState.Toolbar.Styling.reset(),
+                multiSelect = ControlPanelState.Toolbar.MultiSelect(
+                    isVisible = false
+                ),
+                mentionToolbar = ControlPanelState.Toolbar.MentionToolbar.reset(),
+                slashWidget = ControlPanelState.Toolbar.SlashWidget.reset()
+            )
+        )
+
+        clearPendingCoroutines()
+    }
+
+    @ExperimentalTime
+    @Test
+    fun `test mention filters`() {
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "Start end",
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(a.id)
+        )
+
+        val document = listOf(page, a)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+        stubUpdateText()
+        stubSearchObjects()
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        //TESTING
+
+        runBlocking {
+            vm.mentionSearchQuery.test {
+                vm.apply {
+                    onBlockFocusChanged(
+                        id = a.id,
+                        hasFocus = true
+                    )
+                    onSelectionChanged(
+                        id = a.id,
+                        selection = IntRange(6, 6)
+                    )
+                    vm.onMentionEvent(
+                        MentionEvent.MentionSuggestStart(
+                            cursorCoordinate = 999,
+                            mentionStart = 6
+                        )
+                    )
+                    vm.onMentionEvent(
+                        MentionEvent.MentionSuggestText(text = "@")
+                    )
+                    vm.onTextBlockTextChanged(
+                        view = BlockView.Text.Paragraph(
+                            id = a.id,
+                            marks = emptyList(),
+                            text = "Start @end"
+                        )
+                    )
+                    onSelectionChanged(
+                        id = a.id,
+                        selection = IntRange(7, 7)
+                    )
+                }
+
+                assertEquals(
+                    expected = "@", actual = expectMostRecentItem()
+                )
+
+                vm.onMentionEvent(
+                    MentionEvent.MentionSuggestText(text = "@t")
+                )
+                vm.onTextBlockTextChanged(
+                    view = BlockView.Text.Paragraph(
+                        id = a.id,
+                        marks = emptyList(),
+                        text = "Start @tend"
+                    )
+                )
+                vm.onSelectionChanged(
+                    id = a.id,
+                    selection = IntRange(8, 8)
+                )
+                assertEquals(
+                    expected = "@t", actual = expectMostRecentItem()
+                )
+
+                vm.onMentionEvent(
+                    MentionEvent.MentionSuggestText(text = "@to")
+                )
+                vm.onTextBlockTextChanged(
+                    view = BlockView.Text.Paragraph(
+                        id = a.id,
+                        marks = emptyList(),
+                        text = "Start @toend"
+                    )
+                )
+                vm.onSelectionChanged(
+                    id = a.id,
+                    selection = IntRange(9, 9)
+                )
+                assertEquals(
+                    expected = "@to", actual = expectMostRecentItem()
+                )
+            }
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should update mention text with details amend event`() {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTarget = MockDataFactory.randomUuid()
+        val givenText = "Start Foo end"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(0, 5),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(6, 9),
+                        type = Block.Content.Text.Mark.Type.MENTION,
+                        param = mentionTarget
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(10, 13),
+                        type = Block.Content.Text.Mark.Type.STRIKETHROUGH
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        val params = InterceptEvents.Params(context = root)
+
+        openPage.stub {
+            onBlocking { async(any()) } doReturn Resultat.success(
+                Result.Success(
+                    Payload(
+                        context = root,
+                        events = listOf(
+                            Event.Command.ShowObject(
+                                context = root,
+                                root = root,
+                                blocks = document,
+                                details = mapOf(
+                                    mentionTarget to mapOf(
+                                        Relations.ID to mentionTarget,
+                                        Relations.NAME to ""
+                                    ),
+                                    root to mapOf(
+                                        Relations.ID to root,
+                                        Relations.TYPE to listOf(objType.id)
+                                    ),
+                                ),
+                                objectRestrictions = emptyList()
+                            ),
+                            Event.Command.Details.Amend(
+                                context = root,
+                                target = mentionTarget,
+                                details = mapOf(
+                                    Relations.NAME to "Foob"
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        }
+        stubInterceptEvents()
+        stubSearchObjects()
+
+        val vm = buildViewModel()
+
+        verifyNoInteractions(interceptEvents)
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val actual = vm.state.value
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = a.id,
+                    cursor = null,
+                    isSelected = false,
+                    isFocused = false,
+                    marks = listOf(
+                        Markup.Mark.Bold(
+                            from = 0,
+                            to = 5
+                        ),
+                        Markup.Mark.Mention.Base(
+                            from = 6,
+                            to = 10,
+                            param = mentionTarget,
+                            isArchived = false
+                        ),
+                        Markup.Mark.Strikethrough(
+                            from = 11,
+                            to = 14
+                        )
+                    ),
+                    indent = 0,
+                    text = "Start Foob end",
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = a.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        verify(interceptEvents, times(1)).build(params = params)
+
+        assertEquals(expected = expected, actual = actual)
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should update mention text with details amend event when new text is empty`() {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTarget = MockDataFactory.randomUuid()
+        val givenText = "Start F end"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(0, 5),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(6, 7),
+                        type = Block.Content.Text.Mark.Type.MENTION,
+                        param = mentionTarget
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(8, 11),
+                        type = Block.Content.Text.Mark.Type.STRIKETHROUGH
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val fieldsUpdated1 =
+            mapOf(
+                Relations.ID to mentionTarget,
+                Relations.NAME to ""
+            )
+
+        val detailsAmend = mapOf(
+            mentionTarget to fieldsUpdated1,
+            root to mapOf(
+                Relations.ID to root,
+                Relations.TYPE to listOf(objType.id)
+            ),
+        )
+
+        val document = listOf(page, header, title, a)
+
+        val params = InterceptEvents.Params(context = root)
+
+        val untitled = "UntitledWord"
+        resourceProvider.stub {
+            onBlocking { getUntitledTitle() } doReturn untitled
+        }
+
+        openPage.stub {
+            onBlocking { async(any()) } doReturn Resultat.success(
+                Result.Success(
+                    Payload(
+                        context = root,
+                        events = listOf(
+                            Event.Command.ShowObject(
+                                context = root,
+                                root = root,
+                                details = detailsAmend,
+                                blocks = document,
+                                objectRestrictions = emptyList()
+                            ),
+                            Event.Command.Details.Amend(
+                                context = root,
+                                target = mentionTarget,
+                                details = mapOf(Block.Fields.NAME_KEY to "")
+                            )
+                        )
+                    )
+                )
+            )
+        }
+        stubInterceptEvents()
+        stubSearchObjects()
+
+        val vm = buildViewModel()
+
+        verifyNoInteractions(interceptEvents)
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val actual = vm.state.value
+
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = a.id,
+                    cursor = null,
+                    isSelected = false,
+                    isFocused = false,
+                    marks = listOf(
+                        Markup.Mark.Bold(
+                            from = 0,
+                            to = 5
+                        ),
+                        Markup.Mark.Mention.Base(
+                            from = 6,
+                            to = 18,
+                            param = mentionTarget,
+                            isArchived = false
+                        ),
+                        Markup.Mark.Strikethrough(
+                            from = 19,
+                            to = 22
+                        )
+                    ),
+                    indent = 0,
+                    text = "Start $untitled end",
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = a.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        verify(interceptEvents, times(1)).build(params = params)
+
+        assertEquals(expected = expected, actual = actual)
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should update text as Untitled when mention text is empty`() {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTrigger = "@"
+        val from = 11
+        val givenText = "page about $mentionTrigger music"
+        val mentionText = ""
+        val mentionHash = "ryew78yfhiuwehudc"
+
+        val a = Block(
+            id = "dfhkshfjkhsdjhfjkhsjkd",
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val document = listOf(page, header, title, a)
+
+        stubOpenDocument(document)
+        stubInterceptEvents()
+
+        updateText.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(Unit)
+        }
+
+        searchObjects.stub {
+            onBlocking { invoke(any()) } doReturn Either.Right(listOf())
+        }
+
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        vm.apply {
+            onBlockFocusChanged(
+                id = a.id,
+                hasFocus = true
+            )
+            onSelectionChanged(
+                id = a.id,
+                selection = IntRange(12, 12)
+            )
+            onMentionEvent(
+                MentionEvent.MentionSuggestStart(
+                    cursorCoordinate = 500,
+                    mentionStart = from
+                )
+            )
+            onCreateMentionInText(
+                id = mentionHash,
+                name = mentionText,
+                mentionTrigger = mentionTrigger
+            )
+        }
+
+        coroutineTestRule.advanceUntilIdle()
+
+        vm.state.test().apply {
+            assertValue(
+                ViewState.Success(
+                    blocks = listOf(
+                        BlockView.Title.Basic(
+                            id = title.id,
+                            isFocused = false,
+                            text = title.content<TXT>().text,
+                            mode = BlockView.Mode.EDIT,
+                            icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                        ),
+                        BlockView.Text.Paragraph(
+                            id = a.id,
+                            cursor = 12,
+                            isSelected = false,
+                            isFocused = true,
+                            marks = listOf(
+                                Markup.Mark.Mention.Loading(
+                                    from = from,
+                                    to = from + MENTION_TITLE_EMPTY.length,
+                                    param = mentionHash
+                                )
+                            ),
+                            indent = 0,
+                            text = "page about $MENTION_TITLE_EMPTY  music",
+                            mode = BlockView.Mode.EDIT,
+                            decorations = listOf(
+                                BlockView.Decoration(
+                                    background = a.parseThemeBackgroundColor()
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        }
+
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should update mention text with details amend event when new text is blank`() {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTarget = MockDataFactory.randomUuid()
+        val givenText = "Start F end"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(0, 5),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(6, 7),
+                        type = Block.Content.Text.Mark.Type.MENTION,
+                        param = mentionTarget
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(8, 11),
+                        type = Block.Content.Text.Mark.Type.STRIKETHROUGH
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val fieldsUpdated1 =
+            mapOf(
+                Relations.ID to mentionTarget,
+                Relations.NAME to " "
+            )
+
+        val detailsAmend = mapOf(
+            mentionTarget to fieldsUpdated1,
+            root to mapOf(
+                Relations.ID to root,
+                Relations.TYPE to listOf(objType.id)
+            ),
+        )
+
+        val document = listOf(page, header, title, a)
+
+        val params = InterceptEvents.Params(context = root)
+
+        val untitled = "UntitledWord"
+        resourceProvider.stub {
+            onBlocking { getUntitledTitle() } doReturn untitled
+        }
+
+        openPage.stub {
+            onBlocking { async(any()) } doReturn Resultat.success(
+                Result.Success(
+                    Payload(
+                        context = root,
+                        events = listOf(
+                            Event.Command.ShowObject(
+                                context = root,
+                                root = root,
+                                details = detailsAmend,
+                                blocks = document,
+                                objectRestrictions = emptyList()
+                            ),
+                            Event.Command.Details.Amend(
+                                context = root,
+                                target = mentionTarget,
+                                details = mapOf(Block.Fields.NAME_KEY to "")
+                            )
+                        )
+                    )
+                )
+            )
+        }
+        stubInterceptEvents()
+        stubSearchObjects()
+
+        val vm = buildViewModel()
+
+        verifyNoInteractions(interceptEvents)
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val actual = vm.state.value
+
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = a.id,
+                    cursor = null,
+                    isSelected = false,
+                    isFocused = false,
+                    marks = listOf(
+                        Markup.Mark.Bold(
+                            from = 0,
+                            to = 5
+                        ),
+                        Markup.Mark.Mention.Base(
+                            from = 6,
+                            to = 18,
+                            param = mentionTarget,
+                            isArchived = false
+                        ),
+                        Markup.Mark.Strikethrough(
+                            from = 19,
+                            to = 22
+                        )
+                    ),
+                    indent = 0,
+                    text = "Start $untitled end",
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = a.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        verify(interceptEvents, times(1)).build(params = params)
+
+        assertEquals(expected = expected, actual = actual)
+        clearPendingCoroutines()
+    }
+
+    @Test
+    fun `should update mention text with details amend event when new text is null`() {
+
+        val title = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                style = Block.Content.Text.Style.TITLE,
+                marks = emptyList()
+            ),
+            children = emptyList(),
+            fields = Block.Fields.empty()
+        )
+
+        val header = Block(
+            id = MockDataFactory.randomUuid(),
+            content = Block.Content.Layout(
+                type = Block.Content.Layout.Type.HEADER
+            ),
+            fields = Block.Fields.empty(),
+            children = listOf(title.id)
+        )
+
+        val mentionTarget = MockDataFactory.randomUuid()
+        val givenText = "Start F end"
+
+        val a = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = givenText,
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(0, 5),
+                        type = Block.Content.Text.Mark.Type.BOLD
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(6, 7),
+                        type = Block.Content.Text.Mark.Type.MENTION,
+                        param = mentionTarget
+                    ),
+                    Block.Content.Text.Mark(
+                        range = IntRange(8, 11),
+                        type = Block.Content.Text.Mark.Type.STRIKETHROUGH
+                    )
+                ),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, a.id)
+        )
+
+        val fieldsUpdated1 =
+            mapOf(
+                Relations.ID to mentionTarget
+            )
+
+        val detailsAmend = mapOf(
+            mentionTarget to fieldsUpdated1,
+            root to mapOf(
+                Relations.ID to root,
+                Relations.TYPE to listOf(objType.id)
+            ),
+        )
+
+        val document = listOf(page, header, title, a)
+
+        val params = InterceptEvents.Params(context = root)
+
+        val untitled = "UntitledWord"
+        resourceProvider.stub {
+            onBlocking { getUntitledTitle() } doReturn untitled
+        }
+
+        openPage.stub {
+            onBlocking { async(any()) } doReturn Resultat.success(
+                Result.Success(
+                    Payload(
+                        context = root,
+                        events = listOf(
+                            Event.Command.ShowObject(
+                                context = root,
+                                root = root,
+                                details = detailsAmend,
+                                blocks = document,
+                                objectRestrictions = emptyList()
+                            ),
+                            Event.Command.Details.Amend(
+                                context = root,
+                                target = mentionTarget,
+                                details = mapOf(Block.Fields.NAME_KEY to "")
+                            )
+                        )
+                    )
+                )
+            )
+        }
+        stubInterceptEvents()
+        stubSearchObjects()
+
+        val vm = buildViewModel()
+
+        verifyNoInteractions(interceptEvents)
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        val actual = vm.state.value
+
+        val expected = ViewState.Success(
+            blocks = listOf(
+                BlockView.Title.Basic(
+                    id = title.id,
+                    isFocused = false,
+                    text = title.content<TXT>().text,
+                    mode = BlockView.Mode.EDIT,
+                    icon = ObjectIcon.TypeIcon.Fallback.DEFAULT
+                ),
+                BlockView.Text.Paragraph(
+                    id = a.id,
+                    cursor = null,
+                    isSelected = false,
+                    isFocused = false,
+                    marks = listOf(
+                        Markup.Mark.Bold(
+                            from = 0,
+                            to = 5
+                        ),
+                        Markup.Mark.Mention.Base(
+                            from = 6,
+                            to = 18,
+                            param = mentionTarget,
+                            isArchived = false
+                        ),
+                        Markup.Mark.Strikethrough(
+                            from = 19,
+                            to = 22
+                        )
+                    ),
+                    indent = 0,
+                    text = "Start $untitled end",
+                    mode = BlockView.Mode.EDIT,
+                    decorations = listOf(
+                        BlockView.Decoration(
+                            background = a.parseThemeBackgroundColor()
+                        )
+                    )
+                )
+            )
+        )
+
+        verify(interceptEvents, times(1)).build(params = params)
+
+        assertEquals(expected = expected, actual = actual)
+        clearPendingCoroutines()
+    }
+
+    private fun clearPendingCoroutines() {
+        coroutineTestRule.advanceTime(EditorViewModel.TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+}

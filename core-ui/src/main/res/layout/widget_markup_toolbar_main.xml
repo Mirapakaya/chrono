@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:orientation="horizontal">
+
+    <FrameLayout
+        android:id="@+id/bold"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/boldIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_markup_bold_selector" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/italic"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/italicIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_markup_italic_selector" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/strike"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/strikeIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_markup_strike_through_selector" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/underline"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/underlineIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_markup_underline_selector" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/code"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/codeIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_markup_code_selector" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/url"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/urlIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_markup_link_selector" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/color"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <View
+            android:id="@+id/textColorCircle"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:background="@drawable/circle_markup_text_color" />
+
+        <View
+            android:id="@+id/selectedTextColorCircle"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            android:background="@drawable/circle_selected_color_circle"
+            android:visibility="invisible" />
+
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/highlight"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
+
+        <com.chronoio.chrono.core_ui.widgets.ColorCircleWidget
+            android:id="@+id/backgroundColorCircleDefault"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            app:innerRadius="11dp"
+            app:innerStrokeColor="@color/text_tertiary"
+            app:outerStrokeColor="@color/shape_primary"
+            app:showInnerStroke="true"
+            app:showSlantedLine="true"
+            app:slantedLineWidth="@dimen/dp_8"
+            tools:visibility="invisible" />
+
+        <com.chronoio.chrono.core_ui.widgets.ColorCircleWidget
+            android:id="@+id/backgroundColorCircle"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_gravity="center"
+            app:innerRadius="11dp"
+            app:innerStrokeColor="@color/text_tertiary"
+            app:outerStrokeColor="@color/shape_primary"
+            app:showInnerStroke="true"
+            tools:visibility="visible" />
+
+    </FrameLayout>
+
+</merge>

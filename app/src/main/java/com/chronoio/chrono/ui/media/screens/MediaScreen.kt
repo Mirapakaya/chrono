@@ -1,0 +1,1019 @@
+package com.chronoio.chrono.ui.media.screens
+
+import android.media.MediaPlayer.MEDIA_INFO_BUFFERING_END
+import android.media.MediaPlayer.MEDIA_INFO_BUFFERING_START
+import android.net.Uri
+import android.widget.VideoView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import coil3.request.crossfade
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_ui.common.DefaultPreviews
+import com.chronoio.chrono.core_ui.views.BodyCallout
+import com.chronoio.chrono.core_ui.views.Caption1Medium
+import com.chronoio.chrono.core_ui.views.Caption2Medium
+import com.chronoio.chrono.presentation.media.MediaViewModel
+import kotlinx.coroutines.delay
+import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
+import timber.log.Timber
+
+@Composable
+fun ImageGallery(
+    images: List<MediaViewModel.MediaViewState.ImageContent.Image> = emptyList(),
+    index: Int = 0,
+    onBackClick: () -> Unit = {},
+    onDownloadClick: (Id) -> Unit = {},
+    onOpenClick: (Id) -> Unit = {},
+    onDeleteClick: (Id) -> Unit = {},
+    onRestoreClick: (Id) -> Unit = {}
+) {
+    val pagerState = rememberPagerState(initialPage = index) { images.size }
+    var chromeVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(pagerState.settledPage) {
+        chromeVisible = true
+    }
+
+    val currentImage = images.getOrNull(pagerState.settledPage)
+    val isCurrentImageArchived = currentImage?.isArchived ?: false
+
+    Box(Modifier.fillMaxSize()) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+
+            val image = images[page]
+            val url = image.url
+
+            ImageViewer(
+                url = url,
+                onClick = {
+                    chromeVisible = !chromeVisible
+                    Timber.d("onClick, chrome visible: $chromeVisible")
+                },
+            )
+        }
+
+        // Archived banner (top-center, below top bar)
+        if (isCurrentImageArchived) {
+            val fullText = stringResource(R.string.media_object_in_bin)
+            val restoreText = "Restore it?"
+            val startIndex = fullText.indexOf(restoreText)
+
+            val annotatedText = buildAnnotatedString {
+                if (startIndex >= 0) {
+                    // Add text before "Restore it?"
+                    append(fullText.substring(0, startIndex))
+                    // Add "Restore it?" with underline
+                    withStyle(style = SpanStyle(textDecoration = TextDecoration.Underline)) {
+                        append(restoreText)
+                    }
+                    // Add any text after (shouldn't be any in this case)
+                    if (startIndex + restoreText.length < fullText.length) {
+                        append(fullText.substring(startIndex + restoreText.length))
+                    }
+                } else {
+                    append(fullText)
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .systemBarsPadding()
+                    .padding(top = 56.dp)
+                    .background(
+                        color = colorResource(R.color.home_screen_toolbar_button),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .clip(shape = RoundedCornerShape(8.dp))
+                    .clickable { 
+                        currentImage?.let { onRestoreClick(it.obj) }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = annotatedText,
+                    style = BodyCallout,
+                    color = colorResource(R.color.text_secondary)
+                )
+            }
+        }
+
+        // Page counter chip (top-center)
+
+        if (images.size > 1) {
+            AnimatedVisibility(
+                visible = chromeVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .systemBarsPadding()
+                        .padding(top = if (isCurrentImageArchived) 96.dp else 56.dp)
+                        .background(
+                            color = colorResource(R.color.home_screen_toolbar_button),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${pagerState.settledPage + 1}/${images.size}",
+                        style = Caption1Medium,
+                        color = colorResource(R.color.glyph_active)
+                    )
+                }
+            }
+        }
+
+        // Top bar
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn(),
+            exit  = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+        ) {
+            MediaTopBar(
+                isArchived = isCurrentImageArchived,
+                onBackClick = onBackClick,
+                onDownloadClick = {
+                    onDownloadClick(images[pagerState.settledPage].obj)
+                },
+                onDeleteClick = {
+                    onDeleteClick(images[pagerState.settledPage].obj)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImageViewer(
+    url: String,
+    onClick: () -> Unit = {}
+) {
+
+    val context = LocalContext.current
+    var isLoading by remember { mutableStateOf(true) }
+    var hasError by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        ZoomableAsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(url)
+                .crossfade(1_000)
+                .memoryCachePolicy(CachePolicy.DISABLED)
+                .listener(
+                    onStart = {
+                        isLoading = true
+                        hasError = false
+                    },
+                    onSuccess = { _, _ ->
+                        isLoading = false
+                    },
+                    onError = { _, _ ->
+                        isLoading = false
+                        hasError = true
+                    }
+                )
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize(),
+            onClick = {
+                onClick()
+            }
+        )
+
+        when {
+            isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .align(alignment = Alignment.Center)
+                        .size(48.dp),
+                    color = colorResource(R.color.glyph_active),
+                    trackColor = colorResource(R.color.glyph_active).copy(alpha = 0.5f),
+                    strokeWidth = 4.dp
+                )
+            }
+            hasError -> {
+                Text(
+                    text = stringResource(R.string.failed_to_load_image),
+                    color = colorResource(R.color.palette_system_red),
+                    modifier = Modifier.align(Alignment.Center),
+                    style = Caption1Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ImageGalleryBox(
+    images: List<MediaViewModel.MediaViewState.ImageContent.Image> =  emptyList(),
+    index: Int = 0,
+    onBackClick: () -> Unit = {},
+    onDownloadClick: (Id) -> Unit = {},
+    onOpenClick: (Id) -> Unit = {},
+    onDeleteClick: (Id) -> Unit = {},
+    onRestoreClick: (Id) -> Unit = {}
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        ImageGallery(
+            images = images,
+            index = index,
+            onBackClick = onBackClick,
+            onDownloadClick = onDownloadClick,
+            onDeleteClick = onDeleteClick,
+            onOpenClick = onOpenClick,
+            onRestoreClick = onRestoreClick
+        )
+    }
+}
+
+@Composable
+fun AudioPlayerBox(
+    name: String,
+    url: String,
+    isArchived: Boolean = false,
+    onBackClick: () -> Unit = {},
+    onDownloadClick: () -> Unit = {},
+    onDeleteClick: () -> Unit = {},
+    onRestoreClick: () -> Unit = {}
+) {
+    var chromeVisible by remember { mutableStateOf(true) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AudioPlayer(
+            url = url,
+            name = name,
+            onControlsVisibilityChanged = { chromeVisible = it }
+        )
+
+        // Top bar
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+        ) {
+            MediaTopBar(
+                title = name,
+                isArchived = isArchived,
+                onBackClick = onBackClick,
+                onDownloadClick = onDownloadClick,
+                onDeleteClick = onDeleteClick
+            )
+        }
+
+        // Archived banner (top-center, below top bar)
+        if (isArchived) {
+            val fullText = stringResource(R.string.media_object_in_bin)
+            val restoreText = "Restore it?"
+            val startIndex = fullText.indexOf(restoreText)
+
+            val annotatedText = buildAnnotatedString {
+                if (startIndex >= 0) {
+                    append(fullText.substring(0, startIndex))
+                    withStyle(style = SpanStyle(textDecoration = TextDecoration.Underline)) {
+                        append(restoreText)
+                    }
+                    if (startIndex + restoreText.length < fullText.length) {
+                        append(fullText.substring(startIndex + restoreText.length))
+                    }
+                } else {
+                    append(fullText)
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .systemBarsPadding()
+                    .padding(top = 56.dp)
+                    .background(
+                        color = colorResource(R.color.home_screen_toolbar_button),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onRestoreClick() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = annotatedText,
+                    style = BodyCallout,
+                    color = colorResource(R.color.text_secondary)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun VideoPlayerBox(
+    url: String,
+    isArchived: Boolean = false,
+    onBackClick: () -> Unit = {},
+    onDownloadClick: () -> Unit = {},
+    onDeleteClick: () -> Unit = {},
+    onRestoreClick: () -> Unit = {}
+) {
+    var chromeVisible by remember { mutableStateOf(true) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        VideoPlayer(
+            url = url,
+            onControlsVisibilityChanged = { chromeVisible = it }
+        )
+
+        // Top bar
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+        ) {
+            MediaTopBar(
+                isArchived = isArchived,
+                onBackClick = onBackClick,
+                onDownloadClick = onDownloadClick,
+                onDeleteClick = onDeleteClick
+            )
+        }
+
+        // Archived banner (top-center, below top bar)
+        if (isArchived) {
+            val fullText = stringResource(R.string.media_object_in_bin)
+            val restoreText = "Restore it?"
+            val startIndex = fullText.indexOf(restoreText)
+
+            val annotatedText = buildAnnotatedString {
+                if (startIndex >= 0) {
+                    append(fullText.substring(0, startIndex))
+                    withStyle(style = SpanStyle(textDecoration = TextDecoration.Underline)) {
+                        append(restoreText)
+                    }
+                    if (startIndex + restoreText.length < fullText.length) {
+                        append(fullText.substring(startIndex + restoreText.length))
+                    }
+                } else {
+                    append(fullText)
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .systemBarsPadding()
+                    .padding(top = 56.dp)
+                    .background(
+                        color = colorResource(R.color.home_screen_toolbar_button),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onRestoreClick() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = annotatedText,
+                    style = BodyCallout,
+                    color = colorResource(R.color.text_secondary)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoPlayer(
+    url: String,
+    onControlsVisibilityChanged: (Boolean) -> Unit = {}
+) {
+    val videoViewRef = remember { mutableStateOf<VideoView?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isBuffering by remember { mutableStateOf(true) }
+    var videoDuration by remember { mutableStateOf(0) }
+    var currentPosition by remember { mutableStateOf(0) }
+    var userSeeking by remember { mutableStateOf(false) }
+    var showControls by remember { mutableStateOf(true) }
+
+    LaunchedEffect(showControls) {
+        onControlsVisibilityChanged(showControls)
+    }
+
+    // Poll playback progress
+    LaunchedEffect(isPlaying, userSeeking) {
+        while (isPlaying && !userSeeking) {
+            videoViewRef.value?.let {
+                currentPosition = it.currentPosition
+            }
+            delay(500)
+        }
+    }
+
+    // Auto-hide controls after n seconds (but not while user is seeking)
+    LaunchedEffect(showControls, isPlaying, userSeeking) {
+        if (showControls && isPlaying && !userSeeking) {
+            delay(DELAY_BEFORE_HIDING_CONTROLS)
+            if (!userSeeking) showControls = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            videoViewRef.value?.apply {
+                stopPlayback()
+                videoViewRef.value = null
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { showControls = !showControls }
+            }
+    ) {
+        // VideoView rendering
+        AndroidView(
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    setVideoURI(Uri.parse(url))
+                    setOnPreparedListener {
+                        videoDuration = it.duration
+                        isBuffering = false
+                        start()
+                        isPlaying = true
+                    }
+                    setOnInfoListener { _, what, _ ->
+                        when (what) {
+                            MEDIA_INFO_BUFFERING_START -> isBuffering = true
+                            MEDIA_INFO_BUFFERING_END -> isBuffering = false
+                        }
+                        false
+                    }
+                    setOnCompletionListener {
+                        isPlaying = false
+                        showControls = true
+                        currentPosition = videoDuration
+                    }
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    videoViewRef.value = this
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Loading indicator
+        if (isBuffering) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp),
+                color = Color.White,
+                strokeWidth = 4.dp
+            )
+        }
+
+        // Overlay controls with fade-in/out
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+                // SeekBar + time
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp)
+                    ,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatMillis(currentPosition),
+                        color = Color.White,
+                        style = BodyCallout,
+                        modifier = Modifier.alpha(0.5f)
+                    )
+                    DotScrubberSlider(
+                        value = currentPosition.toFloat(),
+                        onValueChange = {
+                            currentPosition = it.toInt()
+                            videoViewRef.value?.seekTo(currentPosition)
+                        },
+                        valueRange = 0f..videoDuration.coerceAtLeast(1).toFloat(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        onDragStart = {
+                            // Keep controls visible while dragging
+                            showControls = true
+                            userSeeking = true
+                        },
+                        onDragEnd = {
+                            // Allow auto-hide after dragging stops
+                            userSeeking = false
+                        }
+                    )
+                    Text(
+                        text = formatMillis(videoDuration),
+                        color = Color.White,
+                        style = BodyCallout,
+                        modifier = Modifier.alpha(0.5f)
+                    )
+                }
+
+                if (!isPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = colorResource(R.color.transparent_active),
+                                shape = CircleShape
+                            )
+                            .align(
+                                Alignment.Center
+                            )
+                            .clickable {
+                                val player = videoViewRef.value ?: return@clickable
+                                if (player.isPlaying) {
+                                    player.pause()
+                                    isPlaying = false
+                                    showControls = true
+                                } else {
+                                    player.start()
+                                    isPlaying = true
+                                }
+                            }
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_player_play),
+                            contentDescription = "Play button",
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(12.dp)
+                                .size(24.dp)
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = colorResource(R.color.transparent_active),
+                                shape = CircleShape
+                            )
+                            .align(
+                                Alignment.Center
+                            )
+                            .clickable {
+                                val player = videoViewRef.value ?: return@clickable
+                                if (player.isPlaying) {
+                                    player.pause()
+                                    isPlaying = false
+                                    showControls = true
+                                } else {
+                                    player.start()
+                                    isPlaying = true
+                                }
+                            }
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_player_pause),
+                            contentDescription = "Pause button",
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(12.dp)
+                                .size(24.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioPlayer(
+    url: String,
+    name: String,
+    onControlsVisibilityChanged: (Boolean) -> Unit = {}
+) {
+    val videoViewRef = remember { mutableStateOf<VideoView?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isBuffering by remember { mutableStateOf(true) }
+    var videoDuration by remember { mutableStateOf(0) }
+    var currentPosition by remember { mutableStateOf(0) }
+    var userSeeking by remember { mutableStateOf(false) }
+    var showControls by remember { mutableStateOf(true) }
+
+    LaunchedEffect(showControls) {
+        onControlsVisibilityChanged(showControls)
+    }
+
+    // Auto-hide controls after delay (but not while user is seeking)
+    LaunchedEffect(showControls, isPlaying, userSeeking) {
+        if (showControls && isPlaying && !userSeeking) {
+            delay(DELAY_BEFORE_HIDING_CONTROLS)
+            if (!userSeeking) showControls = false
+        }
+    }
+
+    // Poll playback progress
+    LaunchedEffect(isPlaying, userSeeking) {
+        while (isPlaying && !userSeeking) {
+            videoViewRef.value?.let {
+                currentPosition = it.currentPosition
+            }
+            delay(500)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            videoViewRef.value?.apply {
+                stopPlayback()
+                videoViewRef.value = null
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { showControls = !showControls }
+            }
+    ) {
+        // VideoView rendering
+        AndroidView(
+            factory = { ctx ->
+                VideoView(ctx).apply {
+                    setVideoURI(Uri.parse(url))
+                    setOnPreparedListener {
+                        videoDuration = it.duration
+                        isBuffering = false
+                        start()
+                        isPlaying = true
+                    }
+                    setOnInfoListener { _, what, _ ->
+                        when (what) {
+                            MEDIA_INFO_BUFFERING_START -> isBuffering = true
+                            MEDIA_INFO_BUFFERING_END -> isBuffering = false
+                        }
+                        false
+                    }
+                    setOnCompletionListener {
+                        isPlaying = false
+                        showControls = true
+                        currentPosition = videoDuration
+                    }
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    videoViewRef.value = this
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Loading indicator
+        if (isBuffering) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp),
+                color = Color.White,
+                strokeWidth = 4.dp
+            )
+        }
+
+        // Overlay controls with fade-in/out
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+
+                Text(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 48.dp),
+                    text = name,
+                    textAlign = TextAlign.Center,
+                    color = Color.White,
+                    style = Caption1Medium
+                )
+
+                // SeekBar + time
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp)
+                    ,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatMillis(currentPosition),
+                        color = Color.White,
+                        style = BodyCallout,
+                        modifier = Modifier.alpha(0.5f)
+                    )
+                    DotScrubberSlider(
+                        value = currentPosition.toFloat(),
+                        onValueChange = {
+                            currentPosition = it.toInt()
+                            videoViewRef.value?.seekTo(currentPosition)
+                        },
+                        valueRange = 0f..videoDuration.coerceAtLeast(1).toFloat(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        onDragStart = {
+                            userSeeking = true
+                        },
+                        onDragEnd = {
+                            userSeeking = false
+                        }
+                    )
+                    Text(
+                        text = formatMillis(videoDuration),
+                        color = Color.White,
+                        style = BodyCallout,
+                        modifier = Modifier.alpha(0.5f)
+                    )
+                }
+
+                if (!isPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = colorResource(R.color.transparent_active),
+                                shape = CircleShape
+                            )
+                            .align(
+                                Alignment.Center
+                            )
+                            .clickable {
+                                val player = videoViewRef.value ?: return@clickable
+                                if (player.isPlaying) {
+                                    player.pause()
+                                    isPlaying = false
+                                    showControls = true
+                                } else {
+                                    player.start()
+                                    isPlaying = true
+                                }
+                            }
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_player_play),
+                            contentDescription = "Play button",
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(12.dp)
+                                .size(24.dp)
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = colorResource(R.color.transparent_active),
+                                shape = CircleShape
+                            )
+                            .align(
+                                Alignment.Center
+                            )
+                            .clickable {
+                                val player = videoViewRef.value ?: return@clickable
+                                if (player.isPlaying) {
+                                    player.pause()
+                                    isPlaying = false
+                                    showControls = true
+                                } else {
+                                    player.start()
+                                    isPlaying = true
+                                }
+                            }
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_player_pause),
+                            contentDescription = "Pause button",
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(12.dp)
+                                .size(24.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnknownMediaType() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Unsupported media type",
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+@Composable
+fun DotScrubberSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    trackHeight: Dp = 4.dp,
+    dotRadius: Dp = 8.dp,
+    onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {}
+) {
+    val density = LocalDensity.current
+    val trackHeightPx = with(density) { trackHeight.toPx() }
+    val dotRadiusPx = with(density) { dotRadius.toPx() }
+
+    var sliderWidth by remember { mutableStateOf(1f) }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .height(48.dp)
+            .fillMaxWidth()
+            .pointerInput(valueRange) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    onDragStart()
+                    try {
+                        // Seek immediately on touch down
+                        val ratio = (down.position.x / size.width).coerceIn(0f, 1f)
+                        val newValue =
+                            (valueRange.start + ratio * (valueRange.endInclusive - valueRange.start))
+                                .coerceIn(valueRange)
+                        onValueChange(newValue)
+                        // Track drag until pointer up
+                        do {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            if (change.pressed) {
+                                change.consume()
+                                val x = change.position.x.coerceIn(0f, size.width.toFloat())
+                                val dragRatio = x / size.width
+                                val dragValue =
+                                    (valueRange.start + dragRatio * (valueRange.endInclusive - valueRange.start))
+                                        .coerceIn(valueRange)
+                                onValueChange(dragValue)
+                            }
+                        } while (event.changes.any { it.pressed })
+                    } finally {
+                        onDragEnd()
+                    }
+                }
+            }
+    ) {
+        sliderWidth = constraints.maxWidth.toFloat()
+
+        val valueRatio = (value - valueRange.start) / (valueRange.endInclusive - valueRange.start)
+        val thumbCenterX = sliderWidth * valueRatio
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Inactive track
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.3f),
+                topLeft = Offset(0f, size.height / 2 - trackHeightPx / 2),
+                size = Size(size.width, trackHeightPx),
+                cornerRadius = CornerRadius(trackHeightPx / 2, trackHeightPx / 2)
+            )
+
+            // Active track
+            drawRoundRect(
+                color = Color.White,
+                topLeft = Offset(0f, size.height / 2 - trackHeightPx / 2),
+                size = Size(thumbCenterX, trackHeightPx),
+                cornerRadius = CornerRadius(trackHeightPx / 2, trackHeightPx / 2)
+            )
+
+            // Thumb dot
+            drawCircle(
+                color = Color.White,
+                radius = dotRadiusPx,
+                center = Offset(thumbCenterX, size.height / 2)
+            )
+        }
+    }
+}
+
+@DefaultPreviews
+@Composable
+private fun MediaScreenVideoPreview() {
+    VideoPlayerBox(
+        url = "https://www.youtube.com/watch?v=I-oAtRUEcPM"
+    )
+}
+
+@DefaultPreviews
+@Composable
+private fun MediaScreenAudioPreview() {
+    AudioPlayerBox(
+        name = "Clara Luciani - Nue",
+        url = "https://www.youtube.com/watch?v=I-oAtRUEcPM"
+    )
+}
+
+// Format milliseconds to mm:ss
+private fun formatMillis(millis: Int): String {
+    val totalSeconds = millis / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
+
+const val DELAY_BEFORE_HIDING_CONTROLS = 1000L

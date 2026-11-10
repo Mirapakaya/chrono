@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="auth_default_button_height">48dp</dimen>
+    <dimen name="editor_recycler_bottom_padding">48dp</dimen>
+    <dimen name="shimmer_radius">5dp</dimen>
+    <dimen name="shimmer_line_height">8dp</dimen>
+    <dimen name="scroll_and_move_start_end_padding">8dp</dimen>
+    <dimen name="default_search_toolbar_clip_height">36dp</dimen>
+</resources>

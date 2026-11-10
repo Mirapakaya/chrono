@@ -1,0 +1,420 @@
+package com.chronoio.chrono.middleware.interactor
+
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Event
+import com.chronoio.chrono.core_models.ObjectWrapper
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.middleware.BuildConfig
+import com.chronoio.chrono.middleware.mappers.MWidgetLayout
+import com.chronoio.chrono.middleware.mappers.core
+import com.chronoio.chrono.middleware.mappers.toCoreFieldsModel
+import com.chronoio.chrono.middleware.mappers.toCoreModel
+import com.chronoio.chrono.middleware.mappers.toCoreModels
+import com.chronoio.chrono.middleware.mappers.toCoreModelsAlign
+import com.chronoio.chrono.middleware.mappers.toCoreModelsBookmarkState
+import com.chronoio.chrono.middleware.mappers.toCoreModelsGroupOrder
+import timber.log.Timber
+
+fun anytype.Event.Message.toCoreModels(
+    context: String
+): Event.Command? = when {
+    blockAdd != null -> {
+        val event = blockAdd
+        checkNotNull(event)
+        Event.Command.AddBlock(
+            context = context,
+            blocks = event.blocks.toCoreModels()
+        )
+    }
+    blockSetText != null -> {
+        val event = blockSetText
+        checkNotNull(event)
+        Event.Command.GranularChange(
+            context = context,
+            id = event.id,
+            text = event.text?.value_,
+            style = event.style?.value_?.toCoreModels(),
+            color = event.color?.value_,
+            marks = event.marks?.value_?.marks?.map { it.toCoreModels() },
+            checked = event.checked?.value_,
+            emojiIcon = event.iconEmoji?.value_,
+            imageIcon = event.iconImage?.value_,
+        )
+    }
+    blockSetBackgroundColor != null -> {
+        val event = blockSetBackgroundColor
+        checkNotNull(event)
+        Event.Command.GranularChange(
+            context = context,
+            id = event.id,
+            backgroundColor = event.backgroundColor
+        )
+    }
+    blockDelete != null -> {
+        val event = blockDelete
+        checkNotNull(event)
+        Event.Command.DeleteBlock(
+            context = context,
+            targets = event.blockIds
+        )
+    }
+    blockSetChildrenIds != null -> {
+        val event = blockSetChildrenIds
+        checkNotNull(event)
+        Event.Command.UpdateStructure(
+            context = context,
+            id = event.id,
+            children = event.childrenIds
+        )
+    }
+    objectDetailsSet != null -> {
+        val event = objectDetailsSet
+        checkNotNull(event)
+        Event.Command.Details.Set(
+            context = context,
+            target = event.id,
+            details = event.details.toCoreModel()
+        )
+    }
+    objectDetailsAmend != null -> {
+        val event = objectDetailsAmend
+        checkNotNull(event)
+        Event.Command.Details.Amend(
+            context = context,
+            target = event.id,
+            details = event.details.associate { it.key to it.value_ }
+        )
+    }
+    objectDetailsUnset != null -> {
+        val event = objectDetailsUnset
+        checkNotNull(event)
+        Event.Command.Details.Unset(
+            context = context,
+            target = event.id,
+            keys = event.keys
+        )
+    }
+    blockSetLink != null -> {
+        val event = blockSetLink
+        checkNotNull(event)
+        Event.Command.LinkGranularChange(
+            context = context,
+            id = event.id,
+            target = event.targetBlockId?.value_.orEmpty(),
+            iconSize = event.iconSize?.value_?.toCoreModel(),
+            cardStyle = event.cardStyle?.value_?.toCoreModel(),
+            description = event.description?.value_?.toCoreModel(),
+            relations = event.relations?.value_?.toSet()
+        )
+    }
+    blockSetAlign != null -> {
+        val event = blockSetAlign
+        checkNotNull(event)
+        Event.Command.GranularChange(
+            context = context,
+            id = event.id,
+            alignment = event.align.toCoreModelsAlign()
+        )
+    }
+    blockSetFields != null -> {
+        val event = blockSetFields
+        checkNotNull(event)
+        Event.Command.UpdateFields(
+            context = context,
+            target = event.id,
+            fields = event.fields.toCoreFieldsModel()
+        )
+    }
+    blockSetFile != null -> {
+        val event = blockSetFile
+        checkNotNull(event)
+        with(event) {
+            Event.Command.UpdateFileBlock(
+                context = context,
+                blockId = id,
+                targetObjectId = targetObjectId?.value_,
+                state = state?.value_?.toCoreModels(),
+                type = type?.value_?.toCoreModels(),
+                name = name?.value_,
+                mime = mime?.value_,
+                size = size?.value_
+            )
+        }
+    }
+    blockSetBookmark != null -> {
+        val event = blockSetBookmark
+        checkNotNull(event)
+        Event.Command.BookmarkGranularChange(
+            context = context,
+            target = event.id,
+            url = event.url?.value_,
+            title = event.title?.value_,
+            description = event.description?.value_,
+            image = event.imageHash?.value_,
+            favicon = event.faviconHash?.value_,
+            targetObjectId = event.targetObjectId?.value_,
+            state = event.state?.value_?.toCoreModelsBookmarkState()
+        )
+    }
+    blockDataviewRelationSet != null -> {
+        val event = blockDataviewRelationSet
+        checkNotNull(event)
+        Event.Command.DataView.SetRelation(
+            dv = event.id,
+            context = context,
+            links = event.relationLinks.map { it.toCoreModels() }
+        )
+    }
+    blockSetDiv != null -> {
+        val event = blockSetDiv
+        checkNotNull(event)
+        val style = event.style
+        checkNotNull(style)
+        Event.Command.UpdateDividerBlock(
+            context = context,
+            id = event.id,
+            style = style.value_.toCoreModels()
+        )
+    }
+    blockSetWidget != null -> {
+        val event = blockSetWidget
+        checkNotNull(event)
+        Event.Command.Widgets.SetWidget(
+            context = context,
+            widget = event.id,
+            activeView = event.viewId?.value_,
+            limit = event.limit?.value_,
+            layout = when(event.layout?.value_) {
+                MWidgetLayout.Link -> Block.Content.Widget.Layout.LINK
+                MWidgetLayout.Tree -> Block.Content.Widget.Layout.TREE
+                MWidgetLayout.List -> Block.Content.Widget.Layout.LIST
+                MWidgetLayout.CompactList -> Block.Content.Widget.Layout.COMPACT_LIST
+                else -> null
+            }
+        )
+    }
+    blockDataviewViewSet != null -> {
+        val event = blockDataviewViewSet
+        checkNotNull(event)
+        val view = event.view
+        checkNotNull(view)
+        Event.Command.DataView.SetView(
+            context = context,
+            target = event.id,
+            viewerId = event.viewId,
+            viewer = view.toCoreModels()
+        )
+    }
+    blockDataviewViewDelete != null -> {
+        val event = blockDataviewViewDelete
+        checkNotNull(event)
+        Event.Command.DataView.DeleteView(
+            context = context,
+            target = event.id,
+            viewer = event.viewId
+        )
+    }
+    blockDataviewViewOrder != null -> {
+        val event = blockDataviewViewOrder
+        checkNotNull(event)
+        Event.Command.DataView.OrderViews(
+            context = context,
+            dv = event.id,
+            order = event.viewIds
+        )
+    }
+    blockDataviewTargetObjectIdSet != null -> {
+        val event = blockDataviewTargetObjectIdSet
+        checkNotNull(event)
+        Event.Command.DataView.SetTargetObjectId(
+            context = context,
+            dv = event.id,
+            targetObjectId = event.targetObjectId
+        )
+    }
+    blockSetRelation != null -> {
+        val event = blockSetRelation
+        checkNotNull(event)
+        Event.Command.BlockEvent.SetRelation(
+            context = context,
+            id = event.id,
+            key = event.key?.value_
+        )
+    }
+    objectRelationsRemove != null -> {
+        val event = objectRelationsRemove
+        checkNotNull(event)
+        Event.Command.ObjectRelation.Remove(
+            context = context,
+            id = event.id,
+            keys = event.relationKeys
+        )
+    }
+    blockDataviewViewUpdate != null -> {
+        val event = blockDataviewViewUpdate
+        checkNotNull(event)
+        Event.Command.DataView.UpdateView(
+            context = context,
+            block = event.id,
+            viewerId = event.viewId,
+            filterUpdates = event.filter.mapNotNull { filter ->
+                filter.toCoreModels()
+            },
+            sortUpdates = event.sort.mapNotNull { sort ->
+                sort.toCoreModels()
+            },
+            relationUpdates = event.relation.mapNotNull { relation ->
+                relation.toCoreModels()
+            },
+            fields = event.fields?.toCoreModels()
+        )
+    }
+    blockDataviewRelationDelete != null -> {
+        val event = blockDataviewRelationDelete
+        checkNotNull(event)
+        Event.Command.DataView.DeleteRelation(
+            context = context,
+            dv = event.id,
+            keys = event.relationKeys
+        )
+    }
+    blockDataviewIsCollectionSet != null -> {
+        val event = blockDataviewIsCollectionSet
+        checkNotNull(event)
+        Event.Command.DataView.SetIsCollection(
+            context = context,
+            dv = event.id,
+            isCollection = event.value_
+        )
+    }
+    blockDataViewGroupOrderUpdate != null -> {
+        val event = blockDataViewGroupOrderUpdate
+        checkNotNull(event)
+        val groupOrder = event.groupOrder
+        if (groupOrder != null) {
+            Event.Command.DataView.GroupOrderUpdate(
+                context = context,
+                dv = event.id,
+                groupOrder = groupOrder.toCoreModelsGroupOrder()
+            )
+        } else {
+            null
+        }
+    }
+    blockDataViewObjectOrderUpdate != null -> {
+        val event = blockDataViewObjectOrderUpdate
+        checkNotNull(event)
+        Event.Command.DataView.ObjectOrderUpdate(
+            context = context,
+            dv = event.id,
+            viewId = event.viewId,
+            groupId = event.groupId,
+            changes = event.sliceChanges.map { it.toCoreModelsSliceChange() }
+        )
+    }
+    chatAdd != null -> {
+        val event = chatAdd
+        checkNotNull(event)
+        Event.Command.Chats.Add(
+            spaceId = SpaceId(spaceId),
+            context = context,
+            id = event.id,
+            order = event.orderId,
+            message = requireNotNull(event.message).core(),
+            dependencies = event.dependencies
+                .map { ObjectWrapper.Basic(it.orEmpty()) }
+                .filter { it.isValid }
+        )
+    }
+    chatDelete != null -> {
+        val event = chatDelete
+        checkNotNull(event)
+        Event.Command.Chats.Delete(
+            context = context,
+            message = event.id
+        )
+    }
+    chatUpdate != null -> {
+        val event = chatUpdate
+        checkNotNull(event)
+        Event.Command.Chats.Update(
+            context = context,
+            id = event.id,
+            message = requireNotNull(event.message).core()
+        )
+    }
+    chatUpdateReactions != null -> {
+        val event = chatUpdateReactions
+        checkNotNull(event)
+        Event.Command.Chats.UpdateReactions(
+            context = context,
+            id = event.id,
+            reactions = event.reactions?.reactions.orEmpty().mapValues { (unicode, identities) ->
+                identities.ids
+            }
+        )
+    }
+    chatStateUpdate != null -> {
+        val event = chatStateUpdate
+        checkNotNull(event)
+        Event.Command.Chats.UpdateState(
+            context = context,
+            state = event.state?.core()
+        )
+    }
+    chatUpdateMessageReadStatus != null -> {
+        val event = chatUpdateMessageReadStatus
+        checkNotNull(event)
+        Event.Command.Chats.UpdateMessageReadStatus(
+            context = context,
+            messages = event.ids,
+            isRead = event.isRead
+        )
+    }
+    chatUpdateMentionReadStatus != null -> {
+        val event = chatUpdateMentionReadStatus
+        checkNotNull(event)
+        Event.Command.Chats.UpdateMentionReadStatus(
+            context = context,
+            messages = event.ids,
+            isRead = event.isRead
+        )
+    }
+    chatUpdateMessageSyncStatus != null -> {
+        val event = chatUpdateMessageSyncStatus
+        checkNotNull(event)
+        Event.Command.Chats.UpdateMessageSyncStatus(
+            context = context,
+            messages = event.ids,
+            isSynced = event.isSynced,
+            subscriptions = event.subIds
+        )
+    }
+    else -> {
+        if (BuildConfig.DEBUG) {
+            Timber.w("Skipped event while mapping: $this")
+        }
+        null
+    }
+}
+
+private fun anytype.Event.Block.Dataview.SliceChange.toCoreModelsSliceChange():
+    Event.Command.DataView.ObjectOrderUpdate.SliceChange {
+    val operation = when (op) {
+        anytype.Event.Block.Dataview.SliceOperation.SliceOperationAdd ->
+            Event.Command.DataView.ObjectOrderUpdate.SliceOperation.ADD
+        anytype.Event.Block.Dataview.SliceOperation.SliceOperationMove ->
+            Event.Command.DataView.ObjectOrderUpdate.SliceOperation.MOVE
+        anytype.Event.Block.Dataview.SliceOperation.SliceOperationRemove ->
+            Event.Command.DataView.ObjectOrderUpdate.SliceOperation.REMOVE
+        anytype.Event.Block.Dataview.SliceOperation.SliceOperationReplace ->
+            Event.Command.DataView.ObjectOrderUpdate.SliceOperation.REPLACE
+        anytype.Event.Block.Dataview.SliceOperation.SliceOperationNone ->
+            Event.Command.DataView.ObjectOrderUpdate.SliceOperation.NONE
+    }
+    return Event.Command.DataView.ObjectOrderUpdate.SliceChange(
+        operation = operation,
+        ids = ids,
+        afterId = afterId
+    )
+}

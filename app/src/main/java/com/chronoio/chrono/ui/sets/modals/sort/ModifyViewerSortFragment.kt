@@ -1,0 +1,142 @@
+package com.chronoio.chrono.ui.sets.modals.sort
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.os.bundleOf
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.DVSortEmptyType
+import com.chronoio.chrono.core_models.DVSortType
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Key
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.extensions.text
+import com.chronoio.chrono.core_ui.reactive.clicks
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.invisible
+import com.chronoio.chrono.core_utils.ext.subscribe
+import com.chronoio.chrono.core_utils.ext.visible
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetFragment
+import com.chronoio.chrono.databinding.FragmentModifyViewerSortBinding
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.di.feature.DefaultComponentParam
+import com.chronoio.chrono.presentation.sets.sort.ModifyViewerSortViewModel
+import kotlinx.coroutines.flow.filterNotNull
+import javax.inject.Inject
+
+class ModifyViewerSortFragment : BaseBottomSheetFragment<FragmentModifyViewerSortBinding>() {
+
+    private val ctx: Id get() = arg(CTX_KEY)
+    private val space: Id get() = arg(SPACE_ID_KEY)
+    private val sortId: Id get() = arg(SORT_ID_KEY)
+    private val relationKey: Key get() = arg(RELATION_KEY)
+    private val viewer: Id get() = arg(VIEWER_ID_KEY)
+
+    @Inject
+    lateinit var factory: ModifyViewerSortViewModel.Factory
+
+    private val vm: ModifyViewerSortViewModel by viewModels { factory }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        with(lifecycleScope) {
+            subscribe(binding.flSortAsc.clicks()) {
+                vm.onSortAscSelected(ctx = ctx, viewerId = viewer, sortId = sortId)
+            }
+            subscribe(binding.flSortDesc.clicks()) {
+                vm.onSortDescSelected(ctx = ctx, viewerId = viewer, sortId = sortId)
+            }
+            subscribe(binding.flSortEmptyBottom.clicks()) {
+                vm.onEmptyBottomSelected(ctx = ctx, viewerId = viewer, sortId = sortId)
+            }
+            subscribe(binding.flSortEmptyUp.clicks()) {
+                vm.onEmptyUpSelected(ctx = ctx, viewerId = viewer, sortId = sortId)
+            }
+        }
+    }
+
+    override fun onStart() {
+        with(lifecycleScope) {
+            jobs += subscribe(vm.isDismissed) { isDismissed -> if (isDismissed) dismiss() }
+            jobs += subscribe(vm.viewState.filterNotNull()) { state ->
+                with(binding) {
+                    tvSortAsc.setText(DVSortType.ASC.text(state.format))
+                    tvSortDesc.setText(DVSortType.DESC.text(state.format))
+                    txtName.text = state.name
+                    when (state.type) {
+                        Block.Content.DataView.Sort.Type.ASC -> {
+                            ivAscSelected.visible()
+                            ivDescSelected.invisible()
+                        }
+                        Block.Content.DataView.Sort.Type.DESC -> {
+                            ivAscSelected.invisible()
+                            ivDescSelected.visible()
+                        }
+                        else -> {}
+                    }
+                    when (state.emptyType) {
+                        DVSortEmptyType.START -> {
+                            ivEmptyUpSelected.visible()
+                            ivEmptyBottomSelected.invisible()
+                        }
+                        DVSortEmptyType.END -> {
+                            ivEmptyUpSelected.invisible()
+                            ivEmptyBottomSelected.visible()
+                        }
+                        else -> {
+                            ivEmptyUpSelected.invisible()
+                            ivEmptyBottomSelected.invisible()
+                        }
+                    }
+                }
+            }
+        }
+        super.onStart()
+        vm.onStart(sortId = sortId, viewerId = viewer, relationKey = relationKey)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        vm.onStop()
+    }
+
+    override fun injectDependencies() {
+        componentManager()
+            .modifyViewerSortComponent
+            .get(
+                params = DefaultComponentParam(
+                    ctx = ctx,
+                    space = SpaceId(space)
+                )
+            )
+            .inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().modifyViewerSortComponent.release()
+    }
+
+    override fun inflateBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?
+    ): FragmentModifyViewerSortBinding = FragmentModifyViewerSortBinding.inflate(
+        inflater, container, false
+    )
+
+    companion object {
+        fun new(ctx: Id, space: Id, viewer: Id, sortId: Id, relation: Key): ModifyViewerSortFragment =
+            ModifyViewerSortFragment().apply {
+                arguments =
+                    bundleOf(CTX_KEY to ctx, SPACE_ID_KEY to space, SORT_ID_KEY to sortId, RELATION_KEY to relation, VIEWER_ID_KEY to viewer)
+            }
+
+        private const val CTX_KEY = "arg.modify-viewer-sort.ctx"
+        private const val SPACE_ID_KEY = "arg.modify-viewer-sort.space-id"
+        private const val SORT_ID_KEY = "arg.modify-viewer-sort.sort-id"
+        private const val RELATION_KEY = "arg.modify-viewer-sort.relation"
+        private const val VIEWER_ID_KEY = "arg.modify-viewer-sort.viewer-id"
+    }
+}

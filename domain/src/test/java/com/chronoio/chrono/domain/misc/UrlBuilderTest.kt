@@ -1,0 +1,78 @@
+package com.chronoio.chrono.domain.misc
+
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.domain.config.Gateway
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Test
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
+
+class UrlBuilderTest {
+
+    @Mock
+    lateinit var gateway: Gateway
+
+    private lateinit var urlBuilder: UrlBuilder
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.initMocks(this)
+        urlBuilder = UrlBuilderImpl(gateway)
+    }
+
+    @Test
+    fun `should return image url`() {
+        val hash = "image001"
+
+        val expected =
+            gateway.provide() + UrlBuilderImpl.IMAGE_PATH + hash + UrlBuilderImpl.LARGE_WIDTH_ALT_PARAM
+        val actual = urlBuilder.large(hash)
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `should return url without hash when image hash is empty`() {
+        val hash = ""
+
+        val expected = gateway.provide() + UrlBuilderImpl.IMAGE_PATH + UrlBuilderImpl.LARGE_WIDTH_ALT_PARAM
+        val actual = urlBuilder.large(hash)
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `should return file url`() {
+        val hash = "file001"
+
+        val expected = gateway.provide() + UrlBuilderImpl.FILE_PATH + hash
+        val actual = urlBuilder.file(hash)
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `should return url without hash when file hash is empty`() {
+        val hash = ""
+
+        val expected = gateway.provide() + UrlBuilderImpl.FILE_PATH
+        val actual = urlBuilder.file(hash)
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `should return video url`() {
+        val hash = "video001"
+
+        val expected = gateway.provide() + UrlBuilderImpl.FILE_PATH + hash
+        val actual = urlBuilder.video(hash)
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `should return url without hash when video hash is empty`() {
+        val hash = ""
+
+        val expected = gateway.provide() + UrlBuilderImpl.FILE_PATH
+        val actual = urlBuilder.video(hash)
+        assertEquals(expected, actual)
+    }
+}

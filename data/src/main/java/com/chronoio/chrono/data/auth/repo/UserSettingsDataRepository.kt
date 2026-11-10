@@ -1,0 +1,361 @@
+package com.chronoio.chrono.data.auth.repo
+
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.FileDownloadLimit
+import com.chronoio.chrono.core_models.GlobalSearchHistory
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.WidgetSections
+import com.chronoio.chrono.core_models.ThemeMode
+import com.chronoio.chrono.core_models.Wallpaper
+import com.chronoio.chrono.core_models.WidgetSession
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeId
+import com.chronoio.chrono.core_models.settings.VaultSettings
+import com.chronoio.chrono.domain.config.UserSettingsRepository
+import kotlinx.coroutines.flow.Flow
+
+class UserSettingsDataRepository(private val cache: UserSettingsCache) : UserSettingsRepository {
+
+    override suspend fun setWallpaper(space: Id, wallpaper: Wallpaper) {
+        cache.setWallpaper(space, wallpaper)
+    }
+
+    override suspend fun getWallpaper(space: Id): Wallpaper = cache.getWallpaper(space)
+
+    override suspend fun getWallpapers(): Map<Id, Wallpaper> {
+        return cache.getWallpapers()
+    }
+
+    override fun observeWallpaper(space: Id): Flow<Wallpaper> {
+        return cache.observeWallpaper(space)
+    }
+
+    override suspend fun setDefaultObjectType(
+        space: SpaceId,
+        type: TypeId
+    ): Unit = cache.setDefaultObjectType(
+        space = space,
+        type = type
+    )
+
+    override suspend fun getDefaultObjectType(
+        space: SpaceId
+    ): TypeId? = cache.getDefaultObjectType(space = space)
+
+    override suspend fun setPinnedObjectTypes(space: SpaceId, types: List<TypeId>) {
+        cache.setPinnedObjectTypes(
+            space = space,
+            types = types
+        )
+    }
+
+    override fun getPinnedObjectTypes(space: SpaceId): Flow<List<TypeId>> {
+        return cache.getPinnedObjectTypes(space = space)
+    }
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        cache.setThemeMode(mode)
+    }
+
+    override suspend fun getThemeMode(): ThemeMode = cache.getThemeMode()
+
+    override suspend fun getWidgetSession(): WidgetSession = cache.getWidgetSession()
+
+    override suspend fun saveWidgetSession(session: WidgetSession) = cache.saveWidgetSession(
+        session = session
+    )
+
+    override suspend fun clear() = cache.clear()
+
+    override suspend fun setCurrentSpace(space: SpaceId) = cache.setCurrentSpace(space)
+
+    override suspend fun getCurrentSpace(): SpaceId? = cache.getCurrentSpace()
+
+    override suspend fun clearCurrentSpace() = cache.clearCurrentSpace()
+
+    override suspend fun setLastBackgroundedAt(timeInSeconds: Long) =
+        cache.setLastBackgroundedAt(timeInSeconds)
+
+    override suspend fun getLastBackgroundedAt(): Long? = cache.getLastBackgroundedAt()
+
+    override suspend fun setLastOpenedObject(id: Id, space: SpaceId) {
+        cache.setLastOpenedObject(id, space)
+    }
+
+    override suspend fun getLastOpenedObject(space: SpaceId): Id? {
+        return cache.getLastOpenedObject(space)
+    }
+
+    override suspend fun clearLastOpenedObject(space: SpaceId) {
+        cache.clearLastOpenedObject(space)
+    }
+
+    override suspend fun setGlobalSearchHistory(globalSearchHistory: GlobalSearchHistory, space: SpaceId) {
+        cache.setGlobalSearchHistory(globalSearchHistory, space)
+    }
+
+    override suspend fun setGlobalSearchHistory(space: SpaceId): GlobalSearchHistory? {
+        return cache.getGlobalSearchHistory(space)
+    }
+
+    override suspend fun clearGlobalSearchHistory(space: SpaceId) {
+        cache.clearGlobalSearchHistory(space)
+    }
+
+    override suspend fun getVaultSettings(account: Account): VaultSettings {
+        return cache.getVaultSettings(account)
+    }
+
+    override suspend fun observeVaultSettings(account: Account): Flow<VaultSettings> {
+        return cache.observeVaultSettings(account)
+    }
+
+    override suspend fun getAllContentSort(space: SpaceId): Pair<Id, Boolean>? {
+        return cache.getAllContentSort(space)
+    }
+
+    override suspend fun setAllContentSort(space: SpaceId, sort: Id, isAsc: Boolean) {
+        cache.setAllContentSort(space, sort, isAsc)
+    }
+
+    override suspend fun setRelativeDates(
+        account: Account,
+        enabled: Boolean
+    ) {
+        cache.setRelativeDates(account, enabled)
+    }
+
+    override suspend fun setDateFormat(
+        account: Account,
+        format: String
+    ) {
+        cache.setDateFormat(account, format)
+    }
+
+    override suspend fun setRecentlyUsedChatReactions(account: Account, emojis: Set<String>) {
+        cache.setRecentlyUsedChatReactions(account, emojis)
+    }
+
+    override fun observeRecentlyUsedChatReactions(account: Account,): Flow<List<String>> {
+        return cache.observeRecentlyUsedChatReactions(account)
+    }
+
+    override suspend fun setExpandedWidgetIds(space: SpaceId, widgetIds: List<Id>) {
+        cache.setExpandedWidgetIds(space, widgetIds)
+    }
+
+    override fun getExpandedWidgetIds(space: SpaceId): Flow<List<Id>> {
+        return cache.getExpandedWidgetIds(space)
+    }
+
+    override suspend fun setCollapsedSectionIds(
+        space: SpaceId,
+        sectionIds: List<Id>
+    ) {
+        return cache.setCollapsedSectionIds(space, sectionIds)
+    }
+
+    override fun getCollapsedSectionIds(space: SpaceId): Flow<List<Id>> {
+        return cache.getCollapsedSectionIds(space)
+    }
+
+    override suspend fun getHasShownSpacesIntroduction(): Boolean {
+        return cache.getHasShownSpacesIntroduction()
+    }
+
+    override suspend fun setHasShownSpacesIntroduction(hasShown: Boolean) {
+        cache.setHasShownSpacesIntroduction(hasShown)
+    }
+
+    override suspend fun getHasSeenCreateSpaceBadge(): Boolean {
+        return cache.getHasSeenCreateSpaceBadge()
+    }
+
+    override suspend fun setHasSeenCreateSpaceBadge(hasSeen: Boolean) {
+        cache.setHasSeenCreateSpaceBadge(hasSeen)
+    }
+
+    override suspend fun getHasSeenVaultSearchHighlight(): Boolean {
+        return cache.getHasSeenVaultSearchHighlight()
+    }
+
+    override suspend fun setHasSeenVaultSearchHighlight(hasSeen: Boolean) {
+        cache.setHasSeenVaultSearchHighlight(hasSeen)
+    }
+
+    override suspend fun getRunProfilerOnStartup(): Boolean {
+        return cache.getRunProfilerOnStartup()
+    }
+
+    override suspend fun setRunProfilerOnStartup(enabled: Boolean) {
+        cache.setRunProfilerOnStartup(enabled)
+    }
+
+    override suspend fun getDebugMenuEnabled(): Boolean {
+        return cache.getDebugMenuEnabled()
+    }
+
+    override suspend fun setDebugMenuEnabled(enabled: Boolean) {
+        cache.setDebugMenuEnabled(enabled)
+    }
+
+    override suspend fun getCompactModeEnabled(): Boolean {
+        return cache.getCompactModeEnabled()
+    }
+
+    override suspend fun setCompactModeEnabled(enabled: Boolean) {
+        cache.setCompactModeEnabled(enabled)
+    }
+
+    override fun observeCompactModeEnabled(): Flow<Boolean> {
+        return cache.observeCompactModeEnabled()
+    }
+
+    override suspend fun getKanbanEnabled(): Boolean {
+        return cache.getKanbanEnabled()
+    }
+
+    override suspend fun setKanbanEnabled(enabled: Boolean) {
+        cache.setKanbanEnabled(enabled)
+    }
+
+    override fun observeKanbanEnabled(): Flow<Boolean> {
+        return cache.observeKanbanEnabled()
+    }
+
+    override suspend fun getFileDownloadLimit(): FileDownloadLimit {
+        return cache.getFileDownloadLimit()
+    }
+
+    override suspend fun setFileDownloadLimit(limit: FileDownloadLimit) {
+        cache.setFileDownloadLimit(limit)
+    }
+
+    override fun observeFileDownloadLimit(): Flow<FileDownloadLimit> {
+        return cache.observeFileDownloadLimit()
+    }
+
+    override suspend fun getUseCellularForDownloads(): Boolean {
+        return cache.getUseCellularForDownloads()
+    }
+
+    override suspend fun setUseCellularForDownloads(enabled: Boolean) {
+        cache.setUseCellularForDownloads(enabled)
+    }
+
+    override suspend fun getInstalledAtDate(account: Account): Long? {
+        return cache.getInstalledAtDate(account)
+    }
+
+    override suspend fun setInstalledAtDate(account: Account, timestamp: Long) {
+        cache.setInstalledAtDate(account, timestamp)
+    }
+
+    override suspend fun getCurrentAppVersion(account: Account): String? {
+        return cache.getCurrentAppVersion(account)
+    }
+
+    override suspend fun setCurrentAppVersion(account: Account, version: String) {
+        cache.setCurrentAppVersion(account, version)
+    }
+
+    override suspend fun getPreviousAppVersion(account: Account): String? {
+        return cache.getPreviousAppVersion(account)
+    }
+
+    override suspend fun setPreviousAppVersion(account: Account, version: String) {
+        cache.setPreviousAppVersion(account, version)
+    }
+
+    override suspend fun getWidgetSections(space: SpaceId): WidgetSections {
+        return cache.getWidgetSections(space)
+    }
+
+    override suspend fun setWidgetSections(space: SpaceId, sections: WidgetSections) {
+        cache.setWidgetSections(space, sections)
+    }
+
+    override fun observeWidgetSections(space: SpaceId): Flow<WidgetSections> {
+        return cache.observeWidgetSections(space)
+    }
+
+    override suspend fun setHomepagePickerDismissed(space: SpaceId, dismissed: Boolean) {
+        cache.setHomepagePickerDismissed(space, dismissed)
+    }
+
+    override suspend fun getHomepagePickerDismissed(space: SpaceId): Boolean {
+        return cache.getHomepagePickerDismissed(space)
+    }
+
+    override suspend fun setInviteMembersDismissed(space: SpaceId, dismissed: Boolean) {
+        cache.setInviteMembersDismissed(space, dismissed)
+    }
+
+    override fun observeInviteMembersDismissed(space: SpaceId): Flow<Boolean> {
+        return cache.observeInviteMembersDismissed(space)
+    }
+
+    override suspend fun setQuickCaptureDraft(space: SpaceId, obj: Id) {
+        cache.setQuickCaptureDraft(space, obj)
+    }
+
+    override suspend fun getQuickCaptureDraft(space: SpaceId): Id? {
+        return cache.getQuickCaptureDraft(space)
+    }
+
+    override suspend fun getQuickCaptureDrafts(): Map<Id, Id> {
+        return cache.getQuickCaptureDrafts()
+    }
+
+    override suspend fun clearQuickCaptureDraft(space: SpaceId) {
+        cache.clearQuickCaptureDraft(space)
+    }
+
+    override suspend fun setSpaceLastInteraction(space: SpaceId, timestamp: Long) {
+        cache.setSpaceLastInteraction(space, timestamp)
+    }
+
+    override suspend fun getSpaceLastInteractions(): Map<Id, Long> {
+        return cache.getSpaceLastInteractions()
+    }
+
+    override suspend fun getVaultSortKeys(): Map<Id, Long> {
+        return cache.getVaultSortKeys()
+    }
+
+    override suspend fun setVaultSortKeys(keys: Map<Id, Long>) {
+        cache.setVaultSortKeys(keys)
+    }
+
+    override suspend fun setQuickCaptureLastSpace(space: Id) {
+        cache.setQuickCaptureLastSpace(space)
+    }
+
+    override suspend fun getQuickCaptureLastSpace(): Id? {
+        return cache.getQuickCaptureLastSpace()
+    }
+
+    override suspend fun getQuickCaptureEnabled(): Boolean {
+        return cache.getQuickCaptureEnabled()
+    }
+
+    override suspend fun setQuickCaptureEnabled(enabled: Boolean) {
+        cache.setQuickCaptureEnabled(enabled)
+    }
+
+    override fun observeQuickCaptureEnabled(): Flow<Boolean> {
+        return cache.observeQuickCaptureEnabled()
+    }
+
+    override suspend fun getQuickCaptureAiEnabled(): Boolean {
+        return cache.getQuickCaptureAiEnabled()
+    }
+
+    override suspend fun setQuickCaptureAiEnabled(enabled: Boolean) {
+        cache.setQuickCaptureAiEnabled(enabled)
+    }
+
+    override fun observeQuickCaptureAiEnabled(): Flow<Boolean> {
+        return cache.observeQuickCaptureAiEnabled()
+    }
+}

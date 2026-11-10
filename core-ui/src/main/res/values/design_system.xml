@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- https://www.figma.com/file/vgXV7x2v20vJajc7clYJ7a/Mobile-Design-System?node-id=1587%3A55&t=zAFZWVJ7Jk4qK01n-1 -->
+    <!-- MOBILE DESIGN SYSTEM, Typography-->
+
+    <style name="BaseTextView" parent="Widget.MaterialComponents.TextView">
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <!-- MOBILE DESIGN SYSTEM, Content Text Styles -->
+    <!-- Headlines -->
+    <style name="TextView.ContentStyle.Headline" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:fontWeight">700</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Headline.Title" parent="TextView.ContentStyle.Headline">
+        <item name="android:textSize">28sp</item>
+        <item name="lineHeight" tools:targetApi="28">30.5sp</item>
+        <item name="android:letterSpacing">-0.017</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Headline.Heading" parent="TextView.ContentStyle.Headline">
+        <item name="android:textSize">22sp</item>
+        <item name="lineHeight" tools:targetApi="28">26sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Headline.Subheading" parent="TextView.ContentStyle.Headline">
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">24sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <!-- Body -->
+    <style name="TextView.ContentStyle.Body" parent="BaseTextView">
+        <item name="android:textSize">17sp</item>я
+        <item name="lineHeight" tools:targetApi="28">24sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Body.Regular" parent="TextView.ContentStyle.Body">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Body.Callout" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <!-- Preview Titles -->
+    <style name="TextView.ContentStyle.PreviewTitles.1.Medium" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+    </style>
+
+    <style name="TextView.ContentStyle.PreviewTitles.2.Medium" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">20sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <style name="TextView.ContentStyle.PreviewTitles.2.Regular" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">20sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <!-- Relations -->
+    <style name="TextView.ContentStyle.Relations" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Relations.1" parent="TextView.ContentStyle.Relations">
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">20sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Relations.2" parent="TextView.ContentStyle.Relations">
+        <item name="android:textSize">13sp</item>
+        <item name="lineHeight" tools:targetApi="28">18sp</item>
+        <item name="android:letterSpacing">-0.006</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Relations.3" parent="TextView.ContentStyle.Relations">
+        <item name="android:textSize">12sp</item>
+        <item name="lineHeight" tools:targetApi="28">15sp</item>
+    </style>
+
+    <!-- Code block -->
+    <style name="TextView.ContentStyle.CodeBlock" parent="BaseTextView">
+        <item name="android:fontFamily">@font/ibm_plex_mono</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.016</item>
+    </style>
+
+    <!-- Initials -->
+    <style name="TextView.ContentStyle.Initials" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">600</item>
+        <item name="android:textColor">@color/glyph_active</item>
+    </style>
+
+    <!-- MOBILE DESIGN SYSTEM, UX Styles -->
+    <!-- Titles -->
+    <style name="TextView.UXStyle.Titles.1" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:fontWeight">600</item>
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">24sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+    </style>
+
+    <style name="TextView.UXStyle.Titles.2.Medium" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">20sp</item>
+        <item name="android:letterSpacing">-0.014</item>
+    </style>
+
+    <style name="TextView.UXStyle.Titles.2.Regular" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">20sp</item>
+        <item name="android:letterSpacing">-0.014</item>
+    </style>
+
+    <!-- Body -->
+    <style name="TextView.UXStyle.Body" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">24sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+    </style>
+
+    <style name="TextView.UXStyle.Body.Callout.Medium" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.014</item>
+    </style>
+
+    <style name="TextView.UXStyle.Body.Callout.Regular" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.014</item>
+    </style>
+
+    <!-- Captions -->
+    <style name="TextView.UXStyle.Captions.1.Medium" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">13sp</item>
+        <item name="lineHeight" tools:targetApi="28">18sp</item>
+        <item name="android:letterSpacing">-0.006</item>
+    </style>
+
+    <style name="TextView.UXStyle.Captions.1.Regular" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">13sp</item>
+        <item name="lineHeight" tools:targetApi="28">18sp</item>
+        <item name="android:letterSpacing">-0.006</item>
+    </style>
+
+    <style name="TextView.UXStyle.Captions.2.Medium" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">11sp</item>
+        <item name="lineHeight" tools:targetApi="28">14sp</item>
+        <item name="android:letterSpacing">-0.006</item>
+    </style>
+
+    <style name="TextView.UXStyle.Captions.2.Regular" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">11sp</item>
+        <item name="lineHeight" tools:targetApi="28">14sp</item>
+        <item name="android:letterSpacing">-0.006</item>
+    </style>
+
+    <style name="BaseTextView.Buttons" parent="BaseTextView">
+        <item name="android:textColor">@color/button_text</item>
+    </style>
+
+    <!-- Buttons -->
+    <style name="TextView.UXStyle.Buttons.Medium" parent="BaseTextView.Buttons">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontWeight">500</item>
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">24sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <style name="TextView.UXStyle.Buttons.Regular" parent="BaseTextView.Buttons">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">24sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!--https://www.figma.com/file/vgXV7x2v20vJajc7clYJ7a/Mobile-Design-System?node-id=1588%3A59&t=9DPtsMxKLupkwVfY-1-->
+    <!-- MOBILE DESIGN SYSTEM, Buttons-->
+    <style name="Button.Primary.XSmall" parent="TextView.UXStyle.Captions.1.Medium">
+        <item name="android:background">@drawable/button_primary_xsmall_selector</item>
+        <item name="android:textColor">@color/text_color_button_primary_selector</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingTop">6.4dp</item>
+        <item name="android:paddingBottom">6.4dp</item>
+    </style>
+
+    <style name="Button.Primary.Small" parent="TextView.UXStyle.Body.Callout.Medium">
+        <item name="android:background">@drawable/button_primary_small_selector</item>
+        <item name="android:textColor">@color/text_color_button_primary_selector</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingBottom">9dp</item>
+    </style>
+
+    <style name="Button.Primary.Medium" parent="TextView.UXStyle.Buttons.Medium">
+        <item name="android:background">@drawable/button_primary_medium_selector</item>
+        <item name="android:textColor">@color/text_color_button_primary_selector</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">56dp</item>
+        <item name="android:paddingRight">56dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+    </style>
+
+    <style name="Button.Primary.Large" parent="TextView.UXStyle.Buttons.Medium">
+        <item name="android:background">@drawable/button_primary_large_selector</item>
+        <item name="android:textColor">@color/text_color_button_primary_selector</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+    </style>
+
+    <style name="Button.Secondary.XSmall" parent="TextView.UXStyle.Captions.1.Regular">
+        <item name="android:background">@drawable/button_secondary_xsmall_selector</item>
+        <item name="android:textColor">@color/text_color_button_secondary_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingTop">6.4dp</item>
+        <item name="android:paddingBottom">6.4dp</item>
+    </style>
+
+    <style name="Button.Secondary.Small" parent="TextView.UXStyle.Body.Callout.Regular">
+        <item name="android:background">@drawable/button_secondary_small_selector</item>
+        <item name="android:textColor">@color/text_color_button_secondary_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingBottom">9dp</item>
+    </style>
+
+    <style name="Button.Secondary.Medium" parent="TextView.UXStyle.Body">
+        <item name="android:background">@drawable/button_secondary_medium_selector</item>
+        <item name="android:textColor">@color/text_color_button_secondary_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">56dp</item>
+        <item name="android:paddingRight">56dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+    </style>
+
+    <style name="Button.Secondary.Large" parent="TextView.UXStyle.Buttons.Regular">
+        <item name="android:background">@drawable/button_secondary_large_selector</item>
+        <item name="android:textColor">@color/text_color_button_secondary_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+    </style>
+
+    <style name="Button.Warning.XSmall" parent="TextView.UXStyle.Captions.1.Medium">
+        <item name="android:background">@drawable/button_warning_xsmall_selector</item>
+        <item name="android:textColor">@color/text_color_button_warning_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingTop">6.4dp</item>
+        <item name="android:paddingBottom">6.4dp</item>
+    </style>
+
+    <style name="Button.Warning.Small" parent="TextView.UXStyle.Body.Callout.Medium">
+        <item name="android:background">@drawable/button_warning_small_selector</item>
+        <item name="android:textColor">@color/text_color_button_warning_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingBottom">9dp</item>
+    </style>
+
+    <style name="Button.Warning.Medium" parent="TextView.UXStyle.Buttons.Medium">
+        <item name="android:background">@drawable/button_warning_medium_selector</item>
+        <item name="android:textColor">@color/text_color_button_warning_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:paddingLeft">56dp</item>
+        <item name="android:paddingRight">56dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+    </style>
+
+    <style name="Button.Warning.Large" parent="TextView.UXStyle.Buttons.Medium">
+        <item name="android:background">@drawable/button_warning_large_selector</item>
+        <item name="android:textColor">@color/text_color_button_warning_selector</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+    </style>
+
+
+    <style name="TextView.ContentStyle.Body.Bold" parent="TextView.ContentStyle.Body">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:fontWeight">600</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Body.Bold.Italic" parent="TextView.ContentStyle.Body">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:fontWeight">600</item>
+    </style>
+
+    <style name="TextView.ContentStyle.Body.Italic" parent="TextView.ContentStyle.Body">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textStyle">italic</item>
+        <item name="android:fontWeight">400</item>
+    </style>
+
+    <style name="TextView.ContentStyle.PreviewTitles.1.Regular" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">400</item>
+        <item name="android:textSize">17sp</item>
+        <item name="lineHeight" tools:targetApi="28">22sp</item>
+        <item name="android:letterSpacing">-0.024</item>
+    </style>
+
+    <style name="TextView.UXStyle.Titles.2.Semibold" parent="BaseTextView">
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:fontWeight">600</item>
+        <item name="android:textSize">15sp</item>
+        <item name="lineHeight" tools:targetApi="28">20sp</item>
+        <item name="android:letterSpacing">-0.014</item>
+    </style>
+
+    <style name="Button.Primary.Large.Icon" parent="Widget.Material3.Button.TextButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:insetTop">7dp</item>
+        <item name="android:insetBottom">7dp</item>
+    </style>
+
+    <!-- button styles -->
+    <attr name="primaryXSmallButtonStyle" format="reference" />
+    <attr name="secondaryXSmallButtonStyle" format="reference" />
+    <attr name="primarySmallButtonStyle" format="reference" />
+    <attr name="secondarySmallButtonStyle" format="reference" />
+    <attr name="primaryMediumButtonStyle" format="reference" />
+    <attr name="secondaryMediumButtonStyle" format="reference" />
+    <attr name="primaryLargeButtonStyle" format="reference" />
+    <attr name="secondaryLargeButtonStyle" format="reference" />
+    <attr name="primaryLargeNumberButtonStyle" format="reference" />
+    <attr name="warningXSmallButtonStyle" format="reference" />
+    <attr name="warningSmallButtonStyle" format="reference" />
+    <attr name="warningMediumButtonStyle" format="reference" />
+    <attr name="warningLargeButtonStyle" format="reference" />
+
+    <declare-styleable name="ButtonPrimaryNumber">
+        <attr name="buttonTitle" format="string" />
+    </declare-styleable>
+
+
+    <!-- dimens -->
+    <dimen name="button_xsmall_corner">100dp</dimen>
+    <dimen name="button_small_corner">16dp</dimen>
+    <dimen name="button_medium_corner">22dp</dimen>
+    <dimen name="button_large_corner">26dp</dimen>
+
+</resources>

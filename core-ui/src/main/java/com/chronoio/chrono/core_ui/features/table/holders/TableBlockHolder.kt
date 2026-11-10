@@ -1,0 +1,195 @@
+package com.chronoio.chrono.core_ui.features.table.holders
+
+import android.view.MotionEvent
+import android.widget.FrameLayout
+import androidx.core.view.marginBottom
+import androidx.core.view.marginEnd
+import androidx.core.view.marginStart
+import androidx.core.view.marginTop
+import androidx.core.view.updateLayoutParams
+import androidx.core.widget.NestedScrollView
+import androidx.recyclerview.widget.CustomGridLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemBlockTableBinding
+import com.chronoio.chrono.core_ui.extensions.drawable
+import com.chronoio.chrono.core_ui.extensions.setBlockBackgroundColor
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil
+import com.chronoio.chrono.core_ui.features.editor.BlockViewHolder
+import com.chronoio.chrono.core_ui.features.editor.decoration.DecoratableViewHolder
+import com.chronoio.chrono.core_ui.features.editor.decoration.EditorDecorationContainer
+import com.chronoio.chrono.core_ui.layout.TableHorizontalItemDivider
+import com.chronoio.chrono.core_ui.layout.TableVerticalItemDivider
+import com.chronoio.chrono.core_ui.features.table.TableEditableCellsAdapter
+import com.chronoio.chrono.core_ui.layout.TableCellSelectionDecoration
+import com.chronoio.chrono.core_ui.tools.ClipboardInterceptor
+import com.chronoio.chrono.core_utils.ext.containsItemDecoration
+import com.chronoio.chrono.core_utils.ext.dimen
+import com.chronoio.chrono.presentation.editor.editor.listener.ListenerType
+import com.chronoio.chrono.presentation.editor.editor.mention.MentionEvent
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.editor.selection.TableCellsSelectionState
+import timber.log.Timber
+
+class TableBlockHolder(
+    binding: ItemBlockTableBinding,
+    clickListener: (ListenerType) -> Unit,
+    onTextBlockTextChanged: (BlockView.Text) -> Unit,
+    onMentionEvent: (MentionEvent) -> Unit,
+    onCellSelectionChanged: (Id, IntRange) -> Unit,
+    onFocusChanged: (Id, Boolean) -> Unit,
+    clipboardInterceptor: ClipboardInterceptor,
+    onDragAndDropTrigger: (RecyclerView.ViewHolder, event: MotionEvent?) -> Boolean
+) : BlockViewHolder(binding.root),
+    BlockViewHolder.DragAndDropHolder,
+    DecoratableViewHolder {
+
+    private val root: FrameLayout = binding.root
+    private val recycler: RecyclerView = binding.recyclerTable
+    private val container: NestedScrollView = binding.container
+    private val selectView = binding.selected
+    override val decoratableContainer: EditorDecorationContainer = binding.decorationContainer
+
+    private val cellsSelectionState = TableCellsSelectionState()
+
+    private val cellSelectionDecoration: TableCellSelectionDecoration =
+        TableCellSelectionDecoration(
+            drawable = binding.root.context.drawable(R.drawable.cell_top_border)
+        )
+
+    private val tableEditableCellsAdapter = TableEditableCellsAdapter(
+        items = listOf(),
+        clicked = clickListener,
+        onTextBlockTextChanged = onTextBlockTextChanged,
+        onMentionEvent = onMentionEvent,
+        onCellSelectionChanged = onCellSelectionChanged,
+        onFocusChanged = onFocusChanged,
+        clipboardInterceptor = clipboardInterceptor,
+        onDragAndDropTrigger = { _, event -> onDragAndDropTrigger(this, event) }
+    )
+
+    private val lm =
+        CustomGridLayoutManager(itemView.context, 1, GridLayoutManager.HORIZONTAL, false).apply {
+            spanSizeLookup = object : CustomGridLayoutManager.SpanSizeLookup() {
+                override fun getSpanSize(position: Int): Int = 1
+            }
+        }
+
+    init {
+        val drawable = itemView.context.drawable(R.drawable.divider_dv_grid)
+        val verticalDecorator = TableVerticalItemDivider(drawable)
+        val horizontalDecorator = TableHorizontalItemDivider(drawable)
+
+        recycler.apply {
+            layoutManager = lm
+            adapter = tableEditableCellsAdapter
+            setHasFixedSize(true)
+            addItemDecoration(verticalDecorator)
+            addItemDecoration(horizontalDecorator)
+        }
+    }
+
+    fun bind(item: BlockView.Table) {
+        applyRowCount(item)
+        applySelection(item)
+        applyBackground(item)
+        applyCells(item)
+        updateCellsSelection(item)
+    }
+
+    fun processChangePayload(
+        payloads: List<BlockViewDiffUtil.Payload>,
+        item: BlockView.Table
+    ) {
+        payloads.forEach { payload ->
+            if (payload.tableCellsChanged()) applyCells(item)
+            if (payload.selectionChanged()) applySelection(item)
+            if (payload.backgroundColorChanged()) applyBackground(item)
+            if (payload.tableCellsSelectionChanged()) updateCellsSelection(item)
+        }
+    }
+
+    private fun applyBackground(item: BlockView.Table) {
+        root.setBlockBackgroundColor(item.background)
+    }
+
+    private fun applySelection(item: BlockView.Table) {
+        selectView.isSelected = item.isSelected
+    }
+
+    private fun applyCells(item: BlockView.Table) {
+        tableEditableCellsAdapter.updateWithDiffUtil(item.cells)
+    }
+
+    private fun applyRowCount(item: BlockView.Table) {
+        if (item.rows.isNotEmpty()) {
+            lm.spanCount = item.rows.size
+        } else {
+            Timber.e("Block simple table rows are empty on applyRowCount")
+        }
+    }
+
+    private fun updateCellsSelection(item: BlockView.Table) {
+        try {
+            if (item.selectedCellsIds.isEmpty()) {
+                cellsSelectionState.clear()
+                if (recycler.containsItemDecoration(cellSelectionDecoration)) {
+                    recycler.removeItemDecoration(cellSelectionDecoration)
+                }
+            } else {
+                val selectedCells = item.cells.filter { cell ->
+                    item.selectedCellsIds.contains(cell.getId())
+                }
+                cellsSelectionState.clear()
+                cellsSelectionState.set(cells = selectedCells, rowsSize = item.rows.size)
+                if (cellsSelectionState.current().isNotEmpty()) {
+                    cellSelectionDecoration.setSelectionState(cellsSelectionState.current())
+                    if (!recycler.containsItemDecoration(cellSelectionDecoration)) {
+                        recycler.addItemDecoration(cellSelectionDecoration)
+                    } else {
+                        recycler.invalidateItemDecorations()
+                    }
+                } else {
+                    recycler.removeItemDecoration(cellSelectionDecoration)
+                }
+            }
+        } catch (e: IllegalArgumentException) {
+            Timber.e(e, "Error updating cell selection decoration")
+            cellsSelectionState.clear()
+        }
+    }
+
+    /**
+     * Cleanup method to be called when the holder is recycled.
+     * Safely removes decorations and clears state to prevent crashes
+     * when the nested RecyclerView is in an inconsistent state.
+     */
+    fun cleanup() {
+        cellsSelectionState.clear()
+        try {
+            if (recycler.containsItemDecoration(cellSelectionDecoration)) {
+                recycler.removeItemDecoration(cellSelectionDecoration)
+            }
+        } catch (e: IllegalArgumentException) {
+            Timber.e(e, "Error removing cell selection decoration during cleanup")
+        }
+    }
+
+    override fun applyDecorations(decorations: List<BlockView.Decoration>) {
+        decoratableContainer.decorate(decorations) { rect ->
+            container.updateLayoutParams<FrameLayout.LayoutParams> {
+                marginStart = dimen(R.dimen.dp_8) + rect.left
+                marginEnd = dimen(R.dimen.dp_8) + rect.right
+                bottomMargin = rect.bottom + dimen(R.dimen.item_block_table_margin_bottom)
+            }
+            selectView.updateLayoutParams<FrameLayout.LayoutParams> {
+                marginStart = container.marginStart
+                marginEnd = container.marginEnd
+                topMargin = container.marginTop
+                bottomMargin = container.marginBottom
+            }
+        }
+    }
+}

@@ -1,0 +1,308 @@
+package com.chronoio.chrono.ui.editor.cover
+
+import android.graphics.Rect
+import android.net.Uri
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.core.os.bundleOf
+import androidx.core.view.updateLayoutParams
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.R
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_ui.features.editor.modal.DocCoverGalleryAdapter
+import com.chronoio.chrono.core_ui.reactive.clicks
+import com.chronoio.chrono.core_utils.ext.GetImageContract
+import com.chronoio.chrono.core_utils.ext.Mimetype
+import com.chronoio.chrono.core_utils.ext.arg
+import com.chronoio.chrono.core_utils.ext.dimen
+import com.chronoio.chrono.core_utils.ext.fixBottomSheetNavigationBarGap
+import com.chronoio.chrono.core_utils.ext.parseImagePath
+import com.chronoio.chrono.core_utils.ext.subscribe
+import com.chronoio.chrono.core_utils.ext.toast
+import com.chronoio.chrono.core_utils.ui.BaseBottomSheetFragment
+import com.chronoio.chrono.databinding.FragmentDocCoverGalleryBinding
+import com.chronoio.chrono.device.launchMediaPicker
+import com.chronoio.chrono.di.common.componentManager
+import com.chronoio.chrono.di.feature.DefaultComponentParam
+import com.chronoio.chrono.other.MediaPermissionHelper
+import com.chronoio.chrono.presentation.editor.cover.SelectCoverObjectSetViewModel
+import com.chronoio.chrono.presentation.editor.cover.SelectCoverObjectViewModel
+import com.chronoio.chrono.presentation.editor.cover.SelectCoverViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import timber.log.Timber
+
+abstract class SelectCoverGalleryFragment :
+    BaseBottomSheetFragment<FragmentDocCoverGalleryBinding>() {
+
+    abstract val ctx: String
+    abstract val space: Id
+    abstract val vm: SelectCoverViewModel
+
+    private val docCoverGalleryAdapter by lazy {
+        DocCoverGalleryAdapter(
+            onSolidColorClicked = { color -> vm.onSolidColorSelected(ctx, color) },
+            onGradientClicked = { gradient -> vm.onGradientColorSelected(ctx, gradient) },
+            onImageClicked = { hash -> vm.onImageSelected(ctx, hash) }
+        )
+    }
+
+    private val getContent = try { getContentLauncher() } catch (e: Exception) {
+        null
+    }
+
+    private lateinit var permissionHelper: MediaPermissionHelper
+
+    private fun getContentLauncher() = registerForActivityResult(GetImageContract()) { uri: Uri? ->
+            if (uri != null) {
+                val path = uri.parseImagePath(requireContext())
+                if (path != null) {
+                    vm.onImagePicked(ctx, path)
+                } else {
+                    toast("Error while parsing path for cover image")
+                }
+            } else {
+                Timber.e("Error while upload cover image, URI is null")
+            }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        permissionHelper = MediaPermissionHelper(
+            fragment = this,
+            onPermissionDenied = { toast(R.string.permission_read_denied) },
+            onPermissionSuccess = { _, _ -> openGallery() }
+        )
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        setupBottomToolbarInsets()
+
+        binding.btnRemove.clicks()
+            .onEach { vm.onRemoveCover(ctx) }
+            .launchIn(lifecycleScope)
+
+        binding.btnUnsplash.clicks()
+            .onEach {
+                findNavController().navigate(
+                    R.id.objectCoverUnsplashScreen,
+                    UnsplashBaseFragment.args(
+                        ctx = ctx,
+                        space = space
+                    )
+                )
+            }
+            .launchIn(lifecycleScope)
+
+        binding.btnUpload.clicks()
+            .onEach {
+                launchMediaPicker(
+                    pickMedia = pickMedia,
+                    permissionHelper = permissionHelper,
+                    mediaType = PickVisualMedia.ImageOnly,
+                    fallbackMimeType = Mimetype.MIME_IMAGE_ALL
+                )
+            }
+            .launchIn(lifecycleScope)
+
+        val spacing = requireContext().dimen(R.dimen.cover_gallery_item_spacing).toInt()
+
+        binding.docCoverGalleryRecycler.apply {
+            adapter = docCoverGalleryAdapter
+            layoutManager = GridLayoutManager(context, 2).apply {
+                spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                    override fun getSpanSize(position: Int): Int {
+                        return when (docCoverGalleryAdapter.getItemViewType(position)) {
+                            R.layout.item_doc_cover_gallery_header -> 2
+                            else -> 1
+                        }
+                    }
+                }
+            }
+            addItemDecoration(
+                object : RecyclerView.ItemDecoration() {
+                    override fun getItemOffsets(
+                        outRect: Rect,
+                        view: View,
+                        parent: RecyclerView,
+                        state: RecyclerView.State
+                    ) {
+                        val position = parent.getChildAdapterPosition(view)
+                        val holder = parent.findViewHolderForLayoutPosition(position)
+                        if (holder !is DocCoverGalleryAdapter.ViewHolder.Header) {
+                            outRect.left = spacing
+                            outRect.right = spacing
+                            outRect.top = spacing * 2
+                            outRect.bottom = 0
+                        }
+                    }
+                }
+            )
+        }
+
+        skipCollapsed()
+    }
+
+    private fun setupBottomToolbarInsets() {
+        val bottomToolbar = binding.bottomToolbar
+        val initialBottomMargin = (bottomToolbar.layoutParams as LinearLayout.LayoutParams)
+            .bottomMargin
+
+        fixBottomSheetNavigationBarGap { navigationBars ->
+            bottomToolbar.updateLayoutParams<LinearLayout.LayoutParams> {
+                bottomMargin = initialBottomMargin + navigationBars.bottom
+            }
+        }
+    }
+
+    override fun onStart() {
+        with(lifecycleScope) {
+            jobs += subscribe(vm.views) { docCoverGalleryAdapter.views = it }
+            jobs += subscribe(vm.isDismissed) { if (it) findNavController().popBackStack() }
+            jobs += subscribe(vm.toasts) { toast(it) }
+            jobs += subscribe(vm.isLoading) { isLoading ->
+                //todo Add progress bar
+            }
+        }
+        super.onStart()
+        expand()
+    }
+
+    private fun openGallery() {
+        try {
+            getContent?.launch(SELECT_IMAGE_CODE)
+        } catch (e: Exception) {
+            Timber.e(e, "Error while opening gallery")
+            toast("Error while opening gallery: ${e.message}")
+        }
+    }
+
+    override fun inflateBinding(
+        inflater: LayoutInflater,
+        container: ViewGroup?
+    ): FragmentDocCoverGalleryBinding = FragmentDocCoverGalleryBinding.inflate(
+        inflater, container, false
+    )
+
+    val pickMedia = registerForActivityResult(PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val path = uri.parseImagePath(requireContext())
+            if (path != null) {
+                vm.onImagePicked(ctx, path)
+            } else {
+                toast("Error while parsing path for media file")
+            }
+        } else {
+            Timber.i("No media selected")
+        }
+    }
+
+    abstract fun onUnsplashClicked()
+
+    companion object {
+        private const val SELECT_IMAGE_CODE = 1
+    }
+}
+
+open class SelectCoverObjectFragment : SelectCoverGalleryFragment() {
+
+    override val ctx get() = arg<String>(CTX_KEY)
+    override val space get() = arg<String>(SPACE_KEY)
+
+    @Inject
+    lateinit var factory: SelectCoverObjectViewModel.Factory
+    override val vm by viewModels<SelectCoverObjectViewModel> { factory }
+
+    override fun onUnsplashClicked() {
+        findNavController().navigate(
+            R.id.objectCoverUnsplashScreen,
+            UnsplashBaseFragment.args(
+                ctx = ctx,
+                space = space
+            )
+        )
+    }
+
+    override fun injectDependencies() {
+        componentManager()
+            .objectCoverComponent
+            .get(
+                params = DefaultComponentParam(
+                    ctx = ctx,
+                    space = SpaceId(space)
+                )
+            )
+            .inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().objectCoverComponent.release()
+    }
+
+    companion object {
+        fun args(ctx: Id, space: Id) = bundleOf(
+            CTX_KEY to ctx, SPACE_KEY to space
+        )
+
+        protected const val CTX_KEY = "arg.object-cover-gallery.ctx"
+        protected const val SPACE_KEY = "arg.object-cover-gallery.space"
+    }
+}
+
+class SelectCoverObjectSetFragment : SelectCoverGalleryFragment() {
+
+    override val ctx get() = arg<String>(CTX_KEY)
+    override val space: Id get() = arg(SPACE_KEY)
+
+    @Inject
+    lateinit var factory: SelectCoverObjectSetViewModel.Factory
+    override val vm by viewModels<SelectCoverObjectSetViewModel> { factory }
+
+    override fun injectDependencies() {
+        componentManager()
+            .objectSetCoverComponent
+            .get(
+                params = DefaultComponentParam(
+                    ctx = ctx,
+                    space = SpaceId(space)
+                )
+            )
+            .inject(this)
+    }
+
+    override fun releaseDependencies() {
+        componentManager().objectSetCoverComponent.release()
+    }
+
+    override fun onUnsplashClicked() {
+        findNavController().navigate(
+            R.id.objectCoverUnsplashScreen,
+            UnsplashBaseFragment.args(
+                ctx = ctx,
+                space = space
+            )
+        )
+    }
+
+    companion object {
+        fun args(ctx: Id, space: Id) = bundleOf(
+            CTX_KEY to ctx, SPACE_KEY to space
+        )
+
+        const val CTX_KEY = "arg.object-set-cover-gallery.ctx"
+        const val SPACE_KEY = "arg.object-set-cover-gallery.space"
+    }
+}

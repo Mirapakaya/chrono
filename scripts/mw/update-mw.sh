@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+REPO="anyproto/anytype-heart"
+FILE="lib.tar.gz"
+GITHUB="api.github.com"
+
+echo "Enter MW version without any prefix (for instance: 0.26.0)"
+
+read -r MW_VERSION
+
+if [ "$MW_VERSION" = "" ]; then
+  echo "ERROR: mw version is empty"
+  exit 1
+fi;
+
+version=`curl -H "Accept: application/vnd.github.v3+json" -sL https://$GITHUB/repos/$REPO/releases/tags/v$MW_VERSION | jq .`
+
+tag=`echo $version | jq ".tag_name"`
+asset_id=`echo $version | jq ".assets | map(select(.name | match(\"android_lib_\";\"i\")))[0].id"`
+
+if [[ "$asset_id" = "null" || "$asset_id" = "" ]]; then
+  echo "ERROR: version not found"
+  exit 1
+fi;
+
+printf "Version: $tag\n"
+printf "Found asset: $asset_id\n"
+echo -n "Downloading file... "
+curl -sL -H 'Accept: application/octet-stream' https://$GITHUB/repos/$REPO/releases/assets/$asset_id > $FILE
+printf "Done\n"
+
+echo -n "Uncompressing... "
+
+mkdir /tmp/lib
+
+tar -zxf $FILE -C /tmp/lib/
+printf "Done\n"
+
+printf "Preparing files\n"
+
+# Moving proto files to protocol module
+mkdir -p libs/protobuf/protos
+mv /tmp/lib/protobuf/protos/* protocol/src/main/proto
+
+# Clearing temp folder
+rm -rf /tmp/lib
+rm -rf $FILE
+
+echo "Done with downloading protobuf files!"
+
+echo ">>> Make sure to update mw version to version $tag in libs.versions.toml >>>"

@@ -1,0 +1,429 @@
+package com.chronoio.chrono.presentation.sets.model
+
+import android.os.Parcelable
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.ObjectType
+import com.chronoio.chrono.core_models.Url
+import com.chronoio.chrono.presentation.editor.cover.CoverView
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.presentation.relations.model.DefaultObjectRelationValueView
+import com.chronoio.chrono.presentation.sets.model.Viewer.Filter.Condition.Checkbox.None
+import kotlinx.parcelize.Parcelize
+import kotlinx.parcelize.RawValue
+
+sealed class Viewer {
+
+    abstract val id: String
+    abstract val title: String
+
+    data class Unsupported(
+        override val id: String,
+        override val title: String,
+        val type: Int = TYPE_KANBAN
+    ) : Viewer() {
+        companion object {
+            const val TYPE_KANBAN = 0
+            const val TYPE_CALENDAR = 1
+            const val TYPE_GRAPH = 2
+            const val TYPE_UNKNOWN = -1
+        }
+    }
+
+    data class GridView(
+        override val id: String,
+        val name: String,
+        val columns: List<ColumnView>,
+        val rows: @RawValue List<Row> = listOf()
+    ) : Viewer() {
+
+        override val title: String get() = name
+
+        data class Row(
+            val id: String,
+            val name: String? = null,
+            val image: Url? = null,
+            val emoji: String? = null,
+            val type: String? = null,
+            val isChecked: Boolean? = null,
+            val cells: List<CellView> = emptyList(),
+            val layout: ObjectType.Layout? = null,
+            val showIcon: Boolean,
+            val objectIcon: ObjectIcon
+        )
+
+        companion object {
+
+            fun empty(): Viewer = GridView(
+                id = "",
+                name = "",
+                columns = emptyList(),
+                rows = emptyList()
+            )
+        }
+    }
+
+    data class GalleryView(
+        override val id: String,
+        override val title: String,
+        val items: List<Item> = listOf(),
+        val largeCards: Boolean = false
+    ) : Viewer() {
+        sealed class Item {
+            abstract val objectId: Id
+            abstract val name: String
+            abstract val icon: ObjectIcon
+            abstract val relations: List<DefaultObjectRelationValueView>
+            abstract val hideIcon: Boolean
+            abstract val hideName: Boolean
+            data class Default(
+                override val objectId: Id,
+                override val name: String,
+                override val icon: ObjectIcon,
+                override val relations: List<DefaultObjectRelationValueView>,
+                override val hideIcon: Boolean,
+                override val hideName: Boolean
+            ) : Item()
+            data class Cover(
+                override val objectId: Id,
+                override val name: String,
+                override val icon: ObjectIcon,
+                override val relations: List<DefaultObjectRelationValueView>,
+                override val hideIcon: Boolean,
+                override val hideName: Boolean,
+                val fitImage: Boolean,
+                val cover: CoverView? = null,
+                val isLargeSize: Boolean
+            ) : Item()
+        }
+    }
+
+    data class ListView(
+        override val id: String,
+        override val title: String,
+        val items: List<Item> = listOf()
+    ) : Viewer() {
+        sealed class Item {
+            abstract val objectId: Id
+            abstract val name: String
+            abstract val description: String?
+            abstract val relations: List<DefaultObjectRelationValueView>
+            data class Default(
+                override val objectId: Id,
+                override val name: String,
+                override val description: String?,
+                val icon: ObjectIcon,
+                val hideIcon: Boolean,
+                override val relations: List<DefaultObjectRelationValueView>
+            ) : Item()
+            data class Profile(
+                override val objectId: Id,
+                override val name: String,
+                override val description: String?,
+                val icon: ObjectIcon,
+                val hideIcon: Boolean,
+                override val relations: List<DefaultObjectRelationValueView>
+            ) : Item()
+            data class Task(
+                override val objectId: Id,
+                override val name: String,
+                override val description: String?,
+                override val relations: List<DefaultObjectRelationValueView>,
+                val done: Boolean
+            ) : Item()
+        }
+    }
+
+    data class Board(
+        override val id: String,
+        override val title: String,
+        val columns: List<Column> = emptyList(),
+        /** A group id can recur under another relation (for example the empty group). */
+        val groupingKey: String? = null,
+        /** Includes hidden groups; null while the group subscription has not supplied data. */
+        val knownColumnIds: Set<String>? = null
+    ) : Viewer() {
+        data class Column(
+            val id: String,
+            val label: String,
+            val color: String? = null,
+            /** Group color tint for the column background when "Color columns" is on; null = default. */
+            val backgroundColor: String? = null,
+            val cards: List<Card> = emptyList(),
+            /** Total records in this column on the backend (may exceed [cards] when paged). */
+            val count: Int = 0,
+            /** False before the first per-column record response; zero is not yet a final count. */
+            val hasLoadedRecords: Boolean = true
+        )
+        data class Card(
+            val objectId: Id,
+            val name: String,
+            val icon: ObjectIcon,
+            val relations: List<DefaultObjectRelationValueView>,
+            val hideIcon: Boolean
+        )
+    }
+
+    enum class SortType { ASC, DESC, CUSTOM }
+    enum class FilterOperator { And, Or, No }
+
+    sealed class Filter {
+
+        @Parcelize
+        enum class Type : Parcelable { TEXT, NUMBER, DATE, SELECTED, CHECKBOX }
+
+        sealed class Condition : Filter() {
+            abstract val title: String
+
+            sealed class Text : Condition() {
+
+                data class Equal(val name: String = "Is") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEqual(val name: String = "Is not") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Like(val name: String = "Contains") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotLike(val name: String = "Doesn't contain") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Empty(val name: String = "Is empty") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEmpty(val name: String = "Is not empty") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class None(val name: String = "All") : Text() {
+                    override val title: String
+                        get() = name
+                }
+
+                companion object {
+                    fun textConditions() = listOf(
+                        None(),
+                        Equal(),
+                        NotEqual(),
+                        Like(),
+                        NotLike(),
+                        Empty(),
+                        NotEmpty()
+                    )
+                }
+            }
+
+            sealed class Number : Condition() {
+                data class Equal(val name: String = "Is equal to") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEqual(val name: String = "Is not equal to") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Greater(val name: String = "Is greater than") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Less(val name: String = "Is less than") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class GreaterOrEqual(val name: String = "Is greater than or equal to") :
+                    Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class LessOrEqual(val name: String = "Is less than or equal to") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Empty(val name: String = "Is empty") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEmpty(val name: String = "Is not empty") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class None(val name: String = "All") : Number() {
+                    override val title: String
+                        get() = name
+                }
+
+                companion object {
+                    fun numberConditions() =
+                        listOf(
+                            None(),
+                            Equal(),
+                            NotEqual(),
+                            Greater(),
+                            Less(),
+                            GreaterOrEqual(),
+                            LessOrEqual(),
+                            Empty(),
+                            NotEmpty()
+                        )
+                }
+
+            }
+
+            sealed class Date : Condition() {
+
+                data class None(val name: String = "All") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Equal(val name: String = "Is") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Greater(val name: String = "Is after") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Less(val name: String = "Is before") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class GreaterOrEqual(val name: String = "Is on or after") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class LessOrEqual(val name: String = "Is on or before") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class In(val name: String = "Is within") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Empty(val name: String = "Is empty") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEmpty(val name: String = "Is not empty") : Date() {
+                    override val title: String
+                        get() = name
+                }
+
+                companion object {
+                    fun dateConditions() =
+                        listOf(
+                            None(),
+                            Equal(),
+                            Greater(),
+                            Less(),
+                            GreaterOrEqual(),
+                            LessOrEqual(),
+                            In(),
+                            Empty(),
+                            NotEmpty(),
+                        )
+                }
+
+            }
+
+            sealed class Selected : Condition() {
+                data class In(val name: String = "Has any of") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class AllIn(val name: String = "Has all of") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Equal(val name: String = "Is exactly") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotIn(val name: String = "Has none of") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class Empty(val name: String = "Is empty") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEmpty(val name: String = "Is not empty") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class None(val name: String = "All") : Selected() {
+                    override val title: String
+                        get() = name
+                }
+
+                companion object {
+                    fun selectConditions() = listOf(
+                        None(),
+                        In(),
+                        AllIn(),
+                        NotIn(),
+                        Empty(),
+                        NotEmpty()
+                    )
+                }
+            }
+
+            sealed class Checkbox : Condition() {
+                data class Equal(val name: String = "Is") : Checkbox() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class NotEqual(val name: String = "Is not") : Checkbox() {
+                    override val title: String
+                        get() = name
+                }
+
+                data class None(val name: String = "All") : Checkbox() {
+                    override val title: String
+                        get() = name
+                }
+
+                companion object {
+                    fun checkboxConditions() = listOf(
+                        None(),
+                        Equal(),
+                        NotEqual()
+                    )
+                }
+            }
+        }
+    }
+}

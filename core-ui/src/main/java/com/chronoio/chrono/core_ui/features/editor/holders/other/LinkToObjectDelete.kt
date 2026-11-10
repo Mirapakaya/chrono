@@ -1,0 +1,83 @@
+package com.chronoio.chrono.core_ui.features.editor.holders.other
+
+import android.view.ViewConfiguration
+import android.widget.FrameLayout
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
+import androidx.recyclerview.widget.RecyclerView
+import com.chronoio.chrono.core_ui.BuildConfig
+import com.chronoio.chrono.core_ui.R
+import com.chronoio.chrono.core_ui.databinding.ItemBlockObjectLinkDeleteBinding
+import com.chronoio.chrono.core_ui.features.editor.BlockViewDiffUtil
+import com.chronoio.chrono.core_ui.features.editor.BlockViewHolder
+import com.chronoio.chrono.core_ui.features.editor.EditorTouchProcessor
+import com.chronoio.chrono.core_ui.features.editor.SupportCustomTouchProcessor
+import com.chronoio.chrono.core_ui.features.editor.decoration.DecoratableViewHolder
+import com.chronoio.chrono.core_ui.features.editor.decoration.EditorDecorationContainer
+import com.chronoio.chrono.core_utils.ext.dimen
+import com.chronoio.chrono.presentation.editor.editor.listener.ListenerType
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+
+class LinkToObjectDelete(
+    val binding: ItemBlockObjectLinkDeleteBinding
+) : BlockViewHolder(binding.root),
+    BlockViewHolder.IndentableHolder,
+    BlockViewHolder.DragAndDropHolder,
+    DecoratableViewHolder,
+    SupportCustomTouchProcessor {
+
+    private val root = binding.root
+    private val guideline = binding.pageGuideline
+
+    override val decoratableContainer: EditorDecorationContainer
+        get() = binding.decorationContainer
+
+    override val editorTouchProcessor = EditorTouchProcessor(
+        touchSlop = ViewConfiguration.get(itemView.context).scaledTouchSlop,
+        fallback = { e -> itemView.onTouchEvent(e) }
+    )
+
+    init {
+        itemView.setOnTouchListener { v, e -> editorTouchProcessor.process(v, e) }
+    }
+
+    fun bind(
+        item: BlockView.LinkToObject.Deleted,
+        clicked: (ListenerType) -> Unit
+    ) {
+        itemView.isSelected = item.isSelected
+        itemView.setOnClickListener { clicked(ListenerType.LinkToObjectDeleted(item.id)) }
+    }
+
+    @Deprecated("Pre-nested-styling legacy.")
+    override fun indentize(item: BlockView.Indentable) {
+        // Do nothing.
+    }
+
+    fun processChangePayload(payloads: List<BlockViewDiffUtil.Payload>, item: BlockView) {
+        check(item is BlockView.LinkToObject.Deleted) { "Expected a object link deleted block, but was: $item" }
+        payloads.forEach { payload ->
+            if (payload.changes.contains(BlockViewDiffUtil.SELECTION_CHANGED)) {
+                itemView.isSelected = item.isSelected
+            }
+        }
+    }
+
+    override fun applyDecorations(decorations: List<BlockView.Decoration>) {
+        decoratableContainer.decorate(decorations) { rect ->
+            binding.content.updateLayoutParams<FrameLayout.LayoutParams> {
+                marginStart = dimen(R.dimen.dp_8) + rect.left
+                marginEnd = dimen(R.dimen.dp_8) + rect.right
+                bottomMargin = if (rect.bottom > 0) {
+                    rect.bottom
+                } else {
+                    dimen(R.dimen.dp_2)
+                }
+            }
+            binding.content.updatePadding(
+                left = dimen(R.dimen.default_document_content_padding_start),
+                right = dimen(R.dimen.default_document_item_padding_end)
+            )
+        }
+    }
+}

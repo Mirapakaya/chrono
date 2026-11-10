@@ -1,0 +1,52 @@
+package com.chronoio.chrono.presentation.editor.editor.styling
+
+import com.chronoio.chrono.core_models.TextStyle
+
+sealed class StyleToolbarState {
+
+    data class Text(val textStyle: TextStyle?) : StyleToolbarState() {
+        companion object {
+            fun empty() = Text(null)
+        }
+    }
+
+    data class Other(
+        val isSupportBold: Boolean = false,
+        val isSupportItalic: Boolean = false,
+        val isSupportStrikethrough: Boolean = false,
+        val isSupportUnderline: Boolean = false,
+        val isSupportCode: Boolean = false,
+        val isSupportLinked: Boolean = false,
+        val isSupportAlignStart: Boolean = false,
+        val isSupportAlignCenter: Boolean = false,
+        val isSupportAlignEnd: Boolean = false,
+        val isBoldSelected: Boolean = false,
+        val isItalicSelected: Boolean = false,
+        val isStrikethroughSelected: Boolean = false,
+        val isUnderlineSelected: Boolean = false,
+        val isCodeSelected: Boolean = false,
+        val isLinkedSelected: Boolean = false,
+        val isAlignStartSelected: Boolean = false,
+        val isAlignCenterSelected: Boolean = false,
+        val isAlignEndSelected: Boolean = false
+    ) : StyleToolbarState() {
+        companion object {
+            fun empty() = Other()
+        }
+    }
+
+    data class ColorBackground(
+        val color: String?,
+        val background: String?
+    ) : StyleToolbarState() {
+        companion object {
+            fun empty() = ColorBackground(null, null)
+        }
+    }
+
+    data class Background(val background: String?) : StyleToolbarState() {
+        companion object {
+            fun empty() = Background(null)
+        }
+    }
+}

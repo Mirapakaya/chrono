@@ -1,0 +1,289 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import android.util.Log
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.domain.block.interactor.TurnIntoStyle
+import com.chronoio.chrono.domain.editor.Editor
+import com.chronoio.chrono.presentation.MockTypicalDocumentFactory
+import com.chronoio.chrono.presentation.editor.EditorViewModel.Companion.TEXT_CHANGES_DEBOUNCE_DURATION
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashEvent
+import com.chronoio.chrono.presentation.editor.editor.slash.SlashItem
+import com.chronoio.chrono.presentation.util.DefaultCoroutineTestRule
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import net.lachlanmckee.timberjunit.TimberTestRule
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+
+class EditorSlashWidgetStyleTypeTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule()
+
+    @get:Rule
+    val timberTestRule: TimberTestRule = TimberTestRule.builder()
+        .minPriority(Log.DEBUG)
+        .showThread(true)
+        .showTimestamp(false)
+        .onlyLogWhenTestFails(true)
+        .build()
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @After
+    fun after() {
+        coroutineTestRule.advanceTime(TEXT_CHANGES_DEBOUNCE_DURATION)
+    }
+
+    @Test
+    fun `should save selection and focus when clicked on BULLETED`() = runTest {
+        val header = MockTypicalDocumentFactory.header
+        val title = MockTypicalDocumentFactory.title
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "Anytype is a next generation software",
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block2 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.BULLET
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id, block2.id)
+        )
+
+        val doc = listOf(page, header, title, block, block2)
+
+        stubInterceptEvents()
+        stubTurnIntoStyle()
+        stubUpdateText()
+        stubSearchObjects()
+        stubOpenDocument(document = doc)
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        val selection = IntRange(7, 7)
+
+        vm.apply {
+            onSelectionChanged(
+                id = block.id,
+                selection = selection
+            )
+            advanceUntilIdle()
+            onBlockFocusChanged(
+                id = block.id,
+                hasFocus = true
+            )
+            advanceUntilIdle()
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 7
+                )
+            )
+            advanceUntilIdle()
+        }
+
+        //TESTING
+
+        vm.onSlashItemClicked(SlashItem.Style.Type.Bulleted)
+
+        advanceUntilIdle()
+
+        val focus = orchestrator.stores.focus.current()
+        val cursor = Editor.Cursor.Range(range = selection)
+
+        assertEquals(block.id, focus.requireTarget())
+        assertEquals(cursor, focus.cursor)
+    }
+
+    @Test
+    fun `should hide slash widget event when clicked on BULLETED `() = runTest {
+
+        val doc = MockTypicalDocumentFactory.page(root)
+        val block = MockTypicalDocumentFactory.a
+
+        stubInterceptEvents()
+        stubTurnIntoStyle()
+        stubUpdateText()
+        stubUpdateText()
+        stubSearchObjects()
+        stubOpenDocument(document = doc)
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        vm.apply {
+            onSelectionChanged(
+                id = block.id,
+                selection = IntRange(0, 0)
+            )
+            advanceUntilIdle()
+            onBlockFocusChanged(
+                id = block.id,
+                hasFocus = true
+            )
+            advanceUntilIdle()
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 0
+                )
+            )
+            advanceUntilIdle()
+        }
+
+        // TESTING
+
+        vm.onSlashItemClicked(SlashItem.Style.Type.Bulleted)
+
+        advanceUntilIdle()
+
+        val state = vm.controlPanelViewState.value
+
+        assertNotNull(state)
+        assertFalse(state.slashWidget.isVisible)
+    }
+
+    @Test
+    fun `should invoke turnIntoStyle when clicked on BOLD`() = runTest {
+        val header = MockTypicalDocumentFactory.header
+        val title = MockTypicalDocumentFactory.title
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = listOf(),
+                style = Block.Content.Text.Style.P
+            )
+        )
+
+        val block2 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = "Anytype is a next generation software",
+                marks = listOf(
+                    Block.Content.Text.Mark(
+                        range = IntRange(3, 10),
+                        type = Block.Content.Text.Mark.Type.ITALIC
+                    )
+                ),
+                style = Block.Content.Text.Style.CHECKBOX
+            )
+        )
+
+        val block3 = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields.empty(),
+            children = emptyList(),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.NUMBERED
+            )
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id, block2.id, block3.id)
+        )
+
+        val doc = listOf(page, header, title, block, block2, block3)
+
+        stubInterceptEvents()
+        stubTurnIntoStyle()
+        stubUpdateText()
+        stubSearchObjects()
+        stubOpenDocument(document = doc)
+        val vm = buildViewModel()
+
+        vm.onStart(id = root, space = defaultSpace)
+
+        advanceUntilIdle()
+
+        val selection = IntRange(7, 7)
+
+        vm.apply {
+            onSelectionChanged(
+                id = block2.id,
+                selection = selection
+            )
+            advanceUntilIdle()
+            onBlockFocusChanged(
+                id = block2.id,
+                hasFocus = true
+            )
+            advanceUntilIdle()
+            onSlashTextWatcherEvent(
+                SlashEvent.Start(
+                    cursorCoordinate = 100,
+                    slashStart = 0
+                )
+            )
+            advanceUntilIdle()
+        }
+
+        //TESTING
+
+        vm.onSlashItemClicked(SlashItem.Style.Type.Bulleted)
+
+        advanceUntilIdle()
+
+        val params = TurnIntoStyle.Params(
+            context = root,
+            targets = listOf(block2.id),
+            style = Block.Content.Text.Style.BULLET
+        )
+
+        verifyBlocking(turnIntoStyle, times(1)) { invoke(params) }
+    }
+}

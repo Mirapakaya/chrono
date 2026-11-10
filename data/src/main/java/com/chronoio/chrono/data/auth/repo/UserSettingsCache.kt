@@ -1,0 +1,131 @@
+package com.chronoio.chrono.data.auth.repo
+
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.FileDownloadLimit
+import com.chronoio.chrono.core_models.GlobalSearchHistory
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.WidgetSections
+import com.chronoio.chrono.core_models.ThemeMode
+import com.chronoio.chrono.core_models.Wallpaper
+import com.chronoio.chrono.core_models.WidgetSession
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.primitives.TypeId
+import com.chronoio.chrono.core_models.settings.VaultSettings
+import kotlinx.coroutines.flow.Flow
+
+interface UserSettingsCache {
+
+    suspend fun getVaultSettings(account: Account): VaultSettings
+    suspend fun observeVaultSettings(account: Account): Flow<VaultSettings>
+
+    suspend fun setCurrentSpace(space: SpaceId)
+    suspend fun getCurrentSpace(): SpaceId?
+    suspend fun clearCurrentSpace()
+
+    suspend fun setLastBackgroundedAt(timeInSeconds: Long)
+    suspend fun getLastBackgroundedAt(): Long?
+
+    suspend fun setDefaultObjectType(space: SpaceId, type: TypeId)
+    suspend fun getDefaultObjectType(space: SpaceId): TypeId?
+    suspend fun setPinnedObjectTypes(space: SpaceId, types: List<TypeId>)
+    fun getPinnedObjectTypes(space: SpaceId) : Flow<List<TypeId>>
+
+    suspend fun setLastOpenedObject(id: Id, space: SpaceId)
+    suspend fun getLastOpenedObject(space: SpaceId) : Id?
+    suspend fun clearLastOpenedObject(space: SpaceId)
+
+    suspend fun setGlobalSearchHistory(globalSearchHistory: GlobalSearchHistory, space: SpaceId)
+    suspend fun getGlobalSearchHistory(space: SpaceId): GlobalSearchHistory?
+    suspend fun clearGlobalSearchHistory(space: SpaceId)
+
+    suspend fun setWallpaper(space: Id, wallpaper: Wallpaper)
+    suspend fun getWallpaper(space: Id) : Wallpaper
+    suspend fun getWallpapers(): Map<Id, Wallpaper>
+    fun observeWallpaper(space: Id): Flow<Wallpaper>
+    suspend fun setThemeMode(mode: ThemeMode)
+    suspend fun getThemeMode(): ThemeMode
+    suspend fun getWidgetSession() : WidgetSession
+    suspend fun saveWidgetSession(session: WidgetSession)
+    suspend fun clear()
+
+    suspend fun getAllContentSort(space: SpaceId): Pair<Id, Boolean>?
+    suspend fun setAllContentSort(space: SpaceId, sort: Id, isAsc: Boolean)
+
+    suspend fun setRelativeDates(account: Account, enabled: Boolean)
+    suspend fun setDateFormat(account: Account, format: String)
+
+    suspend fun setRecentlyUsedChatReactions(account: Account, emojis: Set<String>)
+    fun observeRecentlyUsedChatReactions(account: Account): Flow<List<String>>
+
+    suspend fun setExpandedWidgetIds(space: SpaceId, widgetIds: List<Id>)
+    fun getExpandedWidgetIds(space: SpaceId): Flow<List<Id>>
+
+    suspend fun setCollapsedSectionIds(space: SpaceId, sectionIds: List<Id>)
+    fun getCollapsedSectionIds(space: SpaceId): Flow<List<Id>>
+
+    suspend fun getHasShownSpacesIntroduction(): Boolean
+    suspend fun setHasShownSpacesIntroduction(hasShown: Boolean)
+    suspend fun getHasSeenCreateSpaceBadge(): Boolean
+    suspend fun setHasSeenCreateSpaceBadge(hasSeen: Boolean)
+    suspend fun getHasSeenVaultSearchHighlight(): Boolean
+    suspend fun setHasSeenVaultSearchHighlight(hasSeen: Boolean)
+
+    suspend fun getRunProfilerOnStartup(): Boolean
+    suspend fun setRunProfilerOnStartup(enabled: Boolean)
+
+    suspend fun getDebugMenuEnabled(): Boolean
+    suspend fun setDebugMenuEnabled(enabled: Boolean)
+
+    suspend fun getCompactModeEnabled(): Boolean
+    suspend fun setCompactModeEnabled(enabled: Boolean)
+    fun observeCompactModeEnabled(): Flow<Boolean>
+
+    suspend fun getKanbanEnabled(): Boolean
+    suspend fun setKanbanEnabled(enabled: Boolean)
+    fun observeKanbanEnabled(): Flow<Boolean>
+
+    suspend fun getFileDownloadLimit(): FileDownloadLimit
+    suspend fun setFileDownloadLimit(limit: FileDownloadLimit)
+    fun observeFileDownloadLimit(): Flow<FileDownloadLimit>
+
+    suspend fun getUseCellularForDownloads(): Boolean
+    suspend fun setUseCellularForDownloads(enabled: Boolean)
+
+    suspend fun getInstalledAtDate(account: Account): Long?
+    suspend fun setInstalledAtDate(account: Account, timestamp: Long)
+    suspend fun getCurrentAppVersion(account: Account): String?
+    suspend fun setCurrentAppVersion(account: Account, version: String)
+    suspend fun getPreviousAppVersion(account: Account): String?
+    suspend fun setPreviousAppVersion(account: Account, version: String)
+
+    suspend fun getWidgetSections(space: SpaceId): WidgetSections
+    suspend fun setWidgetSections(space: SpaceId, sections: WidgetSections)
+    fun observeWidgetSections(space: SpaceId): Flow<WidgetSections>
+
+    suspend fun setHomepagePickerDismissed(space: SpaceId, dismissed: Boolean)
+    suspend fun getHomepagePickerDismissed(space: SpaceId): Boolean
+    suspend fun setInviteMembersDismissed(space: SpaceId, dismissed: Boolean)
+    fun observeInviteMembersDismissed(space: SpaceId): Flow<Boolean>
+
+    suspend fun setQuickCaptureDraft(space: SpaceId, obj: Id)
+    suspend fun getQuickCaptureDraft(space: SpaceId): Id?
+    suspend fun getQuickCaptureDrafts(): Map<Id, Id>
+    suspend fun clearQuickCaptureDraft(space: SpaceId)
+
+    suspend fun setSpaceLastInteraction(space: SpaceId, timestamp: Long)
+    suspend fun getSpaceLastInteractions(): Map<Id, Long>
+
+    suspend fun getVaultSortKeys(): Map<Id, Long>
+    suspend fun setVaultSortKeys(keys: Map<Id, Long>)
+
+    suspend fun setQuickCaptureLastSpace(space: Id)
+    suspend fun getQuickCaptureLastSpace(): Id?
+
+    suspend fun getQuickCaptureEnabled(): Boolean
+    suspend fun setQuickCaptureEnabled(enabled: Boolean)
+    fun observeQuickCaptureEnabled(): Flow<Boolean>
+
+    suspend fun getQuickCaptureAiEnabled(): Boolean
+    suspend fun setQuickCaptureAiEnabled(enabled: Boolean)
+    fun observeQuickCaptureAiEnabled(): Flow<Boolean>
+}

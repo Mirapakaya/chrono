@@ -1,0 +1,78 @@
+package com.chronoio.chrono.domain.auth.repo
+
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.AccountSetup
+import com.chronoio.chrono.core_models.AccountStatus
+import com.chronoio.chrono.core_models.Command
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.NetworkModeConfig
+import com.chronoio.chrono.domain.auth.model.Wallet
+import kotlinx.coroutines.flow.Flow
+
+interface AuthRepository {
+
+    suspend fun setInitialParams(command: Command.SetInitialParams)
+
+    /**
+     * Launches an account.
+     * @param id user account id
+     * @param path wallet repository path
+     */
+    suspend fun selectAccount(command: Command.AccountSelect): AccountSetup
+    suspend fun createAccount(command: Command.AccountCreate): AccountSetup
+
+    /**
+     * Signals heart that the priority screen is up and the remaining spaces
+     * (deferred by AccountSelect.preferredSpaceId) may now be loaded.
+     */
+    suspend fun preloadRemainingSpaces()
+
+    suspend fun migrateAccount(account: Id, path: String)
+    suspend fun cancelAccountMigration(account: Id)
+
+    suspend fun deleteAccount() : AccountStatus
+    suspend fun restoreAccount() : AccountStatus
+
+    suspend fun startLoadingAccounts()
+
+    suspend fun saveAccount(account: Account)
+
+    suspend fun updateAccount(account: Account)
+
+    fun observeAccounts(): Flow<Account>
+
+    suspend fun getCurrentAccount(): Account
+
+    suspend fun getCurrentAccountId(): String
+
+    suspend fun convertWallet(entropy: String): String
+
+    suspend fun createWallet(path: String): Wallet
+
+    suspend fun recoverWallet(path: String, mnemonic: String)
+
+    suspend fun saveMnemonic(mnemonic: String)
+
+    suspend fun getMnemonic(): String?
+
+    suspend fun logout(clearLocalRepositoryData: Boolean)
+
+    suspend fun getAccounts(): List<Account>
+
+    /**
+     * Sets currently selected user account
+     * @param id account's id
+     */
+    suspend fun setCurrentAccount(id: String)
+
+    suspend fun getVersion(): String
+
+    suspend fun getNetworkMode(): NetworkModeConfig
+    suspend fun setNetworkMode(modeConfig: NetworkModeConfig)
+    suspend fun debugExportLogs(dir: String): String
+    suspend fun debugRunProfiler(durationInSeconds: Int): String
+
+    suspend fun registerDeviceToken(command: Command.RegisterDeviceToken)
+
+    suspend fun appShutdown()
+}

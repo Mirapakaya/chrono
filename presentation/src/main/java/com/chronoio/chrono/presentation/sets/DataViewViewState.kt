@@ -1,0 +1,107 @@
+package com.chronoio.chrono.presentation.sets
+
+import com.chronoio.chrono.presentation.editor.editor.model.BlockView
+import com.chronoio.chrono.presentation.sets.model.Viewer
+
+sealed class DataViewViewState {
+
+    sealed class Collection : DataViewViewState() {
+
+        abstract val isCreateObjectAllowed: Boolean
+        abstract val isEditingViewAllowed: Boolean
+
+        data class NoView(
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true
+        ) : Collection()
+        data class NoItems(
+            val title: String,
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true,
+            // Board view with no grouping property set: show a "choose a grouping property" hint
+            // instead of the "no objects" message (and instead of an endless loading spinner).
+            val isBoardGroupByRequired: Boolean = false
+        ) : Collection()
+
+        data class Default(
+            val viewer: Viewer?,
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true
+        ) : Collection()
+    }
+
+    sealed class Set : DataViewViewState() {
+
+        abstract val isCreateObjectAllowed: Boolean
+        abstract val isEditingViewAllowed: Boolean
+
+        data class NoQuery(
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true
+        ) : Set()
+
+        data class NoView(
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true
+        ) : Set()
+
+        data class NoItems(
+            val title: String,
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true,
+            // Board view with no grouping property set: show a "choose a grouping property" hint
+            // instead of the "no objects" message (and instead of an endless loading spinner).
+            val isBoardGroupByRequired: Boolean = false
+        ) : Set()
+
+        data class Default(
+            val viewer: Viewer?,
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = true
+        ) : Set()
+    }
+
+    sealed class TypeSet : DataViewViewState() {
+
+        abstract val isCreateObjectAllowed: Boolean
+        abstract val isEditingViewAllowed: Boolean
+
+        data class NoItems(
+            val title: String,
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = false,
+            // Board view with no grouping property set: show a "choose a grouping property" hint
+            // instead of the "no objects" message (and instead of an endless loading spinner).
+            val isBoardGroupByRequired: Boolean = false
+        ) : TypeSet()
+
+        data class Default(
+            val viewer: Viewer?,
+            override val isCreateObjectAllowed: Boolean = true,
+            override val isEditingViewAllowed: Boolean = false
+        ) : TypeSet()
+
+        data class Error(
+            val msg: String,
+            override val isCreateObjectAllowed: Boolean = false,
+            override val isEditingViewAllowed: Boolean = false
+        ) : TypeSet()
+    }
+
+    object Init: DataViewViewState()
+    data class Error(val msg: String) : DataViewViewState()
+}
+
+sealed class SetOrCollectionHeaderState {
+    object None : SetOrCollectionHeaderState()
+    data class Default(
+        val title: BlockView.Title.Basic,
+        val description: Description,
+        val isReadOnlyMode: Boolean = false
+    ) : SetOrCollectionHeaderState()
+
+    sealed class Description {
+        object None: Description()
+        data class Default(val description: String) : Description()
+    }
+}

@@ -1,0 +1,78 @@
+package com.chronoio.chrono.ui_settings.space.new_settings
+
+import androidx.compose.runtime.Composable
+import com.chronoio.chrono.core_models.chats.NotificationState
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.ui.ObjectIcon
+import com.chronoio.chrono.core_models.ui.SpaceIconView
+import com.chronoio.chrono.core_models.ui.WallpaperColor
+import com.chronoio.chrono.core_models.ui.WallpaperView
+import com.chronoio.chrono.core_ui.common.DefaultPreviews
+import com.chronoio.chrono.presentation.spaces.SpaceTechInfo
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsItem
+import com.chronoio.chrono.presentation.spaces.UiSpaceSettingsState
+import java.util.Locale
+
+@Composable
+@DefaultPreviews
+fun NewSpaceSettingsScreenPreview() {
+    NewSpaceSettingsScreen(
+        uiState = UiSpaceSettingsState.SpaceSettings(
+            items = listOf(
+                UiSpaceSettingsItem.Spacer(id = "preview-8", height = 8),
+                UiSpaceSettingsItem.Icon(SpaceIconView.DataSpace.Placeholder()),
+                UiSpaceSettingsItem.Spacer(id = "preview-16", height = 16),
+                UiSpaceSettingsItem.Name("Dream team"),
+                UiSpaceSettingsItem.Spacer(id = "preview-4", height = 4),
+                UiSpaceSettingsItem.EntrySpace,
+                UiSpaceSettingsItem.MembersSmall(2),
+                UiSpaceSettingsItem.Spacer(id = "preview-12", height = 12),
+                UiSpaceSettingsItem.InviteLink("linkl"),
+                UiSpaceSettingsItem.Spacer(id = "preview-81", height = 8),
+                UiSpaceSettingsItem.Section.Collaboration,
+                UiSpaceSettingsItem.Members(1, false, false),
+                UiSpaceSettingsItem.Section.ContentModel,
+                UiSpaceSettingsItem.ObjectTypes,
+                UiSpaceSettingsItem.Section.Preferences,
+                UiSpaceSettingsItem.DefaultObjectType(
+                    id = "some id",
+                    name = "Taskwithveryverlylongname",
+                    icon = ObjectIcon.TypeIcon.Default.DEFAULT,
+                ),
+                UiSpaceSettingsItem.Spacer(id = "preview-82", height = 8),
+                //UiSpaceSettingsItem.Wallpapers(null),
+                UiSpaceSettingsItem.Spacer(id = "preview-83", height = 8),
+                UiSpaceSettingsItem.Section.DataManagement,
+                UiSpaceSettingsItem.Spacer(id = "preview-84", height = 8),
+                UiSpaceSettingsItem.Section.Misc,
+                UiSpaceSettingsItem.SpaceInfo,
+                UiSpaceSettingsItem.Spacer(id = "preview-85", height = 8),
+                UiSpaceSettingsItem.DeleteSpace,
+                UiSpaceSettingsItem.Spacer(id = "preview-32", height = 32),
+
+                ),
+            isEditEnabled = true,
+            spaceTechInfo = SpaceTechInfo(
+                spaceId = SpaceId("space-id"),
+                createdBy = "Thomas",
+                creationDateInMillis = null,
+                networkId = "random network id",
+                isDebugVisible = false,
+                deviceToken = null
+            ),
+            notificationState = NotificationState.ALL,
+            targetSpaceId = "space-view-id"
+        ),
+        uiEvent = {},
+        uiWallpaperState = listOf(
+            WallpaperView.SolidColor(isSelected = false, code = WallpaperColor.BLUE.code),
+            WallpaperView.SolidColor(isSelected = true, code = WallpaperColor.GREEN.code),
+            WallpaperView.SolidColor(isSelected = false, code = WallpaperColor.ORANGE.code),
+            WallpaperView.SolidColor(isSelected = false, code = WallpaperColor.PINK.code),
+            WallpaperView.SolidColor(isSelected = false, code = WallpaperColor.PURPLE.code),
+            WallpaperView.SolidColor(isSelected = false, code = WallpaperColor.RED.code),
+        ),
+        chatsWithCustomNotifications = emptyList(),
+        locale = Locale.getDefault()
+    )
+}

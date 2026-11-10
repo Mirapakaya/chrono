@@ -1,0 +1,466 @@
+package com.chronoio.chrono.presentation.editor.editor
+
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.chronoio.chrono.core_models.Block
+import com.chronoio.chrono.core_models.Payload
+import com.chronoio.chrono.core_models.Position
+import com.chronoio.chrono.domain.base.Resultat
+import com.chronoio.chrono.domain.block.interactor.CreateBlock
+import com.chronoio.chrono.domain.event.interactor.InterceptEvents
+import com.chronoio.chrono.presentation.util.DefaultCoroutineTestRule
+import com.chronoio.chrono.test_utils.MockDataFactory
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.MockitoAnnotations
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verifyBlocking
+
+class EditorTitleAddBlockTest : EditorPresentationTestSetup() {
+
+    @get:Rule
+    val rule = InstantTaskExecutorRule()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @get:Rule
+    val coroutineTestRule = DefaultCoroutineTestRule(UnconfinedTestDispatcher())
+
+    @Before
+    fun setup() {
+        MockitoAnnotations.openMocks(this)
+        proceedWithDefaultBeforeTestStubbing()
+        stubCreateBlock(root)
+    }
+
+    val title = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Text(
+            text = MockDataFactory.randomString(),
+            style = Block.Content.Text.Style.TITLE,
+            marks = emptyList()
+        ),
+        children = emptyList(),
+        fields = Block.Fields.empty()
+    )
+
+    val header = Block(
+        id = MockDataFactory.randomUuid(),
+        content = Block.Content.Layout(
+            type = Block.Content.Layout.Type.HEADER
+        ),
+        fields = Block.Fields.empty(),
+        children = listOf(title.id)
+    )
+
+    @Test
+    fun `should create a new text block after title with INNER position if document has only title block`() {
+
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val style = Block.Content.Text.Style.values().random()
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.Text(style)
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddTextBlockClicked(style)
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new text block below title`() {
+
+        // SETUP
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.values().random()
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val style = Block.Content.Text.Style.values().random()
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.Text(style)
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddTextBlockClicked(style)
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new file block below title if document has only title block`() {
+
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val types = Block.Content.File.Type.values().filter { it != Block.Content.File.Type.NONE }
+
+        val type = types.random()
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.File(
+                type = type,
+                state = Block.Content.File.State.EMPTY
+            )
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddFileBlockClicked(type = type)
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new file block below document title`() {
+
+        // SETUP
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.values().random()
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val types = Block.Content.File.Type.values().filter { it != Block.Content.File.Type.NONE }
+
+        val type = types.random()
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.File(
+                type = type,
+                state = Block.Content.File.State.EMPTY
+            )
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddFileBlockClicked(type = type)
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new bookmark block after title with INNER position if document has only title block`() {
+
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.Bookmark.New
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddBookmarkBlockClicked()
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new bookmark block below title block`() {
+
+        // SETUP
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.values().random()
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.Bookmark.New
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddBookmarkBlockClicked()
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new divider block after title if document has only title block`() {
+
+        // SETUP
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id)
+        )
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.DividerLine
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddDividerBlockClicked(style = Block.Content.Divider.Style.LINE)
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    @Test
+    fun `should create a new divider block after document title`() {
+
+        // SETUP
+
+        val block = Block(
+            id = MockDataFactory.randomUuid(),
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Text(
+                text = MockDataFactory.randomString(),
+                marks = emptyList(),
+                style = Block.Content.Text.Style.values().random()
+            ),
+            children = emptyList()
+        )
+
+        val page = Block(
+            id = root,
+            fields = Block.Fields(emptyMap()),
+            content = Block.Content.Smart,
+            children = listOf(header.id, block.id)
+        )
+
+        val params = CreateBlock.Params(
+            context = root,
+            target = title.id,
+            position = Position.BOTTOM,
+            prototype = Block.Prototype.DividerLine
+        )
+
+        val document = listOf(page, header, title)
+
+        stubOpenDocument(document = document)
+        stubInterceptEvents(InterceptEvents.Params(context = root))
+        stubCreateBlock(params)
+
+        val vm = buildViewModel()
+
+        // TESTING
+
+        vm.apply {
+            onStart(id = root, space = defaultSpace)
+            onBlockFocusChanged(
+                id = title.id,
+                hasFocus = true
+            )
+            onAddDividerBlockClicked(style = Block.Content.Divider.Style.LINE)
+        }
+
+        verifyBlocking(createBlock, times(1)) { async(params) }
+    }
+
+    private fun stubCreateBlock(
+        params: CreateBlock.Params
+    ) {
+        createBlock.stub {
+            onBlocking { execute(params) } doReturn Resultat.success(
+                Pair(
+                    MockDataFactory.randomUuid(),
+                    Payload(
+                        context = root,
+                        events = emptyList()
+                    )
+                )
+            )
+        }
+    }
+}

@@ -1,0 +1,1295 @@
+package com.chronoio.chrono.presentation.main
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.chronoio.chrono.analytics.base.Analytics
+import com.chronoio.chrono.analytics.base.EventsDictionary
+import com.chronoio.chrono.analytics.base.EventsPropertiesKey
+import com.chronoio.chrono.analytics.base.sendEvent
+import com.chronoio.chrono.analytics.base.updateUserProperties
+import com.chronoio.chrono.analytics.props.Props
+import com.chronoio.chrono.analytics.props.UserProperty
+import com.chronoio.chrono.core_models.Account
+import com.chronoio.chrono.core_models.AccountStatus
+import com.chronoio.chrono.core_models.Config
+import com.chronoio.chrono.core_models.Id
+import com.chronoio.chrono.core_models.Notification
+import com.chronoio.chrono.core_models.NotificationPayload
+import com.chronoio.chrono.core_models.NotificationStatus
+import com.chronoio.chrono.core_models.UrlBuilder
+import com.chronoio.chrono.core_models.exceptions.NeedToUpdateApplicationException
+import com.chronoio.chrono.core_models.misc.OpenObjectNavigation
+import com.chronoio.chrono.core_models.misc.navigation
+import com.chronoio.chrono.core_models.ext.shouldNavigateDirectlyToChat
+import com.chronoio.chrono.core_models.primitives.SpaceId
+import com.chronoio.chrono.core_models.restrictions.SpaceStatus
+import com.chronoio.chrono.presentation.BuildConfig
+import com.chronoio.chrono.core_models.ui.WallpaperResult
+import com.chronoio.chrono.core_models.ui.computeWallpaperResult
+import com.chronoio.chrono.core_models.ui.spaceIcon
+import com.chronoio.chrono.core_utils.ext.cancel
+import com.chronoio.chrono.core_utils.tools.AppInfo
+import com.chronoio.chrono.domain.account.AwaitAccountStartManager
+import com.chronoio.chrono.domain.account.InterceptAccountStatus
+import com.chronoio.chrono.domain.auth.interactor.AppShutdown
+import com.chronoio.chrono.domain.auth.interactor.CheckAuthorizationStatus
+import com.chronoio.chrono.domain.auth.interactor.HasAccount
+import com.chronoio.chrono.domain.auth.interactor.Logout
+import com.chronoio.chrono.domain.auth.interactor.MnemonicEmptyException
+import com.chronoio.chrono.domain.auth.interactor.ResumeAccount
+import com.chronoio.chrono.domain.auth.model.AuthStatus
+import com.chronoio.chrono.domain.base.BaseUseCase
+import com.chronoio.chrono.domain.base.Interactor
+import com.chronoio.chrono.domain.base.fold
+import com.chronoio.chrono.domain.base.getOrDefault
+import com.chronoio.chrono.domain.base.onFailure
+import com.chronoio.chrono.domain.chats.ChatPreviewContainer
+import com.chronoio.chrono.domain.chats.ChatsDetailsSubscriptionContainer
+import com.chronoio.chrono.domain.config.ConfigStorage
+import com.chronoio.chrono.domain.config.ObserveShowSpacesIntroduction
+import com.chronoio.chrono.domain.config.UserSettingsRepository
+import com.chronoio.chrono.domain.debugging.DebugRunProfiler
+import com.chronoio.chrono.domain.deeplink.PendingIntentStore
+import com.chronoio.chrono.domain.launch.PreferredSpaceIdHolder
+import com.chronoio.chrono.domain.launch.RemainingSpacesPreloader
+import com.chronoio.chrono.domain.misc.DeepLinkResolver
+import com.chronoio.chrono.domain.misc.preferredSpaceId
+import com.chronoio.chrono.domain.misc.LocaleProvider
+import com.chronoio.chrono.domain.multiplayer.ParticipantSubscriptionContainer
+import com.chronoio.chrono.domain.objects.CrossSpaceObjectTypesContainer
+import com.chronoio.chrono.domain.multiplayer.SpaceInviteResolver
+import com.chronoio.chrono.domain.multiplayer.SpaceViewSubscriptionContainer
+import com.chronoio.chrono.domain.notifications.SystemNotificationService
+import com.chronoio.chrono.domain.spaces.ResolveSpaceHomepage
+import com.chronoio.chrono.domain.subscriptions.GlobalSubscriptionManager
+import com.chronoio.chrono.domain.vault.SetSpacesIntroductionShown
+import com.chronoio.chrono.domain.wallpaper.ObserveSpaceWallpaper
+import com.chronoio.chrono.domain.workspace.DeepLinkToObjectDelegate
+import com.chronoio.chrono.domain.workspace.SpaceManager
+import com.chronoio.chrono.presentation.home.SpaceHomepageResolver
+import com.chronoio.chrono.presentation.main.MainViewModel.Command.ShowDeletedAccountScreen
+import com.chronoio.chrono.presentation.membership.provider.MembershipProvider
+import com.chronoio.chrono.presentation.notifications.NotificationAction
+import com.chronoio.chrono.presentation.notifications.NotificationActionDelegate
+import com.chronoio.chrono.presentation.notifications.NotificationsProvider
+import com.chronoio.chrono.presentation.splash.SplashViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import timber.log.Timber
+
+class MainViewModel(
+    private val resumeAccount: ResumeAccount,
+    private val analytics: Analytics,
+    private val interceptAccountStatus: InterceptAccountStatus,
+    private val logout: Logout,
+    private val checkAuthorizationStatus: CheckAuthorizationStatus,
+    private val hasAccount: HasAccount,
+    private val configStorage: ConfigStorage,
+    private val localeProvider: LocaleProvider,
+    private val notificationsProvider: NotificationsProvider,
+    private val notificator: SystemNotificationService,
+    private val notificationActionDelegate: NotificationActionDelegate,
+    private val deepLinkToObjectDelegate: DeepLinkToObjectDelegate,
+    private val awaitAccountStartManager: AwaitAccountStartManager,
+    private val membershipProvider: MembershipProvider,
+    private val globalSubscriptionManager: GlobalSubscriptionManager,
+    private val spaceInviteResolver: SpaceInviteResolver,
+    private val spaceManager: SpaceManager,
+    private val spaceViews: SpaceViewSubscriptionContainer,
+    private val pendingIntentStore: PendingIntentStore,
+    private val observeSpaceWallpaper: ObserveSpaceWallpaper,
+    private val urlBuilder: UrlBuilder,
+    private val appShutdown: AppShutdown,
+    private val scope: CoroutineScope,
+    private val observeShowSpacesIntroduction: ObserveShowSpacesIntroduction,
+    private val setSpacesIntroductionShown: SetSpacesIntroductionShown,
+    private val appInfo: AppInfo,
+    private val chatPreviewContainer: ChatPreviewContainer,
+    private val chatsDetailsSubscriptionContainer: ChatsDetailsSubscriptionContainer,
+    private val participantSubscriptionContainer: ParticipantSubscriptionContainer,
+    // Retained, not called: constructing it here makes the vault-wide types
+    // subscription open at account start (its own AwaitAccountStartManager
+    // wiring drives start/stop) instead of on the first search open —
+    // cross-space search must never begin with a cold type store (iOS B10).
+    @Suppress("unused")
+    private val crossSpaceObjectTypesContainer: CrossSpaceObjectTypesContainer,
+    private val userSettingsRepository: UserSettingsRepository,
+    private val resolveSpaceHomepage: ResolveSpaceHomepage,
+    private val debugRunProfiler: DebugRunProfiler,
+    private val preferredSpaceIdHolder: PreferredSpaceIdHolder,
+    private val remainingSpacesPreloader: RemainingSpacesPreloader
+) : ViewModel(),
+    NotificationActionDelegate by notificationActionDelegate,
+    DeepLinkToObjectDelegate by deepLinkToObjectDelegate {
+
+    private val deepLinkJobs = mutableListOf<Job>()
+
+    // Safety flag to ensure spaces introduction is only shown once per ViewModel lifecycle
+    private var hasShownSpacesIntroductionInSession = false
+
+    // Set when the account resume reached a terminal outcome in this session. See [onRestore].
+    private var hasAttemptedAccountResumeInSession = false
+
+    private var spaceStatusMonitorJob: Job? = null
+
+    /**
+     * One-shot commands / toasts. Backed by unbounded [Channel]s (not `replay = 0`
+     * SharedFlows) so an item emitted while [MainActivity] is not collecting — e.g.
+     * during the activity stop -> resume gap on cold start, or while `onRestore()`
+     * runs in `onCreate` before the `repeatOnLifecycle(STARTED)` collectors attach —
+     * is buffered and delivered to the next subscriber instead of being silently
+     * dropped (DROID-4523). Each has exactly one collector in [MainActivity], so the
+     * single-consumer semantics of [receiveAsFlow] are correct here.
+     */
+    private val commandsChannel = Channel<Command>(Channel.UNLIMITED)
+    val commands: Flow<Command> = commandsChannel.receiveAsFlow()
+
+    private val toastsChannel = Channel<String>(Channel.UNLIMITED)
+    val toasts: Flow<String> = toastsChannel.receiveAsFlow()
+
+    val wallpaperState: MutableStateFlow<WallpaperResult> = MutableStateFlow(WallpaperResult.None)
+    val showSpacesIntroduction: MutableStateFlow<Account?> = MutableStateFlow(null)
+
+    /**
+     * State for the sharing modal sheet.
+     * When non-null, MainActivity should show the SharingModalSheet with this Intent.
+     * When null, the modal should be hidden.
+     */
+    val sharingIntent: MutableStateFlow<android.content.Intent?> = MutableStateFlow(null)
+
+    init {
+        subscribeToActiveSpaceWallpaper()
+        viewModelScope.launch {
+            interceptAccountStatus.build().collect { status ->
+                when (status) {
+                    is AccountStatus.PendingDeletion -> {
+                        commandsChannel.send(
+                            ShowDeletedAccountScreen(
+                                deadline = status.deadline
+                            )
+                        )
+                    }
+
+                    is AccountStatus.Deleted -> {
+                        proceedWithLogoutDueToAccountDeletion()
+                    }
+
+                    else -> {
+                        // Do nothing
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            notificationsProvider.events.collect { notifications ->
+                notifications.forEach { event ->
+                    handleNotification(event)
+                }
+            }
+        }
+        viewModelScope.launch {
+            membershipProvider.activeTier().collect { result ->
+                updateUserProperties(
+                    analytics = analytics,
+                    userProperty = UserProperty.Tier(result.value)
+                )
+            }
+        }
+        viewModelScope.launch {
+            if (userSettingsRepository.getRunProfilerOnStartup()) {
+                Timber.d("Startup profiler enabled")
+                userSettingsRepository.setRunProfilerOnStartup(false)
+                val params = DebugRunProfiler.Params(durationInSeconds = 60)
+                debugRunProfiler.async(params).fold(
+                    onSuccess = { resultPath ->
+                        Timber.i("Startup profiler completed: $resultPath")
+                    },
+                    onFailure = { error ->
+                        Timber.e(error, "Startup profiler failed")
+                    }
+                )
+            } else {
+                Timber.i("Startup profiler skipped")
+            }
+        }
+        // Cold start push monitoring: check if SplashViewModel signaled a push space entry
+        viewModelScope.launch {
+            awaitAccountStartManager.awaitStart().take(1).collect {
+                remainingSpacesPreloader.scheduleOnce(viewModelScope)
+                val pendingPush = pendingIntentStore.getPushSpaceEntry()
+                if (pendingPush != null) {
+                    pendingIntentStore.clearPushSpaceEntry()
+                    val elapsed = System.currentTimeMillis() - pendingPush.timestamp
+                    val remaining = PUSH_SPACE_STATUS_TIMEOUT - elapsed
+                    if (remaining > 0) {
+                        monitorSpaceLocalStatus(pendingPush.spaceId, remaining)
+                    } else {
+                        Timber.w(
+                            "PUSH_SPACE_STATUS: Cold start push monitoring skipped - ${-remaining}ms already elapsed past timeout"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun subscribeToActiveSpaceWallpaper() {
+        viewModelScope.launch {
+            spaceManager.observe()
+                .flatMapLatest { config ->
+
+                    val wallpaperFlow = observeSpaceWallpaper.flow(
+                        ObserveSpaceWallpaper.Params(space = config.space)
+                    ).distinctUntilChanged()
+
+                    val iconFlow = spaceViews
+                        .observe(space = SpaceId(config.space))
+                        .mapNotNull { it.spaceIcon(urlBuilder) }
+                        .distinctUntilChanged()
+
+                    combine(wallpaperFlow, iconFlow) { wallpaper, icon ->
+                        computeWallpaperResult(icon = icon, wallpaper = wallpaper)
+                    }.distinctUntilChanged()
+                }
+                .onEach { wallpaperState.value = it }
+                .catch { e ->
+                    Timber.w(e, "Error while observing wallpaper for space")
+                    wallpaperState.value = WallpaperResult.None
+                }
+                .collect()
+        }
+    }
+
+    private suspend fun handleNotification(event: Notification.Event) {
+        val notification = event.notification
+        if (notification != null) {
+            if (notification.payload is NotificationPayload.GalleryImport) {
+                // TODO migrate to system notifications
+                delay(DELAY_BEFORE_SHOWING_NOTIFICATION_SCREEN)
+                commandsChannel.send(Command.Notifications)
+            } else if (notification.status == NotificationStatus.CREATED) {
+                if (notificator.areNotificationsEnabled) {
+                    notificator.notify(notification)
+                } else {
+                    commandsChannel.send(Command.RequestNotificationPermission).also {
+                        notificator.setPendingNotification(notification)
+                    }
+                }
+            }
+        }
+    }
+
+    fun onNotificationPermissionGranted() {
+        viewModelScope.launch {
+            notificator.notifyIfPending()
+        }
+    }
+
+    fun onNotificationPermissionDenied() {
+        viewModelScope.launch {
+            notificator.clearPendingNotification()
+        }
+    }
+
+    private fun proceedWithLogoutDueToAccountDeletion() {
+        viewModelScope.launch {
+            logout(Logout.Params(clearLocalRepositoryData = false)).collect { status ->
+                when (status) {
+                    is Interactor.Status.Error -> {
+                        toastsChannel.send("Error while logging out due to account deletion")
+                    }
+
+                    is Interactor.Status.Started -> {
+                        toastsChannel.send("Your account is deleted. Logging out...")
+                    }
+
+                    is Interactor.Status.Success -> {
+                        unsubscribeFromGlobalSubscriptions()
+                        commandsChannel.send(Command.LogoutDueToAccountDeletion)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun unsubscribeFromGlobalSubscriptions() {
+        globalSubscriptionManager.onStop()
+    }
+
+    fun onRestore() {
+        /***
+         * Before fragment backstack and screen states are restored by the OS,
+         * We need to resume account session in a blocking manner.
+         * Otherwise, we might run into illegal states, where account is not ready when we try:
+         * 1) to open an object, profile or dashboard
+         * 2) to execute queries and searches
+         * etc.
+         *
+         * Resume the account one time per process only. The app no longer locks the activity
+         * to portrait. The OS therefore recreates the activity on every rotation, and it
+         * always passes a non-null saved state. A second resume blocks the main thread on the
+         * middleware round trip. It also restarts the global subscriptions, and
+         * [ChatPreviewContainer.start] clears the previews and the unread badges. Three guards
+         * are necessary:
+         *
+         * 1) [AwaitAccountStartManager.hasStarted] is true when the account session is already
+         *    live in this process. LaunchAccount, SelectAccount, CreateAccount and an earlier
+         *    ResumeAccount all set it, and Logout clears it. This covers the first rotation
+         *    after a cold start, where this method never ran before.
+         * 2) [HasAccount] is false when the device holds no account row: a fresh install, the
+         *    auth flow, a login whose SelectAccount is still in flight, or the state after a
+         *    logout. There is nothing to resume there. Without this check a rotation in the
+         *    middle of a login runs the blocking resume and raises a spurious error toast,
+         *    because the mnemonic is already stored but the account id is not.
+         * 3) The session flag covers the terminal failures where the state stays Init and the
+         *    account row exists: the app must update, or the wallet is missing. The failure
+         *    branch raises a dialog or an error, so it must not repeat on each rotation. The
+         *    flag is set only on those terminal outcomes, and on success. A transient failure
+         *    leaves it clear, so the next recreation retries. ResumeAccount is idempotent.
+         *
+         * All three signals die with the process, so a real process death still resumes the
+         * account, which is the case this method exists for.
+         */
+        if (awaitAccountStartManager.hasStarted() || hasAttemptedAccountResumeInSession) {
+            Timber.d("onRestore: account session already live in this process. Skipping resume.")
+            return
+        }
+        Timber.d("onRestoreCalled")
+        runBlocking {
+            // Guard 2. A Room query, which is cheap next to the JNI resume it prevents. Fail
+            // open: if the query itself fails, attempt the resume as before.
+            val deviceHasAccount = hasAccount.async(Unit)
+                .onFailure { Timber.e(it, "onRestore: account check failed") }
+                .getOrDefault(true)
+            if (!deviceHasAccount) {
+                Timber.d("onRestore: no account on the device, so nothing to resume")
+                return@runBlocking
+            }
+            resumeAccount.run(params = BaseUseCase.None).process(
+                success = {
+                    hasAttemptedAccountResumeInSession = true
+
+                    // Verify SpaceManager has a valid state after account resume
+                    val spaceState = spaceManager.getState()
+                    when (spaceState) {
+                        is SpaceManager.State.Init -> {
+                            Timber.w("SpaceManager is in Init state after restore - unexpected")
+                        }
+                        is SpaceManager.State.NoSpace -> {
+                            Timber.w("SpaceManager has no space set after restore - user may need to select a space")
+                        }
+                        is SpaceManager.State.Space.Idle -> {
+                            Timber.d("SpaceManager state after restore: Idle with space ${spaceState.space.id}")
+                        }
+                        is SpaceManager.State.Space.Active -> {
+                            Timber.d("SpaceManager state after restore: Active with space ${spaceState.config.space}")
+                        }
+                    }
+
+                    globalSubscriptionManager.onStart()
+                    chatPreviewContainer.start()
+                    chatsDetailsSubscriptionContainer.start()
+                    participantSubscriptionContainer.start()
+                    val analyticsID = configStorage.getOrNull()?.analytics
+                    val networkID = configStorage.getOrNull()?.network
+                    if (analyticsID != null) {
+                        updateUserProperties(
+                            analytics = analytics,
+                            userProperty = UserProperty.AccountId(analyticsID)
+                        )
+                    }
+                    if (networkID != null) {
+                        updateUserProperties(
+                            analytics = analytics,
+                            userProperty = UserProperty.NetworkId(networkID)
+                        )
+                    }
+                    updateUserProperties(
+                        analytics,
+                        userProperty = UserProperty.InterfaceLanguage(localeProvider.language())
+                    )
+                    Timber.d("Restored account after activity recreation")
+                },
+                failure = { error ->
+                    when (error) {
+                        is NeedToUpdateApplicationException -> {
+                            hasAttemptedAccountResumeInSession = true
+                            commandsChannel.send(Command.Error(SplashViewModel.ERROR_NEED_UPDATE))
+                            Timber.e(error, "Error while launching account after activity recreation")
+                        }
+
+                        is MnemonicEmptyException -> {
+                            // The device holds an account row (guard 2 passed) but no wallet:
+                            // an account deletion, or a transient prefs read failure. Logout is
+                            // destructive, so ask the user before wiping local state. This is a
+                            // terminal outcome for the process, so set the flag: the dialog must
+                            // not reappear on each rotation.
+                            hasAttemptedAccountResumeInSession = true
+                            Timber.w("onRestore: mnemonic empty, asking user to confirm logout")
+                            commandsChannel.send(Command.ConfirmResumeAccountLogout)
+                        }
+
+                        else -> {
+                            // A transient failure, for example an AccountSelect timeout. Leave
+                            // the session flag clear, so the next recreation retries instead of
+                            // leaving the restored screens on a dead session for the rest of
+                            // the process. No other caller runs ResumeAccount.
+                            commandsChannel.send(Command.Error(SplashViewModel.ERROR_MESSAGE))
+                            Timber.e(error, "Error while launching account after activity recreation")
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Invoked from [com.chronoio.chrono.ui.main.MainActivity] when the user
+     * confirms logout in the dialog raised by [Command.ConfirmResumeAccountLogout].
+     * Reuses the post-deletion logout flow: same Logout params, same nav target.
+     */
+    fun onResumeAccountLogoutConfirmed() {
+        proceedWithLogoutDueToAccountDeletion()
+    }
+
+    fun onIntentCreateObject(type: Id) {
+        Timber.d("onIntentCreateObject: $type")
+        viewModelScope.launch {
+            checkAuthorizationStatus.async(Unit).fold(
+                onFailure = { e -> Timber.e(e, "Error while checking auth status") },
+                onSuccess = { (status, account) ->
+                    if (status == AuthStatus.AUTHORIZED) {
+                        commandsChannel.send(Command.OpenCreateNewType(type))
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Called from MainActivity to switch space and create object from OS widget.
+     * Switches to the target space first, then emits command to create object.
+     */
+    fun onCreateObjectFromWidget(spaceId: String, typeKey: String) {
+        Timber.d("onCreateObjectFromWidget: space=$spaceId, typeKey=$typeKey")
+        viewModelScope.launch {
+            val currentSpace = spaceManager.get()
+            val spaceState = spaceManager.getState()
+            Timber.d("onCreateObjectFromWidget: currentSpace=$currentSpace, spaceState=$spaceState")
+            if (currentSpace != spaceId) {
+                Timber.d("onCreateObjectFromWidget: switching from $currentSpace to $spaceId")
+                spaceManager.set(spaceId)
+                    .onSuccess { config ->
+                        Timber.d("onCreateObjectFromWidget: switched to space $spaceId successfully, config=$config")
+                        Timber.d("onCreateObjectFromWidget: emitting OpenCreateObjectFromOsWidget with typeKey=$typeKey")
+                        commandsChannel.send(Command.Deeplink.OpenCreateObjectFromOsWidget(typeKey = typeKey))
+                    }
+                    .onFailure { e ->
+                        Timber.e(e, "onCreateObjectFromWidget: failed to switch space to $spaceId")
+                        toastsChannel.send("Failed to switch space")
+                    }
+            } else {
+                Timber.d("onCreateObjectFromWidget: already in space $spaceId, emitting create command")
+                commandsChannel.send(Command.Deeplink.OpenCreateObjectFromOsWidget(typeKey = typeKey))
+            }
+        }
+    }
+
+    /**
+     * Single entry point for all share intents.
+     * Shows the sharing modal sheet with the given intent.
+     *
+     * @param intent The share intent from Android system
+     */
+    fun onShareIntent(intent: android.content.Intent) {
+        Timber.d("onShareIntent: type=${intent.type}, action=${intent.action}")
+        viewModelScope.launch {
+            checkAuthorizationStatus.async(Unit).fold(
+                onFailure = { e -> Timber.e(e, "Error while checking auth status") },
+                onSuccess = { (status, _) ->
+                    if (status == AuthStatus.AUTHORIZED) {
+                        // Set intent to show the sharing modal sheet
+                        sharingIntent.value = intent
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Called when the sharing modal is dismissed.
+     */
+    fun onSharingDismissed() {
+        Timber.d("onSharingDismissed")
+        sharingIntent.value = null
+    }
+
+    fun onInterceptNotificationAction(action: NotificationAction) {
+        viewModelScope.launch {
+            proceedWithNotificationAction(action)
+        }
+    }
+
+    fun handleNewDeepLink(deeplink: DeepLinkResolver.Action) {
+        // Only relevant for cold start: LaunchAccount consumes the holder once at
+        // account start. On warm starts the account has already started, so setting
+        // it here would leave a stale value for a future (in-process) LaunchAccount.
+        if (!awaitAccountStartManager.hasStarted()) {
+            deeplink.preferredSpaceId()?.let { preferredSpaceIdHolder.set(it) }
+        }
+        deepLinkJobs.cancel()
+        viewModelScope.launch {
+            checkAuthorizationStatus.async(Unit).fold(
+                onFailure = { Timber.e(it, "Failed to check authentication status") },
+                onSuccess = { (authStatus, account) -> processDeepLinkBasedOnAuth(authStatus, deeplink) }
+            )
+        }
+    }
+
+    private fun processDeepLinkBasedOnAuth(
+        authStatus: AuthStatus,
+        deeplink: DeepLinkResolver.Action
+    ) {
+        if (authStatus == AuthStatus.UNAUTHORIZED && deeplink is DeepLinkResolver.Action.Invite) {
+            saveInviteDeepLinkForLater(deeplink)
+        } else {
+            Timber.d("Proceeding with deeplink: $deeplink")
+            // Store one-to-one chat data IMMEDIATELY (before the NEW_DEEP_LINK_DELAY)
+            // so VaultViewModel can pick it up when it resumes
+            if (deeplink is DeepLinkResolver.Action.InitiateOneToOneChat) {
+                Timber.d("Storing one-to-one chat data IMMEDIATELY: ${deeplink.identity}")
+                pendingIntentStore.setOneToOneChatData(
+                    identity = deeplink.identity,
+                    metadataKey = deeplink.metadataKey
+                )
+            }
+            launchDeepLinkProcessing(deeplink)
+        }
+    }
+
+    private fun saveInviteDeepLinkForLater(deeplink: DeepLinkResolver.Action.Invite) {
+        pendingIntentStore.setDeepLinkInvite(deeplink.link)
+        Timber.d("Saved invite deeplink for later processing: ${deeplink.link}")
+    }
+
+    private fun launchDeepLinkProcessing(deeplink: DeepLinkResolver.Action) {
+        deepLinkJobs += viewModelScope.launch {
+            awaitAccountStartManager
+                .awaitStart()
+                .onEach { delay(NEW_DEEP_LINK_DELAY) }
+                .take(1)
+                .collect {
+                    proceedWithNewDeepLink(deeplink)
+                }
+        }
+    }
+
+    private suspend fun proceedWithNewDeepLink(deeplink: DeepLinkResolver.Action) {
+        Timber.d("Proceeding with the new deep link, deeplink: $deeplink")
+        when (deeplink) {
+            is DeepLinkResolver.Action.Import.Experience -> {
+                commandsChannel.send(
+                    Command.Deeplink.GalleryInstallation(
+                        deepLinkType = deeplink.type,
+                        deepLinkSource = deeplink.source
+                    )
+                )
+            }
+
+            is DeepLinkResolver.Action.Invite -> {
+                commandsChannel.send(Command.Deeplink.Invite(deeplink.link))
+            }
+
+            is DeepLinkResolver.Action.DeepLinkToObject -> {
+                val result = onDeepLinkToObject(
+                    obj = deeplink.obj,
+                    space = deeplink.space,
+                    switchSpaceIfObjectFound = false
+                )
+                when (result) {
+                    is DeepLinkToObjectDelegate.Result.Error -> {
+                        val link = deeplink.invite
+                        if (link != null) {
+                            viewModelScope.sendEvent(
+                                analytics = analytics,
+                                eventName = EventsDictionary.openObjectByLink,
+                                props = Props(
+                                    mapOf(
+                                        EventsPropertiesKey.type to EventsDictionary.OpenObjectByLinkType.INVITE.value
+                                    )
+                                )
+                            )
+                            commandsChannel.send(
+                                Command.Deeplink.Invite(
+                                    spaceInviteResolver.createInviteLink(
+                                        contentId = link.cid,
+                                        encryptionKey = link.key
+                                    )
+                                )
+                            )
+                        } else {
+                            commandsChannel.send(Command.Deeplink.DeepLinkToObjectNotWorking)
+                        }
+                    }
+
+                    is DeepLinkToObjectDelegate.Result.Success -> {
+                        val targetSpace = result.obj.spaceId
+                        if (targetSpace != null) {
+                            val currentState = spaceManager.getState()
+                            Timber.d("Space manager state before processing deep link: $currentState")
+                            when (currentState) {
+                                SpaceManager.State.Init -> {
+                                    // Do nothing.
+                                }
+
+                                SpaceManager.State.NoSpace -> {
+                                    proceedWithSpaceSwitchDueToDeepLinkToObject(
+                                        targetSpace = targetSpace,
+                                        deeplink = deeplink,
+                                        result = result
+                                    )
+                                }
+
+                                is SpaceManager.State.Space.Idle -> {
+                                    if (currentState.space.id != deeplink.space.id) {
+                                        proceedWithSpaceSwitchDueToDeepLinkToObject(
+                                            targetSpace = targetSpace,
+                                            deeplink = deeplink,
+                                            result = result
+                                        )
+                                    } else {
+                                        viewModelScope.sendEvent(
+                                            analytics = analytics,
+                                            eventName = EventsDictionary.openObjectByLink,
+                                            props = Props(
+                                                mapOf(
+                                                    EventsPropertiesKey.type to EventsDictionary.OpenObjectByLinkType.OBJECT.value
+                                                )
+                                            )
+                                        )
+                                        commandsChannel.send(
+                                            Command.Deeplink.DeepLinkToObject(
+                                                navigation = result.obj.navigation(),
+                                                sideEffect = null,
+                                                space = deeplink.space.id,
+                                                obj = deeplink.obj
+                                            ),
+                                        )
+                                    }
+                                }
+
+                                is SpaceManager.State.Space.Active -> {
+                                    if (currentState.config.space != deeplink.space.id) {
+                                        proceedWithSpaceSwitchDueToDeepLinkToObject(
+                                            targetSpace = targetSpace,
+                                            deeplink = deeplink,
+                                            result = result
+                                        )
+                                    } else {
+                                        viewModelScope.sendEvent(
+                                            analytics = analytics,
+                                            eventName = EventsDictionary.openObjectByLink,
+                                            props = Props(
+                                                mapOf(
+                                                    EventsPropertiesKey.type to EventsDictionary.OpenObjectByLinkType.OBJECT.value
+                                                )
+                                            )
+                                        )
+                                        commandsChannel.send(
+                                            Command.Deeplink.DeepLinkToObject(
+                                                navigation = result.obj.navigation(),
+                                                sideEffect = null,
+                                                space = deeplink.space.id,
+                                                obj = deeplink.obj
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            is DeepLinkResolver.Action.DeepLinkToMembership -> {
+                commandsChannel.send(
+                    Command.Deeplink.MembershipScreen(tierId = deeplink.tierId, code = deeplink.code)
+                )
+            }
+
+            is DeepLinkResolver.Action.InitiateOneToOneChat -> {
+                // Data was already stored immediately in processDeepLinkBasedOnAuth()
+                // to avoid race condition with VaultViewModel.processPendingDeeplink()
+                Timber.d("Emitting InitiateOneToOneChat command: ${deeplink.identity}")
+                commandsChannel.send(
+                    Command.Deeplink.InitiateOneToOneChat(
+                        identity = deeplink.identity,
+                        metadataKey = deeplink.metadataKey
+                    )
+                )
+            }
+
+            is DeepLinkResolver.Action.OsWidgetDeepLink.DeepLinkToSpace -> {
+                Timber.d("Processing OS widget deep link to space: ${deeplink.space}")
+                proceedWithOsWidgetSpaceSwitch(deeplink.space.id)
+            }
+
+            is DeepLinkResolver.Action.OsWidgetDeepLink.DeepLinkToCreateObject -> {
+                Timber.d("Processing OS widget deep link to create object: appWidgetId=${deeplink.appWidgetId}")
+                commandsChannel.send(
+                    Command.Deeplink.DeepLinkToCreateObject(
+                        appWidgetId = deeplink.appWidgetId,
+                        token = deeplink.token
+                    )
+                )
+            }
+
+            is DeepLinkResolver.Action.OsWidgetDeepLink.DeepLinkToObject -> {
+                Timber.d("Processing OS widget deep link to object: obj=${deeplink.obj}, space=${deeplink.space}")
+                proceedWithOsWidgetObjectOpen(deeplink.obj, deeplink.space.id)
+            }
+
+            else -> {
+                Timber.d("No deep link")
+            }
+        }
+        remainingSpacesPreloader.scheduleOnce(viewModelScope)
+    }
+
+    /**
+     * Handles space switch triggered by OS home screen widget.
+     * Switches to the target space and emits navigation command based on space type.
+     */
+    private suspend fun proceedWithOsWidgetSpaceSwitch(targetSpace: Id) {
+        val currentSpace = spaceManager.get()
+        
+        suspend fun emitNavigationCommand(config: Config) {
+            val spaceView = spaceViews.get(SpaceId(targetSpace))
+            val shouldNavigateDirectlyToChat = spaceView?.shouldNavigateDirectlyToChat == true
+            val chatId = config.spaceChatId
+            Timber.d(
+                "OS widget navigation: space=$targetSpace, " +
+                    "oneToOne=$shouldNavigateDirectlyToChat, chatId=$chatId"
+            )
+
+            // When the space has an explicit-object homepage configured, resolve it
+            // and open it directly (skipping the widgets back-stack entry).
+            if (!shouldNavigateDirectlyToChat &&
+                SpaceHomepageResolver.shouldSkipWidgetInjection(spaceView)
+            ) {
+                val homepageResult = resolveSpaceHomepage.async(
+                    ResolveSpaceHomepage.Params(space = SpaceId(targetSpace))
+                ).getOrNull()
+                if (homepageResult is ResolveSpaceHomepage.Result.Object) {
+                    // Chat homepages must go through the chat-screen nav graph
+                    // rather than `proceedWithOpenObjectNavigation`, which rejects
+                    // `OpenChat` with a toast.
+                    when (val nav = homepageResult.navigation) {
+                        is OpenObjectNavigation.OpenChat -> {
+                            commandsChannel.send(
+                                Command.Deeplink.DeepLinkToSpace(
+                                    space = targetSpace,
+                                    shouldNavigateDirectlyToChat = true,
+                                    chatId = nav.target
+                                )
+                            )
+                        }
+                        else -> {
+                            commandsChannel.send(
+                                Command.Deeplink.DeepLinkToObjectFromWidget(
+                                    space = targetSpace,
+                                    obj = spaceView?.homepage.orEmpty(),
+                                    navigation = nav,
+                                    openTargetDirectly = true
+                                )
+                            )
+                        }
+                    }
+                    return
+                }
+            }
+
+            commandsChannel.send(
+                Command.Deeplink.DeepLinkToSpace(
+                    space = targetSpace,
+                    shouldNavigateDirectlyToChat = shouldNavigateDirectlyToChat,
+                    chatId = chatId
+                )
+            )
+        }
+        
+        if (currentSpace != targetSpace) {
+            spaceManager.set(targetSpace)
+                .onSuccess { config ->
+                    Timber.d("Successfully switched to space from OS widget: $targetSpace")
+                    emitNavigationCommand(config)
+                }
+                .onFailure { e ->
+                    Timber.e(e, "Failed to switch space from OS widget")
+                }
+        } else {
+            Timber.d("Already in target space, emitting navigation: $targetSpace")
+            spaceManager.getConfig()?.let { config ->
+                emitNavigationCommand(config)
+            }
+        }
+    }
+
+    /**
+     * Handles object open triggered by OS home screen widget.
+     * Fetches the object to determine proper navigation, switches space if needed, then navigates.
+     */
+    private suspend fun proceedWithOsWidgetObjectOpen(objectId: Id, targetSpace: Id) {
+        Timber.d("OS widget object open: obj=$objectId, space=$targetSpace")
+        
+        // Use the delegate to fetch the object and switch space if needed
+        val result = deepLinkToObjectDelegate.onDeepLinkToObject(
+            obj = objectId,
+            space = SpaceId(targetSpace),
+            switchSpaceIfObjectFound = true
+        )
+        
+        when (result) {
+            is DeepLinkToObjectDelegate.Result.Success -> {
+                val navigation = result.obj.navigation()
+                Timber.d("OS widget object navigation determined: $navigation")
+                commandsChannel.send(
+                    Command.Deeplink.DeepLinkToObjectFromWidget(
+                        space = targetSpace,
+                        obj = objectId,
+                        navigation = navigation,
+                        openTargetDirectly = hasExplicitObjectHomepage(SpaceId(targetSpace))
+                    )
+                )
+            }
+            is DeepLinkToObjectDelegate.Result.Error.ObjectNotFound -> {
+                Timber.w("OS widget: Object not found: $objectId")
+                toastsChannel.send("Object not found")
+            }
+            is DeepLinkToObjectDelegate.Result.Error.PermissionNeeded -> {
+                Timber.w("OS widget: Permission needed to access object: $objectId")
+                toastsChannel.send("Permission needed")
+            }
+            is DeepLinkToObjectDelegate.Result.Error.CouldNotOpenSpace -> {
+                Timber.w("OS widget: Could not open space: $targetSpace")
+                toastsChannel.send("Could not open space")
+            }
+        }
+    }
+
+    /**
+     * Opens an object (or chat) that was just created/modified via the "Share to Anytype"
+     * flow, when the user taps "Open" on the success banner. Reuses the same machinery as
+     * the OS-widget / deep-link paths: fetches the object, switches space if needed, and
+     * emits an existing navigation command handled by MainActivity.
+     */
+    fun onOpenSharedObject(objectId: Id, spaceId: Id, isChat: Boolean) {
+        Timber.d("onOpenSharedObject: obj=$objectId, space=$spaceId, isChat=$isChat")
+        if (isChat) {
+            onOpenChatTriggeredByPush(chatId = objectId, spaceId = spaceId)
+            return
+        }
+        viewModelScope.launch {
+            val result = deepLinkToObjectDelegate.onDeepLinkToObject(
+                obj = objectId,
+                space = SpaceId(spaceId),
+                switchSpaceIfObjectFound = true
+            )
+            when (result) {
+                is DeepLinkToObjectDelegate.Result.Success -> {
+                    val navigation = result.obj.navigation()
+                    Timber.d("Shared object navigation determined: $navigation")
+                    commandsChannel.send(
+                        Command.Deeplink.DeepLinkToObjectFromWidget(
+                            space = spaceId,
+                            obj = objectId,
+                            navigation = navigation,
+                            openTargetDirectly = hasExplicitObjectHomepage(SpaceId(spaceId))
+                        )
+                    )
+                }
+                is DeepLinkToObjectDelegate.Result.Error.ObjectNotFound -> {
+                    Timber.w("Shared object open: object not found: $objectId")
+                    toastsChannel.send("Object not found")
+                }
+                is DeepLinkToObjectDelegate.Result.Error.PermissionNeeded -> {
+                    Timber.w("Shared object open: permission needed to access object: $objectId")
+                    toastsChannel.send("Permission needed")
+                }
+                is DeepLinkToObjectDelegate.Result.Error.CouldNotOpenSpace -> {
+                    Timber.w("Shared object open: could not open space: $spaceId")
+                    toastsChannel.send("Could not open space")
+                }
+            }
+        }
+    }
+
+    private suspend fun proceedWithSpaceSwitchDueToDeepLinkToObject(
+        targetSpace: Id,
+        deeplink: DeepLinkResolver.Action.DeepLinkToObject,
+        result: DeepLinkToObjectDelegate.Result.Success
+    ) {
+        spaceManager
+            .set(targetSpace)
+            .onSuccess { config ->
+                val home = config.home
+                val sideEffect = Command.Deeplink.DeepLinkToObject.SideEffect.SwitchSpace(home = home)
+                viewModelScope.sendEvent(
+                    analytics = analytics,
+                    eventName = EventsDictionary.openObjectByLink,
+                    props = Props(
+                        mapOf(
+                            EventsPropertiesKey.type to EventsDictionary.OpenObjectByLinkType.OBJECT.value
+                        )
+                    )
+                )
+                commandsChannel.send(
+                    Command.Deeplink.DeepLinkToObject(
+                        navigation = result.obj.navigation(),
+                        sideEffect = sideEffect,
+                        space = deeplink.space.id,
+                        obj = deeplink.obj,
+                        openTargetDirectly = hasExplicitObjectHomepage(deeplink.space)
+                    ),
+                )
+            }
+    }
+
+    /**
+     * Returns `true` when the given space has an explicit-object homepage configured
+     * (see DROID-4388). When `true`, deep-link/push back-stack handlers skip the
+     * widgets-screen injection so the back stack ends at [Vault, Target].
+     *
+     * Falls back to `false` when the SpaceView is not yet loaded — conservative
+     * default preserves the legacy [Vault, Widgets, Target] shape.
+     */
+    private fun hasExplicitObjectHomepage(space: SpaceId): Boolean =
+        SpaceHomepageResolver.shouldSkipWidgetInjection(spaceViews.get(space))
+
+    fun onOpenChatTriggeredByPush(chatId: String, spaceId: String) {
+        Timber.d("onOpenChatTriggeredByPush: $chatId, $spaceId")
+        viewModelScope.launch {
+            if (spaceManager.get() != spaceId) {
+                spaceManager.set(spaceId)
+                    .onSuccess {
+                        monitorSpaceLocalStatus(spaceId)
+                        commandsChannel.send(
+                            Command.LaunchChat(
+                                space = spaceId,
+                                chat = chatId,
+                                triggeredByPush = true,
+                                openTargetDirectly = hasExplicitObjectHomepage(SpaceId(spaceId))
+                            )
+                        )
+                    }.onFailure {
+                        Timber.e(
+                            it,
+                            "Error while switching space when launching chat from push notification"
+                        )
+                    }
+            } else {
+                monitorSpaceLocalStatus(spaceId)
+                commandsChannel.send(
+                    Command.LaunchChat(
+                        space = spaceId,
+                        chat = chatId,
+                        triggeredByPush = true,
+                        openTargetDirectly = hasExplicitObjectHomepage(SpaceId(spaceId))
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Subscribes to feature introduction checks. Follows the same pattern as
+     * [subscribeToActiveSpaceWallpaper] for consistency with the codebase.
+     *
+     * Uses [ObserveShowSpacesIntroduction] which:
+     * - Waits for account start on Dispatchers.IO
+     * - Checks if should show (existing users only, not fresh installs)
+     * - Emits a single boolean result
+     *
+     * Takes only the first emission to prevent showing multiple times when account
+     * lifecycle events occur (app minimize/restore, account switch).
+     * Additionally uses a session flag to ensure the screen is never shown more than once
+     * per app session, even if the dismiss callback fails to fire.
+     */
+    private fun subscribeToShowSpacesIntroduction() {
+        viewModelScope.launch {
+            checkAuthorizationStatus.async(Unit).fold(
+                onFailure = { e -> Timber.e(e, "Error while checking auth status") },
+                onSuccess = { (status, account) ->
+                    if (status == AuthStatus.AUTHORIZED && account != null) {
+                        observeShowSpacesIntroduction.flow(
+                            ObserveShowSpacesIntroduction.Params(
+                                currentAppVersion = appInfo.versionName,
+                                account = account
+                            )
+                        )
+                        .take(1) // Only take first emission, prevents re-showing on app restore
+                        .collect { shouldShow ->
+                            Timber.d("DROID-3864, Should show spaces introduction: $shouldShow")
+                            // Safety check: only show once per session
+                            if (shouldShow && !hasShownSpacesIntroductionInSession) {
+                                hasShownSpacesIntroductionInSession = true
+                                showSpacesIntroduction.value = account
+                                Timber.d("Showing spaces introduction for account ${account.id}")
+                                // Mark as shown immediately to prevent race conditions
+                                // This ensures if the app is killed before dismiss callback,
+                                // the popup won't show again on restore
+                                setSpacesIntroductionShown.async(Unit).fold(
+                                    onFailure = { e ->
+                                        Timber.e(e, "Error while marking spaces introduction as shown (immediate)")
+                                    },
+                                    onSuccess = {
+                                        Timber.d("DROID-3864, Marked spaces introduction as shown immediately for account ${account.id}")
+                                    }
+                                )
+                            } else {
+                                showSpacesIntroduction.value = null
+                                if (hasShownSpacesIntroductionInSession) {
+                                    Timber.d("DROID-3864, Skipping spaces introduction - already shown in this session")
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Sends OnboardingTooltip analytics event for the Spaces Introduction screen.
+     * Maps step numbers to the corresponding tooltip text:
+     * 1 - "Ideas need conversations"
+     * 2 - "Your Vault just leveled up"
+     * 3 - "Chats that do more"
+     * 4 - "Everything in Its Right Place"
+     */
+    fun sendOnboardingTooltipEvent(step: Int) {
+        viewModelScope.sendEvent(
+            analytics = analytics,
+            eventName = EventsDictionary.onboardingTooltip,
+            props = Props(
+                mapOf(
+                    EventsPropertiesKey.id to "Chats",
+                    EventsPropertiesKey.step to step
+                )
+            )
+        )
+    }
+
+    /**
+     * Called when user dismisses or completes the Spaces Introduction screen.
+     * Simply clears the UI state since we already marked it as shown when we displayed it.
+     */
+    fun onSpacesIntroductionDismissed() {
+        Timber.d("DROID-3864, User dismissed spaces introduction")
+        showSpacesIntroduction.value = null
+    }
+
+    private fun monitorSpaceLocalStatus(
+        spaceId: String,
+        delayMs: Long = PUSH_SPACE_STATUS_TIMEOUT
+    ) {
+        spaceStatusMonitorJob?.cancel()
+        spaceStatusMonitorJob = viewModelScope.launch {
+            delay(delayMs)
+            val view = spaceViews.get(SpaceId(spaceId))
+            if (view == null) {
+                Timber.w("PUSH_SPACE_STATUS: Space $spaceId not found in subscription container")
+                return@launch
+            }
+            val localStatus = view.spaceLocalStatus
+            if (localStatus == SpaceStatus.LOADING) {
+                Timber.w(
+                    "PUSH_SPACE_STATUS: Space $spaceId local status still LOADING after ${PUSH_SPACE_STATUS_TIMEOUT / 1000}s"
+                )
+                if (BuildConfig.ENABLE_SPACE_PUSH_DIAGNOSTICS) {
+                    commandsChannel.send(
+                        Command.Snackbar(
+                            "Space local status is still LOADING after ${PUSH_SPACE_STATUS_TIMEOUT / 1000} seconds (push)"
+                        )
+                    )
+                }
+            } else {
+                Timber.d(
+                    "PUSH_SPACE_STATUS: Space $spaceId local status is $localStatus (OK)"
+                )
+            }
+        }
+    }
+
+    /**
+     * Emit an app-level success Snackbar with an OK action. Routed through
+     * [commands] and rendered by MainActivity on android.R.id.content so
+     * it sits above whichever screen the user is on when the upload
+     * completes.
+     */
+    fun showSnackbarWithOk(msg: String) {
+        viewModelScope.launch { commandsChannel.send(Command.SnackbarWithOk(msg)) }
+    }
+
+    /**
+     * Emit an app-level success Snackbar with an [actionLabel] (e.g.
+     * "Open Images") that navigates to the resolved object type page
+     * ([typeId] in [space]). Used by the upload-success flow so users
+     * can jump straight to the type that collects their freshly-uploaded
+     * files.
+     */
+    fun showSnackbarWithOpenType(msg: String, typeId: Id, space: Id, actionLabel: String) {
+        viewModelScope.launch {
+            commandsChannel.send(
+                Command.SnackbarWithOpenType(
+                    msg = msg,
+                    typeId = typeId,
+                    space = space,
+                    actionLabel = actionLabel
+                )
+            )
+        }
+    }
+
+    override fun onCleared() {
+        // TODO: DROID-3763 - Disabled to test if appShutdown causes FD crashes on restore
+        // The async fire-and-forget pattern may leave middleware in inconsistent state
+        // if process is killed before shutdown completes
+        // scope.launch {
+        //     try {
+        //         Timber.d("App shutdown started")
+        //         appShutdown.async(Unit)
+        //         Timber.d("App shutdown completed")
+        //     } catch (e: Exception) {
+        //         Timber.e(e, "Error during app shutdown")
+        //     }
+        // }
+        Timber.d("onCleared called - appShutdown disabled for FD crash testing")
+        // viewModelScope is already cancelled here, so no send() can race these
+        // close() calls. Explicit about intent: nothing consumes them once we're gone.
+        commandsChannel.close()
+        toastsChannel.close()
+        super.onCleared()
+    }
+
+    sealed class Command {
+        data class ShowDeletedAccountScreen(val deadline: Long) : Command()
+        data object LogoutDueToAccountDeletion : Command()
+        data object ConfirmResumeAccountLogout : Command()
+        class OpenCreateNewType(val type: Id) : Command()
+        data class Error(val msg: String) : Command()
+        data class Snackbar(val msg: String) : Command()
+        data class SnackbarWithOk(val msg: String) : Command()
+        data class SnackbarWithOpenType(
+            val msg: String,
+            val typeId: Id,
+            val space: Id,
+            val actionLabel: String
+        ) : Command()
+
+        data object Notifications : Command()
+        data object RequestNotificationPermission : Command()
+
+        data class LaunchChat(
+            val space: Id,
+            val chat: Id,
+            val triggeredByPush: Boolean = false,
+            val openTargetDirectly: Boolean = false
+        ) : Command()
+
+        data class Navigate(val destination: OpenObjectNavigation) : Command()
+
+        sealed class Deeplink : Command() {
+            data object DeepLinkToObjectNotWorking : Deeplink()
+            data class DeepLinkToObject(
+                val obj: Id,
+                val space: Id,
+                val navigation: OpenObjectNavigation,
+                val sideEffect: SideEffect? = null,
+                val openTargetDirectly: Boolean = false
+            ) : Deeplink() {
+                sealed class SideEffect {
+                    data class SwitchSpace(val home: Id) : SideEffect()
+                }
+            }
+
+            data class Invite(val link: String) : Deeplink()
+            data class GalleryInstallation(
+                val deepLinkType: String,
+                val deepLinkSource: String
+            ) : Deeplink()
+
+            data class MembershipScreen(val tierId: String?, val code: String? = null) : Deeplink()
+            data class InitiateOneToOneChat(
+                val identity: Id,
+                val metadataKey: String
+            ) : Deeplink()
+
+            /**
+             * Deep link from OS home screen widget to open a specific space.
+             *
+             * One-to-one spaces open the chat directly; every other channel
+             * opens the space home, which then resolves the homepage via the
+             * homepage-set logic (see DROID-4388 / GO-6752).
+             */
+            data class DeepLinkToSpace(
+                val space: Id,
+                val shouldNavigateDirectlyToChat: Boolean = false,
+                val chatId: Id? = null
+            ) : Deeplink()
+
+            /**
+             * Deep link from OS home screen widget to open a specific object.
+             * Switches to the target space and navigates to the object.
+             */
+            data class DeepLinkToObjectFromWidget(
+                val space: Id,
+                val obj: Id,
+                val navigation: OpenObjectNavigation,
+                val openTargetDirectly: Boolean = false
+            ) : Deeplink()
+
+            /**
+             * Deep link from OS home screen widget to create an object.
+             * MainActivity will load the widget config and call onCreateObjectFromWidget.
+             *
+             * [token] is later validated in MainActivity against persisted widget config.
+             */
+            data class DeepLinkToCreateObject(
+                val appWidgetId: Int,
+                val token: String
+            ) : Deeplink()
+
+            /**
+             * Command to navigate to CreateObjectFragment after space is switched.
+             * Emitted by onCreateObjectFromWidget after successful space switch.
+             */
+            data class OpenCreateObjectFromOsWidget(
+                val typeKey: String
+            ) : Deeplink()
+        }
+    }
+
+    companion object {
+        const val DELAY_BEFORE_SHOWING_NOTIFICATION_SCREEN = 200L
+        const val NEW_DEEP_LINK_DELAY = 1000L
+        const val PUSH_SPACE_STATUS_TIMEOUT = 20_000L
+    }
+}
