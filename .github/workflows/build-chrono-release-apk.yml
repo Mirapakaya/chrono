@@ -44,6 +44,25 @@ jobs:
           echo "amplitude.release=" >> apikeys.properties
           echo "sentry.dsn=" >> apikeys.properties
 
+      - name: Generate release signing keystore
+        run: |
+          mkdir -p scripts/release
+          keytool -genkeypair \
+            -v \
+            -keystore scripts/release/app-release.jks \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -alias chrono \
+            -storepass chrono-store \
+            -keypass chrono-key \
+            -dname "CN=Chrono, OU=Chrono, O=Chrono, L=Unknown, ST=Unknown, C=US"
+          cat > signing.properties <<EOF
+          RELEASE_KEY_ALIAS=chrono
+          RELEASE_KEY_PASSWORD=chrono-key
+          RELEASE_STORE_PASSWORD=chrono-store
+          EOF
+
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
